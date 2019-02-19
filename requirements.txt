@@ -1,0 +1,7 @@
+intervaltree
+sqlalchemy
+numpy
+# from https://github.com/janinamass/dustdas
+dustdas  
+# for testing only
+pytest
