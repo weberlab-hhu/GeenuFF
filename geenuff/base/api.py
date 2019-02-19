@@ -1,7 +1,7 @@
 import copy
 from types import GeneratorType
-import annotations_orm
-import type_enums
+from . import orm
+from . import types
 
 
 def convert2list(obj):
@@ -86,11 +86,11 @@ class Handler(object):
                     #for data in val:
                     data = val[i]
                     self.replace_selflink_with_replacementlink(replacement, data)
-            elif isinstance(val, annotations_orm.Base):
+            elif isinstance(val, orm.Base):
                 self.replace_selflink_with_replacementlink(replacement, val)
             else:
                 raise ValueError("replace_selflinks_w_replacementlinks only implemented for {} types".format(
-                    [list, annotations_orm.Base]
+                    [list, orm.Base]
                 ))
 
     def replace_selflink_with_replacementlink(self, replacement, data):
@@ -112,11 +112,11 @@ class Handler(object):
                     #for data in val:
                     data = val[i]
                     self.copy_selflink_to_another(another, data)
-            elif isinstance(val, annotations_orm.Base):
+            elif isinstance(val, orm.Base):
                 self.copy_selflink_to_another(another, val)
             else:
                 raise ValueError("copy_selflinks_to_another only implemented for {} types. {} found".format(
-                    [list, annotations_orm.Base], type(val)
+                    [list, orm.Base], type(val)
                 ))
 
     # "selflink" for naming/usage consistency with 'replace' methods
@@ -151,7 +151,7 @@ class Handler(object):
 class AnnotatedGenomeHandler(Handler):
     @property
     def data_type(self):
-        return annotations_orm.AnnotatedGenome
+        return orm.AnnotatedGenome
 
     @property
     def _valid_links(self):
@@ -176,7 +176,7 @@ class SequenceInfoHandler(Handler):
 
     @property
     def data_type(self):
-        return annotations_orm.SequenceInfo
+        return orm.SequenceInfo
 
     @property
     def _valid_links(self):
@@ -215,7 +215,7 @@ class SuperLocusHandler(Handler):
 
     @property
     def data_type(self):
-        return annotations_orm.SuperLocus
+        return orm.SuperLocus
 
     @property
     def _valid_links(self):
@@ -256,7 +256,7 @@ class TranscribedHandler(Handler):
 
     @property
     def data_type(self):
-        return annotations_orm.Transcribed
+        return orm.Transcribed
 
     @property
     def _valid_links(self):
@@ -289,7 +289,7 @@ class TranscribedPieceHandler(Handler):
 
     @property
     def data_type(self):
-        return annotations_orm.TranscribedPiece
+        return orm.TranscribedPiece
 
     @property
     def _valid_links(self):
@@ -318,7 +318,7 @@ class TranslatedHandler(Handler):
 
     @property
     def data_type(self):
-        return annotations_orm.Translated
+        return orm.Translated
 
     @property
     def _valid_links(self):
@@ -347,7 +347,7 @@ class FeatureHandler(Handler):
 
     @property
     def data_type(self):
-        return annotations_orm.Feature
+        return orm.Feature
 
     @property
     def _valid_links(self):
@@ -381,7 +381,7 @@ class DownstreamFeatureHandler(FeatureHandler):
 
     @property
     def data_type(self):
-        return annotations_orm.DownstreamFeature
+        return orm.DownstreamFeature
 
     @property
     def _valid_links(self):
@@ -412,7 +412,7 @@ class UpstreamFeatureHandler(FeatureHandler):
 
     @property
     def data_type(self):
-        return annotations_orm.UpstreamFeature
+        return orm.UpstreamFeature
 
     @property
     def _valid_links(self):
@@ -443,7 +443,7 @@ class UpDownPairHandler(Handler):
 
     @property
     def data_type(self):
-        return annotations_orm.UpDownPair
+        return orm.UpDownPair
 
     @property
     def _valid_links(self):
@@ -489,18 +489,18 @@ class TranscriptStatus(object):
     def _decoder(self):
         # todo, parallelize status until this isn't necessary
         return {
-            type_enums.TRANSCRIBED: ('genic', self.saw_tss, self.saw_tts),
-            type_enums.CODING: ('in_translated_region', self.saw_start, self.exit_coding),
-            type_enums.INTRON: ('in_intron', self.splice_open, self.splice_close),
-            type_enums.TRANS_INTRON: ('in_trans_intron', self.trans_splice_open, self.trans_splice_close),
-            type_enums.ERROR: ('erroneous', self.error_open, self.error_close)
+            types.TRANSCRIBED: ('genic', self.saw_tss, self.saw_tts),
+            types.CODING: ('in_translated_region', self.saw_start, self.exit_coding),
+            types.INTRON: ('in_intron', self.splice_open, self.splice_close),
+            types.TRANS_INTRON: ('in_trans_intron', self.trans_splice_open, self.trans_splice_close),
+            types.ERROR: ('erroneous', self.error_open, self.error_close)
         }
 
     def update_for_feature(self, feature, **kwargs):
         attr, fn_open, fn_close = self._decoder[feature.type.value]
-        if feature.bearing.value in [type_enums.START, type_enums.OPEN_STATUS]:
+        if feature.bearing.value in [types.START, types.OPEN_STATUS]:
             fn_open(**kwargs)
-        elif feature.bearing.value in [type_enums.END, type_enums.CLOSE_STATUS]:
+        elif feature.bearing.value in [types.END, types.CLOSE_STATUS]:
             fn_close(**kwargs)
         else:
             raise ValueError('unhandled bearing {}'.format(feature.bearing))
@@ -676,14 +676,14 @@ class TranscriptInterpBase(object):
         return matches[0]
 
     def get_upstream_link(self, current_piece):
-        downstreams = self.session.query(annotations_orm.DownstreamFeature).all()
+        downstreams = self.session.query(orm.DownstreamFeature).all()
         # DownstreamFeature s of this pice
         downstreams_current = [x for x in downstreams if current_piece in x.transcribed_pieces]
         links = self._find_matching_links(updown_candidates=downstreams_current, get_upstreams=True)
         return self._links_list2link(links, direction='upstream', current_piece=current_piece)
 
     def get_downstream_link(self, current_piece):
-        upstreams = self.session.query(annotations_orm.UpstreamFeature).all()
+        upstreams = self.session.query(orm.UpstreamFeature).all()
         upstreams_current = [x for x in upstreams if current_piece in x.transcribed_pieces]
         links = self._find_matching_links(updown_candidates=upstreams_current, get_upstreams=False)
         return self._links_list2link(links, direction='downstream', current_piece=current_piece)
@@ -721,11 +721,11 @@ class TranscriptInterpBase(object):
             ftype = feature.type.value
             fbearing = feature.bearing.value
             # standard features
-            if ftype == type_enums.CODING and fbearing == type_enums.START:
+            if ftype == types.CODING and fbearing == types.START:
                 status.update_for_feature(feature, phase=0)
-            elif ftype == type_enums.CODING and fbearing == type_enums.OPEN_STATUS:
+            elif ftype == types.CODING and fbearing == types.OPEN_STATUS:
                 status.update_for_feature(feature, phase=feature.phase)
-            elif ftype == type_enums.CODING and fbearing == type_enums.END:
+            elif ftype == types.CODING and fbearing == types.END:
                 status.update_for_feature(feature)
                 status.saw_stop()  # todo, disentangle / to-parser not general section
             else:
@@ -751,11 +751,11 @@ class TranscriptInterpBase(object):
 
     @staticmethod
     def sort_by_bearing(matches):
-        key = {type_enums.START: 3,
-               type_enums.OPEN_STATUS: 2,
-               type_enums.CLOSE_STATUS: 1,
-               type_enums.END: 0,
-               type_enums.POINT: 4}
+        key = {types.START: 3,
+               types.OPEN_STATUS: 2,
+               types.CLOSE_STATUS: 1,
+               types.END: 0,
+               types.POINT: 4}
 
         return sorted(matches, key=lambda x: key[x.bearing.value])
 
@@ -816,13 +816,13 @@ class HandleMaker(object):
         return handler
 
     def _get_handler_type(self, old_data):
-        key = [(SuperLocusHandler, annotations_orm.SuperLocus),
-               (TranscribedHandler, annotations_orm.Transcribed),
-               (TranslatedHandler, annotations_orm.Translated),
-               (TranscribedPieceHandler, annotations_orm.TranscribedPiece),
-               (FeatureHandler, annotations_orm.Feature),
-               (UpstreamFeatureHandler, annotations_orm.UpstreamFeature),
-               (DownstreamFeatureHandler, annotations_orm.DownstreamFeature),
-               (UpDownPairHandler, annotations_orm.UpDownPair)]
+        key = [(SuperLocusHandler, orm.SuperLocus),
+               (TranscribedHandler, orm.Transcribed),
+               (TranslatedHandler, orm.Translated),
+               (TranscribedPieceHandler, orm.TranscribedPiece),
+               (FeatureHandler, orm.Feature),
+               (UpstreamFeatureHandler, orm.UpstreamFeature),
+               (DownstreamFeatureHandler, orm.DownstreamFeature),
+               (UpDownPairHandler, orm.UpDownPair)]
 
         return self._get_paired_item(type(old_data), search_col=1, return_col=0, nested_list=key)

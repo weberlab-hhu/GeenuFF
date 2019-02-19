@@ -1,4 +1,4 @@
-import type_enums
+from . import types
 
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Table, Column, Integer, ForeignKey, String, Enum, CheckConstraint, Boolean, Float
@@ -72,7 +72,7 @@ class SuperLocus(Base):
 
     id = Column(Integer, primary_key=True)
     given_id = Column(String)
-    type = Column(Enum(type_enums.SuperLocusAll))
+    type = Column(Enum(types.SuperLocusAll))
     # things SuperLocus can have a lot of
     aliases = relationship('SuperLocusAliases', back_populates='super_locus')
     features = relationship('Feature', back_populates='super_locus')
@@ -103,7 +103,7 @@ class Transcribed(Base):
     id = Column(Integer, primary_key=True)
     given_id = Column(String)
 
-    type = Column(Enum(type_enums.TranscriptLevelAll))
+    type = Column(Enum(types.TranscriptLevelAll))
 
     super_locus_id = Column(Integer, ForeignKey('super_loci.id'))
     super_locus = relationship('SuperLocus', back_populates='transcribeds')
@@ -157,8 +157,8 @@ class Feature(Base):
     id = Column(Integer, primary_key=True)
     given_id = Column(String)
 
-    type = Column(Enum(type_enums.OnSequence))
-    bearing = Column(Enum(type_enums.Bearings))
+    type = Column(Enum(types.OnSequence))
+    bearing = Column(Enum(types.Bearings))
     #seqid = Column(String)
     coordinate_id = Column(Integer, ForeignKey('coordinates.id'))  # any piece of coordinates always has just one seqid
     coordinates = relationship('Coordinates', back_populates='features')
