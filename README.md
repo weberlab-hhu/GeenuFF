@@ -34,9 +34,16 @@ originating from a single loci
   * incomplete information about the gene annotation itself
 
 ### specific advantages over alternatives
-Historically gene annotations have been encoded in some variation
+Historically, gene annotations have been encoded in some variation
 of the gff format (gtf, gff, gff3), see http://gmod.org/wiki/GFF3. 
-There are a variety of drawbacks to these formats. 
+There are a variety of drawbacks to these formats. Some are somewhat
+more superficial, such as the custom encoding of key, value
+pairs specifying both relationships and extra meta info 
+in the final column. A good base parser, or non-text alternatives 
+such as gffutils (https://daler.github.io/gffutils/); are sufficient
+to address such issues. Here, we will focus on the benefits of
+the basic changes in encoding _structure_ that address the more
+fundamental issues.
 
 ## Install
 GeenuFF has been tested exclusively (so far) in python3.6
