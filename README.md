@@ -262,8 +262,14 @@ it would require selecting `[min + 1, max + 1)`; of course one will want to reve
 this sequence as well for most purposes, so a handling function is anyways advisable. 
 
 #### Extensible
-relational db allows for structured extensions (e.g. to add
-info for train/dev/test sets when using for machine learning).
+Finally, with geenuff being based on a relational database, it's much easier
+to _extend_ the format for specific purposes without changing the base, shared
+attributes. 
+
+For instance, we needed to assign sequence regions to training / dev / and test 
+sets for an applied machine learning and gene model project. This required just
+an additional table with a foreign key to the sequences, but required no modification
+of the core format.
 
 ## Install
 GeenuFF has been tested exclusively (so far) in python3.6
