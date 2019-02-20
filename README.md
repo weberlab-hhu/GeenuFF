@@ -10,6 +10,48 @@ if developed further), but if you build on GeenuFF as it is now,
 you're doing so at your own risk.
 
 ## What
+Relational db Schema & Api
+### Schema summary
+For the fine details, please look at `base/orm.py`; here we will just
+try and describe the overall structure / major pieces, and what they mean.
+
+#### Tables & relations
+Indentation inside a piece indicates a one-to-? relation
+
+* annotated_genomes
+  * sequence_infos
+    * coordinates
+* super_loci
+  * super_loci_aliases
+  * transcribeds, < many2many to translateds >
+    * transcribed_pieces, < many2many to features >
+  * translateds, < many2many with transcribeds, features >
+  * features < many2many with translateds, transcribed_pieces; many2one to coordinates >
+    * upstream_features < via up_down_pairs to downstream_features >
+    * downstream_features < via up_down_pairs to upstream_features >
+* up_down_pairs < links upstream_features, downstream_features >
+
+(and 3 more linkage-only association tables for the many2many fields)
+
+#### annotated_genomes & children
+These _mostly_ hold meta information 
+###### annotated_genomes 
+(meta info only: species, accesion, version, acquired_from)
+###### sequence_infos 
+(an abstraction layer, for instance if you wanted to split
+within genome sequences for any processing reasons; e.g. denote what's nuclear
+vs organellar...)
+###### coordinates 
+(sequence meta info: seqid, inclusive start, exclusive end)
+
+__Note: should probably add a hash of the sequence or something here too.__
+
+#### super_loci and children
+###### super_loci
+essentially delineates the graph of things that might possibly be combined,
+also has given_id as meta_info for the ~gene
+
+###### translateds
 
 
 ## Why
