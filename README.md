@@ -49,8 +49,31 @@ __Note: should probably add a hash of the sequence or something here too.__
 #### super_loci and children
 ###### super_loci
 essentially delineates the graph of things that might possibly be combined,
-also has given_id as meta_info for the ~gene
 
+has given_id as meta_info for the ~gene
+
+###### features
+these describe transitions that can occur in a gene model but
+otherwise resemble features from a gff
+
+* they occur on a sequence (foreign key to coordinates)
+* they have a position (currently called start, todo...)
+* they have a type (or channel), one of {transcribed, coding, intron, trans_intron, error}
+* they have a bearing {start, status_open, status_close, end} which indicates whether something
+begins {start, status_open} or ends here {end, status_close}, and whether it is the biologically
+meaningful transition {start, end} or should just be used to set the status / is handling partial
+information {status_open, status_close}.
+* they have a boolean indicator is_plus_strand.
+* they have a score (confidence)
+* they have a phase (calculation and usage still need to be implemented, todo). This is particularly
+important if trying to encode a partial protein sequence.
+* they have a given_id 
+* they have a source
+* they have two additional subtypes: upstream and downstream features (more info below)
+* they have many to many relationship with translateds (mostly to assign the 'protein_id')
+* they have a many to may relationship with transcribed_pieces.
+
+The final bit is critical. Each start (or status_open) piece on a 
 ###### translateds
 
 
