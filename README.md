@@ -45,6 +45,107 @@ to address such issues. Here, we will focus on the benefits of
 the basic changes in encoding _structure_ that address the more
 fundamental issues.
 
+#### Gff-like implicit encodings
+In gff-like formats, genes and gene pieces are encoded as 
+ranges, e.g. `[ exon ]`. Unfortunately this leaves many gene 
+components to only be encoded implicitly. For instance,
+an intron is encoded as the gap between two exons:
+```
+# gff features
+[      transcript        ]
+[ exon ]          [ exon ]
+# interpretation
+[ exon ]( intron )[ exon ]
+```
+Similarly, the transcription start site (TSS) is not indicated
+explicitly, but is rather implicitly assumed to be:
+```
+# at the start of the 1st exon (+ strand)
+[    transcript    ]
+[ exon ]    [ exon ]
+^
+TSS
+
+# or, at the end of the last exon (- strand)
+[    transcript    ]
+[ exon ]    [ exon ]
+                   ^
+                   TSS
+```
+While this always requires some extra parsing if one is interested
+in one of the _implicit_ features; the greater problem occurs
+in cases where one has less-than perfect information. 
+
+For example, lets assume we want to encode a partial gene model;
+we know from homology comparison to other species and the truncated
+mapping of RNAseq reads that we are missing at least the first exon.
+With gff-like formats one can either include the exons one knows, 
+which will erroneously _imply_ the transcription start site is located
+where one actually has an acceptor splice site; or one can skip
+the gene model entirely, which will erroneous _imply_ that the whole
+region is intergenic. There is no 'right' way to document what one 
+knows and what one doesn't with these formats.
+
+##### GeenuFF more explicit encodings
+With GeenuFF, the transitions are encoded explicitly, and are strictly
+paired to denote the ranges. For instance, the same two-exon, + strand transcript
+used above would basically change as follows
+```
+# gff-like
+[      transcript        ]
+[ exon ]          [ exon ]
+
+# geenuff 
+<transcribed>
+[                         )
+^                         ^
+start                     end
+<intron>
+        [         )
+        ^         ^
+        start     end   
+```
+This already makes it easier to parse, e.g. you don't 
+have to use a different rule to find the transcription start site
+on the minus strand. 
+
+More importantly however, in addition to the bearings 'start' and
+'end', there are also 'status_open' and 'status_close' to denote
+incomplete information as well as 'point' (not currently used).
+
+If we now return to how to encode our incomplete gene model, where
+we know we are missing the first exon, we can do so as follows.
+```
+# geenuff
+<transcribed>
+        [                     )
+        ^                     ^
+        status_open           end
+# further, if we want to indicate our lack of knowledge on the region
+# before (perhaps we don't know for sure if this is an intron or an assembly
+# error); we can use the error channel (type) to indicate our uncertainty
+<error>
+[        )
+^        ^
+start    end
+```
+
+#### Gff-like miss assignment of attributes and relations
+protein (not 'gene') has the protein ID, the gene, which can 
+derive from multiple loci (real or artificial) doesn't have
+direct assignment of coordinates. 
+
+#### Consistent
+naming, encoding / positioning, 
+
+same code parses EUK/PROK/TRANS-SPLICE
+
+##### Coordinate system
+
+#### Extensible
+relational db allows for structured extensions (e.g. to add
+info for train/dev/test sets when using for machine learning).
+
 ## Install
 GeenuFF has been tested exclusively (so far) in python3.6
 
