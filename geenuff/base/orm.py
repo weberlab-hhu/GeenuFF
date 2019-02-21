@@ -132,7 +132,8 @@ class TranscribedPiece(Base):
                             back_populates='transcribed_pieces')
 
     def __repr__(self):
-        return "<TranscribedPiece, {}: with features {}>".format(self.id, [(x.id, x.start, x.given_id) for x in self.features])
+        return "<TranscribedPiece, {}: with features {}>".format(
+            self.id, [(x.id, x.position, x.given_id) for x in self.features])
 
 
 class Translated(Base):
@@ -162,8 +163,7 @@ class Feature(Base):
     #seqid = Column(String)
     coordinate_id = Column(Integer, ForeignKey('coordinates.id'))  # any piece of coordinates always has just one seqid
     coordinates = relationship('Coordinates', back_populates='features')
-    start = Column(Integer)
-    #end = Column(Integer)
+    position = Column(Integer)
     is_plus_strand = Column(Boolean)
     score = Column(Float)
     source = Column(String)
@@ -182,7 +182,7 @@ class Feature(Base):
                                back_populates='features')
 
     __table_args__ = (
-        CheckConstraint(start >= -1, name='check_start_1plus'),
+        CheckConstraint(position >= -1, name='check_start_1plus'),
         CheckConstraint(phase >= 0, name='check_phase_not_negative'),
         CheckConstraint(phase < 3, name='check_phase_less_three'),
         {})
@@ -193,19 +193,19 @@ class Feature(Base):
     }
 
     def __repr__(self):
-        s = '<{py_type}, {pk}: {givenid} of type: {type} ({bearing}) @{start} on {coor}, is_plus: {plus}, ' \
+        s = '<{py_type}, {pk}: {givenid} of type: {type} ({bearing}) @{position} on {coor}, is_plus: {plus}, ' \
             'phase: {phase}>'.format(
                 pk=self.id, bearing=self.bearing,
-                type=self.type, start=self.start, coor=self.coordinates, plus=self.is_plus_strand,
+                type=self.type, position=self.position, coor=self.coordinates, plus=self.is_plus_strand,
                 phase=self.phase, givenid=self.given_id, py_type=type(self)
             )
         return s
 
     def cmp_key(self):  # todo, pos_cmp & full_cmp
-        return self.coordinates.seqid, self.is_plus_strand, self.start, self.type
+        return self.coordinates.seqid, self.is_plus_strand, self.position, self.type
 
     def pos_cmp_key(self):
-        return self.coordinates.seqid, self.is_plus_strand, self.start
+        return self.coordinates.seqid, self.is_plus_strand, self.position
 
 
 class DownstreamFeature(Feature):

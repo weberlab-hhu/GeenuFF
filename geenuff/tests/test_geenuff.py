@@ -155,9 +155,9 @@ def test_feature_has_its_things():
     assert f.coordinates is None
     assert f.score is None
     # test feature with
-    f1 = orm.Feature(super_locus=sl, is_plus_strand=False, start=3)
+    f1 = orm.Feature(super_locus=sl, is_plus_strand=False, position=3)
     assert not f1.is_plus_strand
-    assert f1.start == 3
+    assert f1.position == 3
     # test bad input
     with pytest.raises(KeyError):
         f2 = orm.Feature(super_locus=f)
@@ -171,10 +171,10 @@ def test_feature_has_its_things():
 
 def test_feature_streamlinks():
     sess = mk_session()
-    f = orm.Feature(start=1)
+    f = orm.Feature(position=1)
     pair = orm.UpDownPair()
-    sfA0 = orm.UpstreamFeature(start=2, pairs=[pair])
-    sfA1 = orm.DownstreamFeature(start=3, pairs=[pair])
+    sfA0 = orm.UpstreamFeature(position=2, pairs=[pair])
+    sfA1 = orm.DownstreamFeature(position=3, pairs=[pair])
     sess.add_all([f, sfA0, sfA1, pair])
     sess.commit()
     sfA0back = sess.query(orm.UpstreamFeature).first()
@@ -182,7 +182,7 @@ def test_feature_streamlinks():
     sfA1back = sfA0back.pairs[0].downstream
     assert sfA1 is sfA1back
     assert sfA1.pairs[0].upstream is sfA0
-    sf_friendless = orm.DownstreamFeature(start=4)
+    sf_friendless = orm.DownstreamFeature(position=4)
     sess.add(sf_friendless)
     sess.commit()
     downstreams = sess.query(orm.DownstreamFeature).all()
@@ -190,16 +190,16 @@ def test_feature_streamlinks():
         orm.DownstreamFeature != None  # todo, isn't there a 'right' way to do this?
     ).all()
     downlinked = [x.downstream for x in pre_downlinked]
-    print([(x.start, x.pairs) for x in downstreams])
-    print([(x.start, x.pairs[0].upstream) for x in downlinked])
+    print([(x.position, x.pairs) for x in downstreams])
+    print([(x.position, x.pairs[0].upstream) for x in downlinked])
     assert len(downstreams) == 2
     assert len(downlinked) == 1
 
 
 def test_linking_via_fkey():
     sess = mk_session()
-    sfA0 = orm.UpstreamFeature(start=2)
-    sfA1 = orm.DownstreamFeature(start=3)
+    sfA0 = orm.UpstreamFeature(position=2)
+    sfA1 = orm.DownstreamFeature(position=3)
     sess.add_all([sfA0, sfA1])
     sess.commit()
     pair = orm.UpDownPair(upstream_id=sfA0.id, downstream_id=sfA1.id)
@@ -451,13 +451,13 @@ def test_order_pieces():
     sess.add_all([scribed, piece0, piece1, piece2])
     sess.commit()
     # setup some paired features
-    feature0u = orm.UpstreamFeature(transcribed_pieces=[piece0], coordinates=coor, start=100, given_id='0u',
+    feature0u = orm.UpstreamFeature(transcribed_pieces=[piece0], coordinates=coor, position=100, given_id='0u',
                                     is_plus_strand=True)
-    feature1d = orm.DownstreamFeature(transcribed_pieces=[piece1], coordinates=coor, start=1, given_id='1d',
+    feature1d = orm.DownstreamFeature(transcribed_pieces=[piece1], coordinates=coor, position=1, given_id='1d',
                                       is_plus_strand=True)
-    feature1u = orm.UpstreamFeature(transcribed_pieces=[piece1], coordinates=coor, start=100, given_id='1u',
+    feature1u = orm.UpstreamFeature(transcribed_pieces=[piece1], coordinates=coor, position=100, given_id='1u',
                                     is_plus_strand=True)
-    feature2d = orm.DownstreamFeature(transcribed_pieces=[piece2], coordinates=coor, start=1, given_id='2d',
+    feature2d = orm.DownstreamFeature(transcribed_pieces=[piece2], coordinates=coor, position=1, given_id='2d',
                                       is_plus_strand=True)
     pair01 = orm.UpDownPair(upstream=feature0u, downstream=feature1d, transcribed=scribed)
     pair12 = orm.UpDownPair(upstream=feature1u, downstream=feature2d, transcribed=scribed)
@@ -485,9 +485,9 @@ def test_order_pieces():
                 [feature2d]]
     assert fully_sorted == expected
     # finally make it circular, and make sure it throws an error
-    feature2u = orm.UpstreamFeature(transcribed_pieces=[piece2], coordinates=coor, start=100, given_id='2u',
+    feature2u = orm.UpstreamFeature(transcribed_pieces=[piece2], coordinates=coor, position=100, given_id='2u',
                                     is_plus_strand=True)
-    feature0d = orm.DownstreamFeature(transcribed_pieces=[piece0], coordinates=coor, start=1, given_id='0d',
+    feature0d = orm.DownstreamFeature(transcribed_pieces=[piece0], coordinates=coor, position=1, given_id='0d',
                                       is_plus_strand=True)
     pair20 = orm.UpDownPair(upstream=feature2u, downstream=feature0d, transcribed=scribed)
     sess.add(pair20)
@@ -520,61 +520,61 @@ class TransspliceDemoData(object):
         self.scribedflip.transcribed_pieces = [self.pieceA2Dp, self.pieceEp2Hp]
         # pieceA2D features
 
-        self.fA = orm.Feature(coordinates=self.old_coor, start=10, given_id='A',
+        self.fA = orm.Feature(coordinates=self.old_coor, position=10, given_id='A',
                               is_plus_strand=True, super_locus=self.sl,
                               type=types.TRANSCRIBED, bearing=types.START)
-        self.fB = orm.Feature(coordinates=self.old_coor, start=20, given_id='B',
+        self.fB = orm.Feature(coordinates=self.old_coor, position=20, given_id='B',
                               is_plus_strand=True, super_locus=self.sl, type=types.CODING,
                               bearing=types.START)
 
-        self.fC = orm.Feature(coordinates=self.old_coor, start=30, given_id='C',
+        self.fC = orm.Feature(coordinates=self.old_coor, position=30, given_id='C',
                               is_plus_strand=True, super_locus=self.sl,
                               type=types.TRANS_INTRON, bearing=types.START)
-        self.fD = orm.Feature(coordinates=self.old_coor, start=40, given_id='D',
+        self.fD = orm.Feature(coordinates=self.old_coor, position=40, given_id='D',
                               is_plus_strand=True, super_locus=self.sl,
                               type=types.TRANSCRIBED, bearing=types.END)
-        self.fADs0 = orm.UpstreamFeature(coordinates=self.old_coor, start=40, given_id='ADs0',
+        self.fADs0 = orm.UpstreamFeature(coordinates=self.old_coor, position=40, given_id='ADs0',
                                          is_plus_strand=True, super_locus=self.sl,
                                          type=types.TRANS_INTRON, bearing=types.CLOSE_STATUS)
-        self.fADs1 = orm.UpstreamFeature(coordinates=self.old_coor, start=40, given_id='ADs1',
+        self.fADs1 = orm.UpstreamFeature(coordinates=self.old_coor, position=40, given_id='ADs1',
                                          is_plus_strand=True, super_locus=self.sl,
                                          type=types.CODING, bearing=types.CLOSE_STATUS)
         # pieceE2H features
-        self.fEHs0 = orm.DownstreamFeature(coordinates=self.old_coor, start=910, given_id='EHs0',
+        self.fEHs0 = orm.DownstreamFeature(coordinates=self.old_coor, position=910, given_id='EHs0',
                                            is_plus_strand=True, super_locus=self.sl,
                                            type=types.TRANS_INTRON, bearing=types.OPEN_STATUS)
-        self.fEHs1 = orm.DownstreamFeature(coordinates=self.old_coor, start=910, given_id='EHs1',
+        self.fEHs1 = orm.DownstreamFeature(coordinates=self.old_coor, position=910, given_id='EHs1',
                                            is_plus_strand=True, super_locus=self.sl,
                                            type=types.CODING, bearing=types.OPEN_STATUS)
-        self.fE = orm.Feature(coordinates=self.old_coor, start=910, given_id='E',
+        self.fE = orm.Feature(coordinates=self.old_coor, position=910, given_id='E',
                               is_plus_strand=True, super_locus=self.sl,
                               type=types.TRANSCRIBED, bearing=types.START)
-        self.fF = orm.Feature(coordinates=self.old_coor, start=920, given_id='F',
+        self.fF = orm.Feature(coordinates=self.old_coor, position=920, given_id='F',
                               super_locus=self.sl, is_plus_strand=True,
                               type=types.TRANS_INTRON, bearing=types.END)
-        self.fG = orm.Feature(coordinates=self.old_coor, start=930, given_id='G',
+        self.fG = orm.Feature(coordinates=self.old_coor, position=930, given_id='G',
                               is_plus_strand=True, super_locus=self.sl, type=types.CODING,
                               bearing=types.END)
-        self.fH = orm.Feature(coordinates=self.old_coor, start=940, given_id='H',
+        self.fH = orm.Feature(coordinates=self.old_coor, position=940, given_id='H',
                               is_plus_strand=True, super_locus=self.sl,
                               type=types.TRANSCRIBED, bearing=types.END)
         # pieceEp2Hp features
-        self.fEHps0 = orm.DownstreamFeature(coordinates=self.old_coor, start=940, given_id='EHsp0',
+        self.fEHps0 = orm.DownstreamFeature(coordinates=self.old_coor, position=940, given_id='EHsp0',
                                             is_plus_strand=False, super_locus=self.sl,
                                             type=types.TRANS_INTRON, bearing=types.OPEN_STATUS)
-        self.fEHps1 = orm.DownstreamFeature(coordinates=self.old_coor, start=940, given_id='EHsp1',
+        self.fEHps1 = orm.DownstreamFeature(coordinates=self.old_coor, position=940, given_id='EHsp1',
                                             is_plus_strand=False, super_locus=self.sl,
                                             type=types.CODING, bearing=types.OPEN_STATUS)
-        self.fEp = orm.Feature(coordinates=self.old_coor, start=940, given_id='Ep',
+        self.fEp = orm.Feature(coordinates=self.old_coor, position=940, given_id='Ep',
                                is_plus_strand=False, super_locus=self.sl,
                                type=types.TRANSCRIBED, bearing=types.START)
-        self.fFp = orm.Feature(coordinates=self.old_coor, start=930, given_id='Fp',
+        self.fFp = orm.Feature(coordinates=self.old_coor, position=930, given_id='Fp',
                                super_locus=self.sl, bearing=types.END,
                                is_plus_strand=False, type=types.TRANS_INTRON)
-        self.fGp = orm.Feature(coordinates=self.old_coor, start=920, given_id='Gp',
+        self.fGp = orm.Feature(coordinates=self.old_coor, position=920, given_id='Gp',
                                is_plus_strand=False, super_locus=self.sl, type=types.CODING,
                                bearing=types.END)
-        self.fHp = orm.Feature(coordinates=self.old_coor, start=910, given_id='Hp',
+        self.fHp = orm.Feature(coordinates=self.old_coor, position=910, given_id='Hp',
                                is_plus_strand=False, super_locus=self.sl,
                                type=types.TRANSCRIBED, bearing=types.END)
 
@@ -674,7 +674,7 @@ def test_data_frm_gffentry():
     source {} {}
     phase {} {}
     given_id {} {}""".format(d.coordinates.seqid, type(d.coordinates.seqid),
-                             d.start, type(d.start),
+                             d.position, type(d.position),
                              d.is_plus_strand, type(d.is_plus_strand),
                              d.score, type(d.score),
                              d.source, type(d.source),
@@ -786,7 +786,7 @@ def test_fullcopy():
                                                      orm.TranscribedPiece, transcribed=scribed,
                                                      super_locus=sl, given_id='soup', )
     f, fh = setup_data_handler(api.FeatureHandler, orm.Feature, super_locus=sl,
-                               transcribed_pieces=[scribedpiece], start=13)
+                               transcribed_pieces=[scribedpiece], position=13)
     sess.add_all([scribedpiece, f])
     sess.commit()
     tdict = orm.Transcribed.__dict__
@@ -798,7 +798,7 @@ def test_fullcopy():
     new, newh = setup_data_handler(api.FeatureHandler, orm.Feature)
     fh.fax_all_attrs_to_another(newh)
     sess.commit()
-    assert new.start == 13
+    assert new.position == 13
     assert set(scribedpiece.features) == {f, new}
     assert new.super_locus == sl
     assert new is not f
