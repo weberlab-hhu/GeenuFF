@@ -300,7 +300,6 @@ of the core format.
 
 ### Comparison of spec to gff
 [spec_vs_gff.html](spec_vs_gff.html)
-[https://weberlab-hhu.github.io/GeenuFF/spec_vs_gff.html](https://weberlab-hhu.github.io/GeenuFF/spec_vs_gff.html)
 
 ### Coordinate system
 GeenuFF coordinates count from 0, have an inclusive start and exclusive end.
