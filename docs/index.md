@@ -1,8 +1,7 @@
 # GeenuFF
 
 ## Source & Install
-See github repository:
-[https://github.com/weberlab-hhu/GeenuFF](https://github.com/weberlab-hhu/GeenuFF)
+See [github repository](https://github.com/weberlab-hhu/GeenuFF)
 
 ## What
 Relational db Schema & Api to store and interpret gene structure
@@ -58,16 +57,19 @@ originating from a single loci
 Unsurprisingly, GeenuFF does not represent the first attempt
 to encode gene structures; so if you're already familiar 
 with e.g. the gff format and are wondering if we're just 
-adding one more standard to the pile (https://xkcd.com/927/), 
+adding one more standard to the [pile](https://xkcd.com/927/),
 then the following section explains _why_ we think it's worth it.
 
 Historically, gene annotations have been encoded in some variation
-of the gff format (gtf, gff, gff3), see http://gmod.org/wiki/GFF3. 
+of the gff format (gtf, gff, gff3), see
+[http://gmod.org/wiki/GFF3](http://gmod.org/wiki/GFF3]).
 There are a variety of drawbacks to these formats. Some are somewhat
 more superficial, such as the custom encoding of key, value
 pairs specifying both relationships and extra meta info 
 in the final column. A good base parser, or non-text alternatives 
-such as gffutils (https://daler.github.io/gffutils/); are sufficient
+such as gffutils
+([https://daler.github.io/gffutils/)](https://daler.github.io/gffutils/));
+are sufficient
 to address such issues. Here, we will focus on the benefits of
 the basic changes in underlying _structure_ that address the more
 fundamental issues.
@@ -297,7 +299,8 @@ of the core format.
 ## What (with details)
 
 ### Comparison of spec to gff
-https://weberlab-hhu.github.io/GeenuFF/spec_vs_gff.html
+[spec_vs_gff.html](spec_vs_gff.html)
+[https://weberlab-hhu.github.io/GeenuFF/spec_vs_gff.html](https://weberlab-hhu.github.io/GeenuFF/spec_vs_gff.html)
 
 ### Coordinate system
 GeenuFF coordinates count from 0, have an inclusive start and exclusive end.
