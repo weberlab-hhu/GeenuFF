@@ -397,7 +397,7 @@ proteins to one transcript. The key tables / concepts in the schema are as follo
   * Feature: this holds things like "coding, start" (start codon), or "intron, end"
     (acceptor splice site), that can directly be assigned coordinates on the genome.
   * Transcribed: (AKA transcript / mRNA), has an ID, importantly it links 
-    (via intermediary, see pieces spec) to all the features combined to make a transcript and 
+    (via intermediary, see [transcribed_pieces](#transcribed_pieces))) to all the features combined to make a transcript and 
     any protein translated there from.
   * Translated: (AKA protein), has an ID, importantly it links to coding-type features 
     making one protein.
