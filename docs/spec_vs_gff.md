@@ -9,7 +9,7 @@ bearing (start, end, open_status, close_status, point).
 * transcribed: primarily transcription start & termination sites
 * coding: primarily start and stop codon
 * intron / trans intron: primarily donor site, acceptor site
-* error: mark start/end of region when the provided annotation is
+* error: mark start/end of region where the provided annotation is
 in question.
 
 ##### bearing:
@@ -25,7 +25,7 @@ in question.
   
   for defining a _region_ these will work the same as start/end.
   So every bp between intron: open_status and intron: close_status
-  defines an intron. However, these can be used when there is incomplete
+  belongs to an intron. However, these can be used when there is incomplete
   information (e.g. the assembled sequence started in an intron, so the donor 
   splice site is missing). If however, the status is set in the middle of a
   sequence, this should generally be accompanied by an 'error mask' that 
