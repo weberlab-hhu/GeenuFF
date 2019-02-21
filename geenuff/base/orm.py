@@ -163,7 +163,7 @@ class Feature(Base):
     coordinate_id = Column(Integer, ForeignKey('coordinates.id'))  # any piece of coordinates always has just one seqid
     coordinates = relationship('Coordinates', back_populates='features')
     start = Column(Integer)
-    end = Column(Integer)
+    #end = Column(Integer)
     is_plus_strand = Column(Boolean)
     score = Column(Float)
     source = Column(String)
@@ -193,10 +193,10 @@ class Feature(Base):
     }
 
     def __repr__(self):
-        s = '<{py_type}, {pk}: {givenid} of type: {type} ({bearing}) from {start}-{end} on {coor}, is_plus: {plus}, ' \
+        s = '<{py_type}, {pk}: {givenid} of type: {type} ({bearing}) @{start} on {coor}, is_plus: {plus}, ' \
             'phase: {phase}>'.format(
                 pk=self.id, bearing=self.bearing,
-                type=self.type, start=self.start, end=self.end, coor=self.coordinates, plus=self.is_plus_strand,
+                type=self.type, start=self.start, coor=self.coordinates, plus=self.is_plus_strand,
                 phase=self.phase, givenid=self.given_id, py_type=type(self)
             )
         return s
