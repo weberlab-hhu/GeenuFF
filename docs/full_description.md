@@ -2,6 +2,61 @@
 
 ## What
 Relational db Schema & Api to store and interpret gene structure
+
+### Conceptual summary
+GeenuFF format essentially defines ranges on the genomic sequence 
+of a gene structure related "type" (e.g. transcribed, coding, ...).
+These ranges are delineated by one each of a starting & ending feature
+of their type. The combination of features ultimately required to define
+a processed biological macromolecule (e.g. mRNA, protein) from the genomic
+sequence, is recorded in the 'outer' tables (e.g. transcribeds, 
+translateds) that link to features. 
+
+GeenuFF is designed to unambiguously encode even 
+partial information. For instance, the "bearing"
+of a feature can be used to indicate whether the feature delineates
+the expected full biological range, or merely a part of it. Thus a 
+gene model encoded in geenuff can explicitly differentiate a full
+from partial gene model, and exactly _where_ our knowledge of the
+gene model ends.
+
+GeenuFF is designed to encode all necessary complexity, both to 
+represent the biological processes, as well as technical limitations.
+In particular, the abstraction layer of transcribed_pieces can be used
+to group and organize features
+encoding a transcript that originates from multiple unrelated genomic loci.
+Thus geenuff can encode a transcript split across two scaffolds in a 
+fragmented genome assembly, or it can encode a transcript processed
+via trans-splicing, which has a true biological origin from two (or more) loci.
+
+### Coordinate system
+GeenuFF coordinates count from 0, have an inclusive start and exclusive end.
+
+GeenuFF features always come in pairs defining a range. The position of the
+_starting_ feature (bearing in ["start", "status_open"]) always marks the 
+_inclusive_ start of this range. The position of the _ending_ feature
+(bearing in ["end", "status_close"]) always marks the _exclusive_ end
+of the range. 
+
+Therefore, GeenuFF coordinates exactly match (among other languages) 
+python coordinates for ranges on the positive strand.
+
+However, the logic of inclusive start, exclusive end applies even when encoding
+features on the _minus_ strand.
+
+Let's say you want to encode the range to select the elements `{2, 3}` 
+(of `[0, 1, 2, 3, 4, ...]`) with geenuff features / coordinates. 
+The plus strand would exactly match the pythonic coordinates `[2, 4)`,
+but the negative strand (want `{3, 2}`) would include the start point,
+and not the end `[3, 1)`. Thus, if the genomic sequence was represented
+in a python list you would select a range on the minus strand 
+with something like this:
+```
+genomic_sequence[end_feature.position + 1, start_feature.position + 1]
+```
+of course one will want to reverse and complement
+this sequence as well for most purposes, so a handling function is anyways advisable. 
+
 ### Schema summary
 For the fine details, please look at `base/orm.py`; here we will just
 try and describe the overall structure / major pieces, and what they mean.
@@ -177,6 +232,12 @@ originating from a single loci
   * incomplete information about the gene annotation itself
 
 ### specific advantages over alternatives
+Unsurprisingly, GeenuFF does not represent the first attempt
+to encode gene structures; so if you're already familiar 
+with e.g. the gff format and are wondering if we're just 
+adding one more standard to the pile (https://xkcd.com/927/), 
+then the following section explains _why_ we think it's worth it.
+
 Historically, gene annotations have been encoded in some variation
 of the gff format (gtf, gff, gff3), see http://gmod.org/wiki/GFF3. 
 There are a variety of drawbacks to these formats. Some are somewhat
@@ -396,14 +457,6 @@ would be `[coding start, intron start)`. More generally, while transitioning
 5'-3' one can always take the range indicated by `[feature_i.position, feature_i+1.position)`
 and assign to this the status (coding/intronic/UTR/etc...) that was established at feature_i.
 
-###### Caveat
-While more consistent with e.g. python coordinates. GeenuFF coordinates have one major
-difference. They work the same way on the minus strand. So if you wanted to select the
-elements {2, 3} (of [0, 1, 2, 3, 4, ...]). The plus strand would exactly match the pythonic
-coordinates `[2, 4)`, but the negative strand (want {3, 2} would include the start point,
-and not the end `[3, 1)`. Essentially to select the base pairs from the minus strand,
-it would require selecting `[min + 1, max + 1)`; of course one will want to reverse and complement
-this sequence as well for most purposes, so a handling function is anyways advisable. 
 
 #### Extensible
 Finally, with geenuff being based on a relational database, it's much easier

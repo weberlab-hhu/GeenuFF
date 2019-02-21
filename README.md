@@ -53,3 +53,7 @@ cd ../..
 * Add a validation module to check structure of gene models.
 * Add extraction of raw & mature transcript, CDS, and protein sequence as a demo application.
 * Visualization.
+
+## Thanks
+
+To @janinamass for discussion and advice.
