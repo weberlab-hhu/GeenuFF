@@ -44,7 +44,7 @@ vs organellar...)
 ###### coordinates 
 (sequence meta info: seqid, inclusive start, exclusive end)
 
-__Note: should probably add a hash of the sequence or something here too.__
+_Note: should probably add a hash of the sequence or something here too._
 
 #### super_loci and children
 ###### super_loci
@@ -73,8 +73,84 @@ important if trying to encode a partial protein sequence.
 * they have many to many relationship with translateds (mostly to assign the 'protein_id')
 * they have a many to may relationship with transcribed_pieces.
 
-The final bit is critical. Each start (or status_open) piece on a 
+__Feature pairing:__ 
+Features _must_ always delineate a range / come in pairs on a 
+trabscribed_piece. So, where there is a feature of type X with bearing "status_open" or 
+"start", then there must be a feature downstream (3') on the same transcribed_piece,
+of this that is also of type X and is of either bearing "status_close" or "end". 
+Similarly, there may be no feature with the bearing "end" or "status_close" without
+a corresponding feature with the bearing "status_open" or "start" upstream (5') of
+it.  
+
+__Upstream & Downstream Features:__
+These feature subtypes are used to order transcribed_pieces within a transcript. If
+a transcript has multiple transcribed_pieces (e.g. in the case of trans-splicing), 
+two things need to be tended to. First, by the pairing rule above, any status type
+that _started_ on the first piece must have a paired _ending_ feature on the same 
+piece; while on the second piece, any _ending_ feature must have the accompanying 
+_starting_ feature. This means that at the end of the first piece (e.g. the transcription 
+termination site) all other 'open types' (at least "trans_intron" for trans-splicing)
+must be closed, (of bearing "status_close". This closing feature gets the subtype 
+UpstreamFeature, and is linked via the UpDownPair table to a DownstreamFeature. 
+The linked DownstreamFeature has the bearing "status_open" and is located at the 
+start of the next piece (e.g. transcription start site). While a given transcribed_piece
+can have multiple UpstreamFeatures or DownstreamFeatures, it cannot have conflicting 
+information (i.e. all upstream features must be at the same position, and point to a
+downstream features that are on the same position of the same piece). Finally,
+circular links aren't allowed (if Piece A is upstream of Piece B, then Piece B may not,
+directly or indirectly, be upstream of Piece A).
+
+Below is an example of how a non-coding, all + strand, trans-spliced transcript would be encoded.
+```
+# where '~' marks parts of the final transcript, and '.' marks what's spliced out
+Piece A:                                         Piece B:
+5'                          3'                 5'                           3'
+~~~~~~~~....................                   ...................~~~~~~~~~~
+<transcribed>
+^                           ^                  ^                            ^
+start                       end                start                        end
+
+<trans_intron>
+        ^                   ^                  ^                  ^  
+        start               status_close  <->  status_open        end
+
+```
+
+__Feature reading:__
+All features on a transcribed piece must be interpretable when sorted 5' to 3'.
+That includes the pairing mentioned above, as well as some biological considerations
+such as: an intronic (_cis_ or _trans_) range cannot "start" or "end" 
+unless it's in a transcribed region, a 
+coding range can only "start" or "end" inside a transcribed, but non intronic region.
+All features assigned to a transcribed_piece must have the same value for "is_plus_strand".
+Status marking features should occur at the edges of the piece, or be accompanied
+by a range of type "error" to mask the ambiguous area.
+
 ###### translateds
+Each Translated object basically just points to one protein's worth of "coding" 
+type features (and associated transcribed & super_locus),
+and has a given_id attribute.
+
+###### transcribed_pieces
+TranscribedPieces delineate a collection of features that can be interpreted 
+(5'-3') together. In the standard case (_cis_- or no- splicing, full gene model)
+a Transcribed object with have a single TranscribedPiece pointing to all the 
+relevant Features. 
+
+In cases where the Transcribed (final mRNA) is split for either biological or 
+technical reasons, each involved locus should have its own transcribed_piece.
+
+The entire region of a TranscribedPiece should be interpreted as "transcribed";
+that is, the most 5' piece should be of type "transcribed" and bearing
+"start" or "status_open", while the most 3' piece should be of 
+type "transcribed" and bearing "end"
+or "status_closed" (ties are OK and expected for the status bearings).
+
+See above Feature section for further rules on features of a transcribed_piece.
+
+transcribed_pieces have a many2one relationship with transcribeds
+
+###### transcribeds
 
 
 ## Why
