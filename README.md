@@ -14,7 +14,8 @@ We developed this to provide a way of unambiguously encoding gene models,
 (the way the DNA sequence is interpreted to produce proteins) that is both
 robust to partial information and biological complexity.
 
-A more extensive description can be found in `docs/full_description.md`
+A more extensive description can be found in
+`https://weberlab-hhu.github.io/GeenuFF/`
 
 ## Install
 GeenuFF has been tested exclusively (so far) in python3.6

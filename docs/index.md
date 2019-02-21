@@ -1,5 +1,8 @@
 # GeenuFF
 
+## Source & Install
+See github repository: https://github.com/weberlab-hhu/GeenuFF
+
 ## What
 Relational db Schema & Api to store and interpret gene structure
 
@@ -291,6 +294,9 @@ an additional table with a foreign key to the sequences, but required no modific
 of the core format.
 
 ## What (with details)
+
+### Comparison of spec to gff
+https://weberlab-hhu.github.io/GeenuFF/spec_vs_gff.html
 
 ### Coordinate system
 GeenuFF coordinates count from 0, have an inclusive start and exclusive end.
