@@ -151,7 +151,18 @@ See above Feature section for further rules on features of a transcribed_piece.
 transcribed_pieces have a many2one relationship with transcribeds
 
 ###### transcribeds
+Transcribed objects ultimately define what should be interpreted together
+to produce the final biological molecule (e.g. pre-mRNA, mRNA, protein, etc..).
 
+They consist of one or more transcribed_pieces (which can be ordered according)
+to any Upstream / Downstream Features linked by an UpDownPair. The features
+within each transcribed_piece can simply be ordered by coordinates. With pieces
+and their features sorted, a transcript can be read 5'-3' and the information
+of interest (beit the whole transcript range, the spice sites, the start codon, etc..)
+can be extracted as necessary. 
+
+The basic logic for interpreting a transcript is coordinated 
+in `geenuff.base.api.TranscriptInterpBase`.
 
 ## Why
 ### general goal
