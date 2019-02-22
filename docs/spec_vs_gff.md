@@ -9,7 +9,7 @@ bearing (start, end, open_status, close_status, point).
 ##### new types:
 * transcribed: primarily transcription start & termination sites
 * coding: primarily start and stop codon
-* intron / trans intron: primarily donor site, acceptor site
+* intron / trans intron: primarily donor splice site, acceptor splice site
 * error: mark start/end of region where the provided annotation is
 in question.
 
@@ -41,29 +41,14 @@ in question.
 
 #### feature start/end/at numbering
 
-Features, in the final format (import still needs work...),
-have just one coordinate that counts, (at/start).
+Features, have just one coordinate, so two of them are used
+to delineate a range. 
 
-That said, there is more to keep in mind about the positioning 
-of the features. Specifically features essentially come in
-three subtypes (start, status, end; e.g. transcription start site, 
-status in raw transcript, transcription termination site). The 
-positioning of these features is in keeping with the common
+The positioning of these features is in keeping with the common
 coordinate system: count from 0, start inclusive, end exclusive. 
-So, the coding-start, is at the A, of the ATG, AKA the first
-coding base pair; while in contrast, the coding-stop is
+So, the "coding, start", is at the A, of the ATG, AKA the first
+coding base pair; while in contrast, the "coding, end" is
 after the stop-codon, AKA, the first non-coding bp.
-
-The statuses are used when for either a biological or a technical
-reason, a transcript is split across two sequences or when 
-part of the transcript is unknown (in an erroneous region).
-When a single status is present (e.g. due to limited knowledge of 
-true sequence/features), then it's positioning can be set to match 
-as well as possible what is know. When, however, they are set as 
-an UpDownPair at an artificial split, then they to should be 
-considered start/end features, and essentially indicate a single bp at which
-the status was noted. That is start (inclusively) on the last base pair on
-sequence0, and end (exclusively) on the first bp of sequence1. 
 
 ##### reverse complement
 
@@ -107,7 +92,7 @@ Plus strand (+)
 | TSS, Transcription start site      | start 1st exon  |x| |transcribed|start|x - 1|
 | TTS, Transcription termination site| end last exon   | |x|transcribed|end  |x    |
 | 1st bp of start codon              | start 1st CDS   |x| |coding     |start|x - 1|
-| last bp of stop codon              | end last CDS    | |x|coding     |end  |x    |
+| coding end                         | end last CDS    | |x|coding     |end  |x    |
 | donor splice site (5' of intron)   |end non-last exon| |x|intron     |start|x    |
 | acceptor splice site (3' of intron)|start 2nd+ exon  |x| |intron     |end  |x - 1|
 
@@ -119,7 +104,7 @@ Minus strand (-)
 | TSS, Transcription start site      | end last exon   | |x|transcribed|start|x - 1|
 | TTS, Transcription termination site| start 1st exon  |x| |transcribed|end  |x - 2|
 | 1st bp of start codon              | end last CDS    | |x|coding     |start|x - 1|
-| last bp of stop codon              | start 1st CDS   |x| |coding     |end  |x - 2|
+| coding end                         | start 1st CDS   |x| |coding     |end  |x - 2|
 | donor splice site (5' of intron)   |start 2nd+ exon  |x| |intron     |start|x - 2|
 | acceptor splice site (3' of intron)|end non-last exon| |x|intron     |end  |x - 1|
 

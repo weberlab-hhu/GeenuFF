@@ -154,10 +154,14 @@ we know we are missing the first exon, we can do so as follows.
 # before (perhaps we don't know for sure if this is an intron or an assembly
 # error); we can use the error channel (type) to indicate our uncertainty
 <error>
-[        )
-^        ^
-start    end
+[         )
+^         ^
+start     end
 ```
+Note that any error masks must overlap, not just touch, the transcribed
+region. While a technical rule, this is generally desirable as one would usually
+want to mask the status marker itself (as a non-biological transition) 
+and just use the region it defines. 
 
 #### Gff-like miss assignment of attributes and relations
 Ultimately a gff-like encoded gene model tries to map biology
@@ -299,6 +303,7 @@ of the core format.
 ## What (with details)
 
 ### Comparison of spec to gff
+Quick start / reference for 1:1 comparison with gff:
 [spec_vs_gff.html](spec_vs_gff.html)
 
 ### Coordinate system
@@ -433,6 +438,13 @@ start                       end                start                        end
         start               status_close  <->  status_open        end
 
 ```
+
+Note that these upstream / downstream features pairs should be positioned so as
+to include all the transcribed bases, and exclude all intergenic bases. So the 
+upstream feature matches either the "transcribed" ending feature, 
+or is positioned 1bp downstream of the end of the sequence. The downstream
+feature matches in turn either the "transcribed" starting feature 
+or is positioned at the first bp of the downstream sequence.
 
 __Feature reading:__
 All features on a transcribed piece must be interpretable when sorted 5' to 3'.
