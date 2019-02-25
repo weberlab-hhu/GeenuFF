@@ -1050,6 +1050,7 @@ def test_check_and_fix_structure():
     # check we get a protein with start and stop codon for the nice transcript
     assert len(protein.features) == 2  # start and stop codon
     assert set([x.type.value for x in protein.features]) == {types.CODING}
+    assert set([x.position for x in protein.features]) == {10, 300}
     assert set([x.bearing.value for x in protein.features]) == {types.START, types.END}
     # check we get a transcript with tss, 2x(dss, ass), and tts (+ start & stop codons)
     piece = transcript.handler.one_piece().data
@@ -1066,6 +1067,7 @@ def test_check_and_fix_structure():
     print(protein.features)
     assert len(protein.features) == 2
     assert set([x.type.value for x in protein.features]) == {types.CODING}
+    assert set([x.position for x in protein.features]) == {10, 120}
     assert set([x.bearing.value for x in protein.features]) == {types.START, types.CLOSE_STATUS}
 
     assert len(piece.features) == 8
@@ -1078,6 +1080,7 @@ def test_check_and_fix_structure():
     transcribed_fs = [x for x in piece.features if x.type.value == types.TRANSCRIBED]
     assert len(transcribed_fs) == 2
     assert set([x.bearing.value for x in transcribed_fs]) == {types.START, types.CLOSE_STATUS}
+    assert set([x.position for x in transcribed_fs]) == {0, 120}
 
     assert len(sl.data.translateds) == 3
     controller.session.commit()
