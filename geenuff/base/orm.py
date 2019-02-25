@@ -40,6 +40,7 @@ class Coordinates(Base):
     start = Column(Integer, nullable=False)
     end = Column(Integer, nullable=False)
     seqid = Column(String, nullable=False)
+    sha1 = Column(String)
     sequence_info_id = Column(Integer, ForeignKey('sequence_infos.id'))
     sequence_info = relationship('SequenceInfo', back_populates='coordinates')
 

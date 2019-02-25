@@ -769,13 +769,14 @@ def test_possible_types():
 def test_import_seqinfo():
     controller = gffimporter.ImportControl(database_path='sqlite:///:memory:')
     controller.mk_session()
-    json_path = 'testdata/dummyloci.fa'
-    controller.add_sequences(json_path)
+    seq_path = 'testdata/dummyloci.fa'
+    controller.add_sequences(seq_path)
     coors = controller.sequence_info.data.coordinates
     assert len(coors) == 1
     assert coors[0].seqid == '1'
     assert coors[0].start == 0
     assert coors[0].end == 405
+    assert coors[0].sha1 == 'dc6f3ba2b0c08f7d08053837b810f86cbaa06f38'  # sha1 for 'N' * 405
 
 
 def test_fullcopy():
@@ -1035,12 +1036,10 @@ def test_mv_features_to_prot():
 
 
 def test_check_and_fix_structure():
-    rel_path = 'testdata/dummyloci_annotations.sqlitedb'  # so we save a copy of the cleaned up loci once
+    rel_path = 'testdata/dummyloci_annotations.sqlitedb'  # so we save a copy of the cleaned up loci once per test run
+    db_path = 'sqlite:///{}'.format(rel_path)
     if os.path.exists(rel_path):
-        #os.remove(rel_path)
-        db_path = 'sqlite:///:memory:'
-    else:
-        db_path = 'sqlite:///{}'.format(rel_path)
+        os.remove(rel_path)
     sl, controller = setup_testable_super_loci(db_path)
     coordinates = controller.sequence_info.data.coordinates[0]
     sl.check_and_fix_structure(controller.session, coordinates=coordinates)
@@ -1081,7 +1080,6 @@ def test_check_and_fix_structure():
 
     assert len(sl.data.translateds) == 3
     controller.session.commit()
-
 
 
 def test_erroneous_splice():

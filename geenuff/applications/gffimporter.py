@@ -7,6 +7,7 @@ from .. import helpers
 
 import copy
 import logging
+import hashlib
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -127,29 +128,6 @@ class ImportControl(object):
         for sl in self.super_loci:
             coordinates = self.sequence_info.gffid_to_coords[sl.gffentry.seqid]
             sl.check_and_fix_structure(self.session, coordinates)
-#    def add_gff(self, gff_file, genome, err_file='trans_splicing.txt'):
-#        err_handle = open(err_file, 'w')
-#        self._add_sequences(genome)
-#
-#        gff_seq_ids = helpers.get_seqids_from_gff(gff_file)
-#        mapper, is_forward = helpers.two_way_key_match(self.seq_info.keys(), gff_seq_ids)
-#        self.mapper = mapper
-#
-#        if not is_forward:
-#            raise NotImplementedError("Still need to implement backward match if fasta IDs are subset of gff IDs")
-#
-#        for entry_group in self.group_gff_by_gene(gff_file):
-#            new_sl = SuperLocus()
-#            new_sl.slice = self
-#            new_sl.add_gff_entry_group(entry_group, err_handle)
-#
-#            self.super_loci.append(new_sl)
-#            if not new_sl.transcripts and not new_sl.features:
-#                print('{} from {} with {} transcripts and {} features'.format(new_sl.id,
-#                                                                              entry_group[0].source,
-#                                                                              len(new_sl.transcripts),
-#                                                                              len(new_sl.features)))
-#        err_handle.close()
 
 
 def in_values(x, enum):
@@ -208,8 +186,15 @@ class SequenceInfoHandler(api.SequenceInfoHandler):
         for fasta_header, seq in fp.read_fasta(seq_file):
             seqid = fasta_header.split(id_delim)[0]
             # todo, parallelize sequence & annotation format, then import directly from sequence_info (~Slice)
-            orm.Coordinates(seqid=seqid, start=0,
+            orm.Coordinates(seqid=seqid, start=0, sha1=self.hashseq(seq),
                             end=len(seq), sequence_info=self.data)
+
+    @staticmethod
+    def hashseq(seq):
+        m = hashlib.sha1()
+        m.update(seq.encode())
+        return m.hexdigest()
+
 
 ##### gff parsing subclasses #####
 class GFFDerived(object):
@@ -243,19 +228,6 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
                               given_id=gffentry.get_ID())
         self.add_data(data)
         # todo, grab more aliases from gff attribute
-
-#    def dummy_transcript(self):
-#        if self._dummy_transcript is not None:
-#            return self._dummy_transcript
-#        else:
-#            # setup new blank transcript
-#            transcript = FeatureHolder()
-#            transcript.id = self.genome.transcript_ider.next_unique_id()  # add an id
-#            transcript.super_locus = self
-#            self._dummy_transcript = transcript  # save to be returned by next call of dummy_transcript
-#            self.generic_holders[transcript.id] = transcript  # save into main dict of transcripts
-#            return transcript
-#
 
     def add_gff_entry(self, entry, sequence_info):
         exceptions = entry.attrib_filter(tag="exception")
@@ -305,12 +277,6 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
             self._mark_erroneous(entries[0], coordinates, str(e))
             # todo, log to file
 
-#    @staticmethod
-#    def one_parent(entry):
-#        parents = entry.get_Parent()
-#        assert len(parents) == 1
-#        return parents[0]
-#
     def _mark_erroneous(self, entry, coordinates, msg=''):
         assert entry.type in [x.value for x in types.SuperLocusAll]
         logging.warning(
