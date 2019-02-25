@@ -99,12 +99,13 @@ class ImportControl(object):
         if self.annotated_genome is None:
             self.make_anno_genome()
 
+        self._setup_sequence_info()
+        self.sequence_info.add_sequences(seq_path)
+
+    def _setup_sequence_info(self):
         self.sequence_info = SequenceInfoHandler()
         seq_info = orm.SequenceInfo(annotated_genome=self.annotated_genome.data)
         self.sequence_info.add_data(seq_info)
-
-        self.sequence_info.add_data(seq_info)
-        self.sequence_info.add_sequences(seq_path)
 
     def add_gff(self, gff_file):
         # final prepping of seqid match up
