@@ -12,7 +12,7 @@ from .. import orm
 from .. import api
 from ..applications import gffimporter
 from .. import types
-
+from .. import helpers
 
 # section: annotations_orm
 def mk_session(db_path='sqlite:///:memory:'):
@@ -1156,3 +1156,53 @@ def test_enum_non_inheritance():
 def test_enums_name_val_match():
     for x in types.AllKnown:
         assert x.name == x.value
+
+# section: helpers
+def test_key_matching():
+    # identical
+    known = {'a', 'b', 'c'}
+    mapper, is_forward = helpers.two_way_key_match(known, known)
+    assert is_forward
+    assert mapper('a') == 'a'
+    assert isinstance(mapper, helpers.CheckMapper)
+    with pytest.raises(KeyError):
+        mapper('d')
+
+    # subset, should behave as before
+    mapper, is_forward = helpers.two_way_key_match(known, {'c'})
+    assert is_forward
+    assert mapper('a') == 'a'
+    assert isinstance(mapper, helpers.CheckMapper)
+    with pytest.raises(KeyError):
+        mapper('d')
+
+    # superset, should flip ordering
+    mapper, is_forward = helpers.two_way_key_match({'c'}, known)
+    assert not is_forward
+    assert mapper('a') == 'a'
+    assert isinstance(mapper, helpers.CheckMapper)
+    with pytest.raises(KeyError):
+        mapper('d')
+
+    # other is abbreviated from known
+    set1 = {'a.seq', 'b.seq', 'c.seq'}
+    set2 = {'a', 'b', 'c'}
+    mapper, is_forward = helpers.two_way_key_match(set1, set2)
+    assert is_forward
+    assert mapper('a') == 'a.seq'
+    assert isinstance(mapper, helpers.DictMapper)
+    with pytest.raises(KeyError):
+        mapper('d')
+
+    # cannot be safely differentiated
+    set1 = {'ab.seq', 'ba.seq', 'c.seq', 'a.seq', 'b.seq'}
+    set2 = {'a', 'b', 'c'}
+    with pytest.raises(helpers.NonMatchableIDs):
+        mapper, is_forward = helpers.two_way_key_match(set1, set2)
+        print(mapper.key_vals)
+
+
+def test_gff_to_seqids():
+    x = helpers.get_seqids_from_gff('testdata/testerSl.gff3')
+    assert x == {'NC_015438.2', 'NC_015439.2', 'NC_015440.2'}
+
