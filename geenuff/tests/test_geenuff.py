@@ -832,8 +832,8 @@ def test_transcript_interpreter():
     bearings_out = set([x.data.bearing.value for x in t_interp.clean_features])
     assert bearings_out == {types.START, types.END}
 
-    assert t_interp.clean_features[-1].data.start == 400
-    assert t_interp.clean_features[0].data.start == 0
+    assert t_interp.clean_features[-1].data.position == 400
+    assert t_interp.clean_features[0].data.position == 0
 
 
 def test_transcript_get_first():
@@ -850,7 +850,7 @@ def test_transcript_get_first():
     print(f0)
     print(status.__dict__)
     print(i0[0].data.data.is_plus_strand)
-    assert f0.data.start == 0
+    assert f0.data.position == 0
     assert status.is_5p_utr()
     assert f0.data.phase is None
     assert f0.data.is_plus_strand
@@ -873,7 +873,7 @@ def test_transcript_get_first():
     print(status)
     print(i0[0].data.data.is_plus_strand)
     print(f0.data.type)
-    assert f0.data.start == 399
+    assert f0.data.position == 399
     assert status.is_5p_utr()
     assert f0.data.phase is None
     assert not f0.data.is_plus_strand
@@ -894,7 +894,7 @@ def test_transcript_get_first():
     print(status)
     print(i0)
     # should get in_translated_region instead of a start codon
-    assert f_status_coding.data.start == 119
+    assert f_status_coding.data.position == 119
     assert f_status_coding.data.type == types.CODING
     assert f_status_coding.data.bearing == types.OPEN_STATUS
     assert not f_status_coding.data.is_plus_strand
@@ -903,8 +903,8 @@ def test_transcript_get_first():
     assert f_status_coding.data.bearing == types.OPEN_STATUS
     # region beyond exon should be marked erroneous
     assert not f_err_close.data.is_plus_strand and not f_err_open.data.is_plus_strand
-    assert f_err_close.data.start == 118  # so that err overlaps 1bp with the coding status checked above
-    assert f_err_open.data.start == 404
+    assert f_err_close.data.position == 118  # so that err overlaps 1bp with the coding status checked above
+    assert f_err_open.data.position == 404
     assert f_err_open.data.type == types.ERROR
     assert f_err_open.data.bearing == types.START
     assert f_err_close.data.type == types.ERROR
@@ -925,15 +925,15 @@ def test_transcript_transition_from_5p_to_end():
     features = t_interp.clean_features
     assert features[-1].data.type == types.CODING
     assert features[-1].data.bearing == types.START
-    assert features[-1].data.start == 10
+    assert features[-1].data.position == 10
     # hit splice site
     t_interp.interpret_transition(ivals_before=ivals_sets[1], ivals_after=ivals_sets[2], plus_strand=True)
     assert features[-1].data.type == types.INTRON
     assert features[-1].data.bearing == types.END
     assert features[-2].data.type == types.INTRON
     assert features[-2].data.bearing == types.START
-    assert features[-2].data.start == 100  # splice from
-    assert features[-1].data.start == 110  # splice to
+    assert features[-2].data.position == 100  # splice from
+    assert features[-1].data.position == 110  # splice to
     assert t_interp.status.is_coding()
     # hit splice site
     t_interp.interpret_transition(ivals_before=ivals_sets[2], ivals_after=ivals_sets[3], plus_strand=True)
@@ -941,18 +941,18 @@ def test_transcript_transition_from_5p_to_end():
     assert features[-1].data.bearing == types.END
     assert features[-2].data.type == types.INTRON
     assert features[-2].data.bearing == types.START
-    assert features[-2].data.start == 120  # splice from
-    assert features[-1].data.start == 200  # splice to
+    assert features[-2].data.position == 120  # splice from
+    assert features[-1].data.position == 200  # splice to
     # hit stop codon
     t_interp.interpret_transition(ivals_before=ivals_sets[3], ivals_after=ivals_sets[4], plus_strand=True)
     assert features[-1].data.type == types.CODING
     assert features[-1].data.bearing == types.END
-    assert features[-1].data.start == 300
+    assert features[-1].data.position == 300
     # hit transcription termination site
     t_interp.interpret_last_pos(ivals_sets[4], plus_strand=True)
     assert features[-1].data.type == types.TRANSCRIBED
     assert features[-1].data.bearing == types.END
-    assert features[-1].data.start == 400
+    assert features[-1].data.position == 400
 
 
 def test_non_coding_transitions():
@@ -970,11 +970,11 @@ def test_non_coding_transitions():
     features = t_interp.clean_features
     assert features[-1].data.type == types.TRANSCRIBED
     assert features[-1].data.bearing == types.START
-    assert features[-1].data.start == 110
+    assert features[-1].data.position == 110
     t_interp.interpret_last_pos(ivals_sets[0], plus_strand=True)
     assert features[-1].data.type == types.TRANSCRIBED
     assert features[-1].data.bearing == types.END
-    assert features[-1].data.start == 120
+    assert features[-1].data.position == 120
     assert len(features) == 2
 
 
@@ -1042,6 +1042,7 @@ def test_check_and_fix_structure():
         os.remove(rel_path)
     sl, controller = setup_testable_super_loci(db_path)
     coordinates = controller.sequence_info.data.coordinates[0]
+
     sl.check_and_fix_structure(controller.session, coordinates=coordinates)
     # check handling of nice transcript
     transcript = [x for x in sl.data.transcribeds if x.given_id == 'y'][0]
@@ -1105,10 +1106,11 @@ def test_erroneous_splice():
     # make sure splice error covers whole exon-intron-exon region
     assert clean_datas[2].type == types.ERROR
     assert clean_datas[2].bearing == types.START
-    assert clean_datas[2].start == 10
+    assert clean_datas[2].position == 10
     assert clean_datas[3].type == types.ERROR
     assert clean_datas[3].bearing == types.END
-    assert clean_datas[3].start == 120
+    assert clean_datas[3].position == 120
+    sess.commit()
 
 
 def test_gff_gen():

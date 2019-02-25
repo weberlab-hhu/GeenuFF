@@ -733,7 +733,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             at = template.upstream_from_interval(after0)
             if template.data.phase == 0:  # "non-0 phase @ {} in {}".format(template.id, template.super_locus.id)
                 start = at
-                start_codon = self.new_feature(template=template, start=start, type=types.CODING,
+                start_codon = self.new_feature(template=template, position=start, type=types.CODING,
                                                bearing=types.START)
                 self.status.saw_start(phase=0)
                 self.clean_features.append(start_codon)
@@ -741,13 +741,13 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                 err_start = before0.data.upstream_from_interval(before0) - sign * error_buffer  # mask prev feat. too
                 err_end = at + sign  # so that the error masks the coordinate with the close status
 
-                feature_err_open = self.new_feature(template=template, type=types.ERROR, start=err_start,
+                feature_err_open = self.new_feature(template=template, type=types.ERROR, position=err_start,
                                                     phase=None, bearing=types.START)
-                feature_err_close = self.new_feature(template=template, type=types.ERROR, start=err_end,
+                feature_err_close = self.new_feature(template=template, type=types.ERROR, position=err_end,
                                                      phase=None, bearing=types.END)
-                coding_status = self.new_feature(template=template, type=types.CODING, start=at,
+                coding_status = self.new_feature(template=template, type=types.CODING, position=at,
                                                  bearing=types.OPEN_STATUS)
-                transcribed_status = self.new_feature(template=template, type=types.TRANSCRIBED, start=at,
+                transcribed_status = self.new_feature(template=template, type=types.TRANSCRIBED, position=at,
                                                       phase=None, bearing=types.OPEN_STATUS)
                 self.status.saw_start(template.phase)
                 self.clean_features += [feature_err_open, feature_err_close, coding_status, transcribed_status]
@@ -756,7 +756,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             template = before0.data
             at = template.downstream_from_interval(before0)
             start = end = at
-            stop_codon = self.new_feature(template=template, start=start, end=end, type=types.CODING,
+            stop_codon = self.new_feature(template=template, position=start, end=end, type=types.CODING,
                                           bearing=types.END)
             self.status.saw_stop()
             self.clean_features.append(stop_codon)
@@ -783,9 +783,9 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         between_splice_sites = (acceptor_at - donor_at) * sign
         min_intron_len = 3  # todo, maybe get something small but not entirely impossible?
         if between_splice_sites > min_intron_len:
-            donor = self.new_feature(template=donor_tmplt, start=donor_at, phase=None,
+            donor = self.new_feature(template=donor_tmplt, position=donor_at, phase=None,
                                      type=types.INTRON, bearing=types.START)
-            acceptor = self.new_feature(template=acceptor_tmplt, start=acceptor_at,
+            acceptor = self.new_feature(template=acceptor_tmplt, position=acceptor_at,
                                         type=types.INTRON, bearing=types.END)
             self.clean_features += [donor, acceptor]
         # do nothing if there is just no gap between exons for a technical / reporting error
@@ -801,9 +801,9 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                 err_start = donor_tmplt.upstream() - 1  # to fr 0
                 err_end = acceptor_tmplt.downstream() - 2  # -1 to fr 0, -1 to excl = -2
 
-            feature_err_open = self.new_feature(template=before0.data, start=err_start,
+            feature_err_open = self.new_feature(template=before0.data, position=err_start,
                                                 type=types.ERROR, bearing=types.START)
-            feature_err_close = self.new_feature(template=before0.data, start=err_end,
+            feature_err_close = self.new_feature(template=before0.data, position=err_end,
                                                  type=types.ERROR, bearing=types.END)
 
             self.clean_features += [feature_err_open, feature_err_close]
@@ -817,16 +817,16 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         possible_types = self.possible_types(intervals)
         if types.FIVE_PRIME_UTR in possible_types:
             # this should indicate we're good to go and have a transcription start site
-            tss = self.new_feature(template=i0.data, type=types.TRANSCRIBED, start=at,
+            tss = self.new_feature(template=i0.data, type=types.TRANSCRIBED, position=at,
                                    phase=None, bearing=types.START)
             self.clean_features.append(tss)
             self.status.saw_tss()
         elif cds in possible_types:
             # this could be first exon detected or start codon, ultimately, indeterminate
             cds_feature = self.pick_one_interval(intervals, target_type=cds).data
-            coding = self.new_feature(template=cds_feature, type=types.CODING, start=at,
+            coding = self.new_feature(template=cds_feature, type=types.CODING, position=at,
                                       bearing=types.OPEN_STATUS)
-            transcribed = self.new_feature(template=cds_feature, type=types.TRANSCRIBED, start=at,
+            transcribed = self.new_feature(template=cds_feature, type=types.TRANSCRIBED, position=at,
                                            bearing=types.OPEN_STATUS)
             self.clean_features += [coding, transcribed]
             self.status.saw_start(phase=coding.data.phase)
@@ -840,10 +840,10 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                     err_end = at + 1  # so that the error masks the coordinate with the close status
                     feature_err_open = self.new_feature(template=cds_feature, type=types.ERROR,
                                                         bearing=types.START,
-                                                        start=err_start, phase=None)
+                                                        position=err_start, phase=None)
                     feature_err_close = self.new_feature(template=cds_feature, type=types.ERROR,
                                                          bearing=types.END,
-                                                         start=err_end, phase=None)
+                                                         position=err_end, phase=None)
                     self.clean_features.insert(0, feature_err_close)
                     self.clean_features.insert(0, feature_err_open)
             else:
@@ -853,10 +853,10 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                     err_end = at - 1  # so that the error masks the coordinate with the close status
                     feature_err_open = self.new_feature(template=cds_feature, type=types.ERROR,
                                                         bearing=types.START,
-                                                        start=err_start, phase=None)
+                                                        position=err_start, phase=None)
                     feature_err_close = self.new_feature(template=cds_feature, type=types.ERROR,
                                                          bearing=types.END,
-                                                         start=err_end, phase=None)
+                                                         position=err_end, phase=None)
                     self.clean_features.insert(0, feature_err_close)
                     self.clean_features.insert(0, feature_err_open)
         else:
@@ -869,16 +869,16 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         possible_types = self.possible_types(intervals)
         if types.THREE_PRIME_UTR in possible_types:
             # this should be transcription termination site
-            tts = self.new_feature(template=i0.data, type=types.TRANSCRIBED, bearing=types.END, start=at,
+            tts = self.new_feature(template=i0.data, type=types.TRANSCRIBED, bearing=types.END, position=at,
                                    phase=None)
             self.clean_features.append(tts)
             self.status.saw_tts()
         elif types.CDS in possible_types:
             # may or may not be stop codon, but will just mark as error (unless at edge of sequence)
             cds_feature = self.pick_one_interval(intervals, target_type=types.CDS).data
-            coding = self.new_feature(template=cds_feature, type=types.CODING, start=at,
+            coding = self.new_feature(template=cds_feature, type=types.CODING, position=at,
                                       bearing=types.CLOSE_STATUS)
-            transcribed = self.new_feature(template=cds_feature, type=types.TRANSCRIBED, start=at,
+            transcribed = self.new_feature(template=cds_feature, type=types.TRANSCRIBED, position=at,
                                            bearing=types.CLOSE_STATUS)
             self.clean_features += [coding, transcribed]
             self.status.saw_start(phase=coding.data.phase)
@@ -890,10 +890,10 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                 if at != end_of_sequence:
                     err_start = at - 1  # so that the error masks the coordinate with the open status
                     err_end = min(at + error_buffer, end_of_sequence)
-                    feature_err_open = self.new_feature(template=i0.data, type=types.ERROR, start=err_start,
+                    feature_err_open = self.new_feature(template=i0.data, type=types.ERROR, position=err_start,
                                                         phase=None, bearing=types.START)
                     print('just set err_start at {}'.format(err_start))
-                    feature_err_close = self.new_feature(template=i0.data, type=types.ERROR, start=err_end,
+                    feature_err_close = self.new_feature(template=i0.data, type=types.ERROR, position=err_end,
                                                          phase=None, bearing=types.END)
                     self.clean_features += [feature_err_open, feature_err_close]
             else:
@@ -901,9 +901,9 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                     err_start = at + 1  # so that the error masks the coordinate with the open status
                     err_end = max(start_of_sequence, at - error_buffer)
                     feature_err_open = self.new_feature(template=i0.data, type=types.ERROR,
-                                                        phase=None, start=err_start, bearing=types.START)
+                                                        phase=None, position=err_start, bearing=types.START)
                     feature_err_close = self.new_feature(template=i0.data, type=types.ERROR,
-                                                         phase=None, start=err_end, bearing=types.END)
+                                                         phase=None, position=err_end, bearing=types.END)
                     self.clean_features += [feature_err_open, feature_err_close]
         else:
             raise ValueError("why's this gene not end with 3' utr/exon nor cds? types: {}, interpretations: {}".format(
