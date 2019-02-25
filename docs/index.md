@@ -365,9 +365,8 @@ These _mostly_ hold meta information
 within genome sequences for any processing reasons; e.g. denote what's nuclear
 vs organellar...)
 ###### coordinates 
-(sequence meta info: seqid, inclusive start, exclusive end)
-
-_Note: should probably add a hash of the sequence or something here too._
+(sequence meta info: seqid, inclusive start, exclusive end, 
+sha1 hash of the sequence the annotation is for)
 
 #### super_loci and children
 ###### super_loci
