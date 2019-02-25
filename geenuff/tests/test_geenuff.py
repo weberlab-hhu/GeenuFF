@@ -1136,3 +1136,23 @@ def test_gff_grouper():
     for group in x:
         assert group[0].type == 'gene'
 
+# section: types
+def test_enum_non_inheritance():
+    allknown = [x.name for x in list(types.AllKnown)]
+    allnice = [x.name for x in list(types.AllKeepable)]
+    # check that some random bits made it in to all
+    assert 'error' in allknown
+    assert 'region' in allknown
+
+    # check that some annoying bits are not in nice set
+    for not_nice in ['transcript', 'primary_transcript', 'exon', 'five_prime_UTR', 'CDS']:
+        assert not_nice not in allnice
+        assert not_nice in allknown
+
+    # check nothing is there twice
+    assert len(set(allknown)) == len(allknown)
+
+
+def test_enums_name_val_match():
+    for x in types.AllKnown:
+        assert x.name == x.value
