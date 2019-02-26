@@ -281,7 +281,7 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
     def _mark_erroneous(self, entry, coordinates, msg=''):
         assert entry.type in [x.value for x in types.SuperLocusAll]
         logging.warning(
-            '{species}:{seqid}, {start}-{end}:{gene_id} by {src}, {msg} - marking erroneous'.format(
+            '{species}:{seqid}, {start}-{end}:{gene_id} by {src}, {msg} - marked erroneous'.format(
                 src=entry.source, species="todo", seqid=entry.seqid, start=entry.start,
                 end=entry.end, gene_id=self.data.given_id, msg=msg
             ))
@@ -303,13 +303,13 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
         # open error
         feature_err_open = FeatureHandler()
         feature_err_open.process_gffentry(entry, super_locus=self.data, coordinates=coordinates)
-        for key, val in [('type', types.ERROR), ('bearing', types.START), ('start', err_start),
-                         ('end', err_start), ('transcribed_pieces', [piece])]:
+        for key, val in [('type', types.ERROR), ('bearing', types.START), ('position', err_start),
+                         ('transcribed_pieces', [piece])]:
             feature_err_open.set_data_attribute(key, val)
         # close error
         feature_err_close = FeatureHandler()
         feature_err_close.process_gffentry(entry, super_locus=self.data, coordinates=coordinates)
-        for key, val in [('type', types.ERROR), ('bearing', types.END), ('start', err_end), ('end', err_end),
+        for key, val in [('type', types.ERROR), ('bearing', types.END), ('position', err_end),
                          ('transcribed_pieces', [piece])]:
             feature_err_close.set_data_attribute(key, val)
         # sf.gen_data_from_gffentry(entry, super_locus=self.data)
@@ -322,6 +322,7 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
         # if it's empty (no bottom level features at all) mark as erroneous
         if not self.data.features:
             self._mark_erroneous(self.gffentry, coordinates=coordinates)
+            sess.commit()
 
         for transcript in self.data.transcribeds:
             piece = transcript.handler.one_piece().data
@@ -476,7 +477,6 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
     def __init__(self, transcript):
         super().__init__(transcript)
         self.clean_features = []  # will hold all the 'fixed' feature handlers (convenience? or can remove?)
-        self.transcript = transcript
         try:
             self.proteins = self._setup_proteins()
         except NoGFFEntryError:
@@ -531,9 +531,15 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         protein_ids = set()
         for piece in self.transcript.data.transcribed_pieces:
             for feature in piece.features:
-                if feature.type.value == types.CDS:
-                    protein_id = self._get_protein_id_from_cds(feature.handler)
-                    protein_ids.add(protein_id)
+                try:
+                    if feature.type.value == types.CDS:
+                        protein_id = self._get_protein_id_from_cds(feature.handler)
+                        protein_ids.add(protein_id)
+                except AttributeError as e:
+                    print('failing here.........')
+                    print(len(piece.features))
+                    print(piece.features)
+                    raise e
         return protein_ids
 
     def _setup_proteins(self):
