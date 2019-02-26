@@ -116,7 +116,7 @@ class ImportControl(object):
 
         super_loci = []
         err_handle = open(self.err_path, 'w')
-        i = 0
+        i = 1
         for entry_group in self.group_gff_by_gene(gff_file):
             super_locus = SuperLocusHandler()
             if self.sequence_info is None:
@@ -125,6 +125,7 @@ class ImportControl(object):
             if clean:
                 super_locus.add_n_clean_gff_entry_group(entry_group, err_handle, sequence_info=self.sequence_info.data,
                                                         session=self.session, controller=self)
+                print('right after clean...', self.feature2protein_to_add)
             else:
                 super_locus.add_gff_entry_group(entry_group, err_handle, sequence_info=self.sequence_info.data)
             self.session.add(super_locus.data)
@@ -132,12 +133,14 @@ class ImportControl(object):
             super_loci.append(super_locus)  # just to keep some direct python link to this
             if not i % 500:
                 self.execute_so_far()
+            i += 1
         self.super_loci = super_loci
         self.execute_so_far()
         err_handle.close()
 
     def execute_so_far(self):
         conn = self.engine.connect()
+        print('adding --\/\n', self.feature2protein_to_add)
         conn.execute(orm.association_translateds_to_features.insert(),
                      self.feature2protein_to_add)
         self.feature2protein_to_add = []
@@ -359,6 +362,7 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
                 # make new features
                 t_interpreter.decode_raw_features()
                 # make sure the new features link to protein if appropriate
+                sess.commit()
                 t_interpreter.mv_coding_features_to_proteins(controller.feature2protein_to_add)
         # remove old features
         self.delete_marked_underlings(sess)
@@ -588,7 +592,8 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                 pid = self._get_protein_id_from_cds(feature)
                 protdata = self.proteins[pid].data
                 newlink = {'translated_id': protdata.id, 'feature_id': feature.data.id}
-                print(newlink)
+                if feature.data.id is None:
+                    raise ValueError('{} has no id'.format(feature.data))
                 feature2translated_to_add.append(newlink)
 
     def is_plus_strand(self):

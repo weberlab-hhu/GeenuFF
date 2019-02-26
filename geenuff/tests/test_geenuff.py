@@ -1027,16 +1027,10 @@ def test_mv_features_to_prot():
     controller.session.commit()
     transcript = [x for x in sl.data.transcribeds if x.given_id == 'y'][0]
     t_interp = gffimporter.TranscriptInterpreter(transcript.handler)
-    protein = t_interp.proteins['y.p'].data
-    proteins = controller.session.query(orm.Translated).all()
-    print(proteins, '\n^-- proteins')
-    print([p.id for p in proteins])
-    print(protein.id, 'protein id at start')
-    conn = controller.engine.connect()
-    # todo, going from TUESDAY, whyyyyyyyyy?
-    conn.execute(orm.association_translateds_to_features.insert(), [{'translated_id': 1, 'feature_id': 14}])
+
     t_interp.decode_raw_features()
     t_interp.mv_coding_features_to_proteins(controller.feature2protein_to_add)
+    controller.execute_so_far()
     controller.session.commit()
     # grab protein again jic
     protein = controller.session.query(orm.Translated).filter(orm.Translated.given_id == 'y.p').all()
@@ -1056,8 +1050,9 @@ def test_check_and_fix_structure():
         os.remove(rel_path)
     sl, controller = setup_testable_super_loci(db_path)
     coordinates = controller.sequence_info.data.coordinates[0]
-
+    #todo WEDS, what's up with the indeterminant behaviour?
     sl.check_and_fix_structure(controller.session, coordinates=coordinates, controller=controller)
+    controller.execute_so_far()
     # check handling of nice transcript
     transcript = [x for x in sl.data.transcribeds if x.given_id == 'y'][0]
     #protein = [x for x in sl.data.translateds if x.given_id == 'y.p'][0]
@@ -1104,7 +1099,7 @@ def test_check_and_fix_structure():
 
     assert len(sl.data.translateds) == 3
     controller.session.commit()
-
+    assert False
 
 def test_erroneous_splice():
     db_path = 'sqlite:///:memory:'
