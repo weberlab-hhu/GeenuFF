@@ -107,7 +107,7 @@ class ImportControl(object):
         seq_info = orm.SequenceInfo(annotated_genome=self.annotated_genome.data)
         self.sequence_info.add_data(seq_info)
 
-    def add_gff(self, gff_file):
+    def add_gff(self, gff_file, clean=True):
         # final prepping of seqid match up
         self.sequence_info.mk_mapper(gff_file)
 
@@ -118,7 +118,11 @@ class ImportControl(object):
             if self.sequence_info is None:
                 raise AttributeError(
                     ' sequence_info cannot be None when .add_gff is called, use (self.add_sequences(...)')
-            super_locus.add_gff_entry_group(entry_group, err_handle, sequence_info=self.sequence_info.data)
+            if clean:
+                super_locus.add_n_clean_gff_entry_group(entry_group, err_handle, sequence_info=self.sequence_info.data,
+                                                        session=self.session)
+            else:
+                super_locus.add_gff_entry_group(entry_group, err_handle, sequence_info=self.sequence_info.data)
             self.session.add(super_locus.data)
             self.session.commit()
             super_loci.append(super_locus)  # just to keep some direct python link to this
@@ -277,6 +281,11 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
             coordinates = sequence_info.handler.gffid_to_coords[entries[0].seqid]
             self._mark_erroneous(entries[0], coordinates, str(e))
             # todo, log to file
+
+    def add_n_clean_gff_entry_group(self, entries, ts_err_handle, sequence_info, session):
+        self.add_gff_entry_group(entries, ts_err_handle, sequence_info)
+        coordinates = sequence_info.gffid_to_coords[self.gffentry.seqid]
+        self.check_and_fix_structure(session, coordinates)
 
     def _mark_erroneous(self, entry, coordinates, msg=''):
         assert entry.type in [x.value for x in types.SuperLocusAll]

@@ -719,7 +719,7 @@ def setup_testable_super_loci(db_path='sqlite:///:memory:'):
     controller = gffimporter.ImportControl(err_path='/dev/null', database_path=db_path)
     controller.mk_session()
     controller.add_sequences('testdata/dummyloci.fa')
-    controller.add_gff('testdata/dummyloci.gff3')
+    controller.add_gff('testdata/dummyloci.gff3', clean=False)
     return controller.super_loci[0], controller
 
 
