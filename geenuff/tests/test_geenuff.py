@@ -1024,12 +1024,26 @@ def test_setup_proteins():
 
 def test_mv_features_to_prot():
     sl, controller = setup_testable_super_loci()
+    controller.session.commit()
     transcript = [x for x in sl.data.transcribeds if x.given_id == 'y'][0]
     t_interp = gffimporter.TranscriptInterpreter(transcript.handler)
     protein = t_interp.proteins['y.p'].data
+    proteins = controller.session.query(orm.Translated).all()
+    print(proteins, '\n^-- proteins')
+    print([p.id for p in proteins])
+    print(protein.id, 'protein id at start')
+    conn = controller.engine.connect()
+    # todo, going from TUESDAY, whyyyyyyyyy?
+    conn.execute(orm.association_translateds_to_features.insert(), [{'translated_id': 1, 'feature_id': 14}])
     t_interp.decode_raw_features()
-    t_interp.mv_coding_features_to_proteins()
+    t_interp.mv_coding_features_to_proteins(controller.feature2protein_to_add)
     controller.session.commit()
+    # grab protein again jic
+    protein = controller.session.query(orm.Translated).filter(orm.Translated.given_id == 'y.p').all()
+    assert len(protein) == 1
+    protein = protein[0]
+    print(protein.id)
+    print(controller.session.query(orm.association_translateds_to_features).all())
     assert len(protein.features) == 2  # start and stop codon
     assert set([x.type.value for x in protein.features]) == {types.CODING}
     assert set([x.bearing.value for x in protein.features]) == {types.START, types.END}
@@ -1043,10 +1057,16 @@ def test_check_and_fix_structure():
     sl, controller = setup_testable_super_loci(db_path)
     coordinates = controller.sequence_info.data.coordinates[0]
 
-    sl.check_and_fix_structure(controller.session, coordinates=coordinates)
+    sl.check_and_fix_structure(controller.session, coordinates=coordinates, controller=controller)
     # check handling of nice transcript
     transcript = [x for x in sl.data.transcribeds if x.given_id == 'y'][0]
-    protein = [x for x in sl.data.translateds if x.given_id == 'y.p'][0]
+    #protein = [x for x in sl.data.translateds if x.given_id == 'y.p'][0]
+    protein = controller.session.query(orm.Translated).filter(orm.Translated.given_id == 'y.p').all()
+
+    assert len(protein) == 1
+    protein = protein[0]
+    print(protein.id)
+    print(controller.session.query(orm.association_translateds_to_features).all())
     # check we get a protein with start and stop codon for the nice transcript
     assert len(protein.features) == 2  # start and stop codon
     assert set([x.type.value for x in protein.features]) == {types.CODING}

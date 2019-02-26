@@ -27,6 +27,9 @@ class ImportControl(object):
         self.sequence_info = None
         self.super_loci = []
         self.mk_session()
+        self.features_to_add = []
+        self.feature2pieces_to_add = []
+        self.feature2protein_to_add = []
 
     def mk_session(self):
         self.engine = create_engine(self.database_path, echo=False)  # todo, dynamic / real path
@@ -113,6 +116,7 @@ class ImportControl(object):
 
         super_loci = []
         err_handle = open(self.err_path, 'w')
+        i = 0
         for entry_group in self.group_gff_by_gene(gff_file):
             super_locus = SuperLocusHandler()
             if self.sequence_info is None:
@@ -120,14 +124,23 @@ class ImportControl(object):
                     ' sequence_info cannot be None when .add_gff is called, use (self.add_sequences(...)')
             if clean:
                 super_locus.add_n_clean_gff_entry_group(entry_group, err_handle, sequence_info=self.sequence_info.data,
-                                                        session=self.session)
+                                                        session=self.session, controller=self)
             else:
                 super_locus.add_gff_entry_group(entry_group, err_handle, sequence_info=self.sequence_info.data)
             self.session.add(super_locus.data)
             self.session.commit()
             super_loci.append(super_locus)  # just to keep some direct python link to this
+            if not i % 500:
+                self.execute_so_far()
         self.super_loci = super_loci
+        self.execute_so_far()
         err_handle.close()
+
+    def execute_so_far(self):
+        conn = self.engine.connect()
+        conn.execute(orm.association_translateds_to_features.insert(),
+                     self.feature2protein_to_add)
+        self.feature2protein_to_add = []
 
     def clean_super_loci(self):
         for sl in self.super_loci:
@@ -282,10 +295,10 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
             self._mark_erroneous(entries[0], coordinates, str(e))
             # todo, log to file
 
-    def add_n_clean_gff_entry_group(self, entries, ts_err_handle, sequence_info, session):
+    def add_n_clean_gff_entry_group(self, entries, ts_err_handle, sequence_info, session, controller):
         self.add_gff_entry_group(entries, ts_err_handle, sequence_info)
         coordinates = sequence_info.gffid_to_coords[self.gffentry.seqid]
-        self.check_and_fix_structure(session, coordinates)
+        self.check_and_fix_structure(session, coordinates, controller=controller)
 
     def _mark_erroneous(self, entry, coordinates, msg=''):
         assert entry.type in [x.value for x in types.SuperLocusAll]
@@ -326,7 +339,7 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
         self.transcribed_handlers.append(transcribed_e_handler)
         self.transcribed_piece_handlers.append(piece_handler)
 
-    def check_and_fix_structure(self, sess, coordinates):
+    def check_and_fix_structure(self, sess, coordinates, controller):
         # todo, add against sequence check to see if start/stop and splice sites are possible or not, e.g. is start ATG?
         # if it's empty (no bottom level features at all) mark as erroneous
         if not self.data.features:
@@ -346,7 +359,7 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
                 # make new features
                 t_interpreter.decode_raw_features()
                 # make sure the new features link to protein if appropriate
-                t_interpreter.mv_coding_features_to_proteins()
+                t_interpreter.mv_coding_features_to_proteins(controller.feature2protein_to_add)
         # remove old features
         self.delete_marked_underlings(sess)
 
@@ -374,10 +387,7 @@ class FeatureHandler(api.FeatureHandler, GFFDerived):
         data = self.data_type(
             given_id=given_id,
             type=gffentry.type,
-            coordinates=coordinates, #super_locus.sequence_info.handler.gffid_to_coords[gffentry.seqid],
-            #seqid=gffentry.seqid,
-            #start=gffentry.start,
-            #end=gffentry.end,
+            coordinates=coordinates,
             is_plus_strand=is_plus_strand,
             score=gffentry.score,
             source=gffentry.source,
@@ -571,15 +581,15 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
 
         return proteins
 
-    def mv_coding_features_to_proteins(self):
+    def mv_coding_features_to_proteins(self, feature2translated_to_add):
         # only meant for use after feature interpretation
         for feature in self.clean_features:
             if feature.data.type in [x.value for x in types.TranslatedAll]:  # todo, fix brittle to pre/post commit
                 pid = self._get_protein_id_from_cds(feature)
-                piece = self.transcript.one_piece()
-                #piece.replace_selflink_with_replacementlink(replacement=self.proteins[pid],
-                #                                            data=feature.data)
-                piece.copy_selflink_to_another(another=self.proteins[pid], data=feature.data)
+                protdata = self.proteins[pid].data
+                newlink = {'translated_id': protdata.id, 'feature_id': feature.data.id}
+                print(newlink)
+                feature2translated_to_add.append(newlink)
 
     def is_plus_strand(self):
         features = set()
@@ -933,7 +943,6 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         return interval_sets
 
     def decode_raw_features(self):
-        # todo, detect completely handled (prolly error-error) transcript here and pass WAS HERE, TUESDAY
         plus_strand = self.is_plus_strand()
         interval_sets = self.intervals_5to3(plus_strand)
         self.interpret_first_pos(interval_sets[0], plus_strand)
