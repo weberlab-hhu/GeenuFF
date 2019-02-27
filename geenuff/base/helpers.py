@@ -95,3 +95,12 @@ def as_py_start(start):
 
 def as_py_end(end):
     return end
+
+
+class Counter(object):
+    def __init__(self):
+        self._at = 0
+
+    def __call__(self, *args, **kwargs):
+        self._at += 1
+        return self._at

@@ -21,9 +21,12 @@ class Handler(object):
         self.delete_me = False
         self.copyable = []
         self.linkable = []
+        self.id = None
 
     def add_data(self, data):
         assert isinstance(data, self.data_type)
+        if self.id is not None:
+            data.id = self.id
         self.data = data
         data.handler = self  # terrible form, but I need some sort of efficient point back
 

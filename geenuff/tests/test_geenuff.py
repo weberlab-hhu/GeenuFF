@@ -724,12 +724,12 @@ def setup_testable_super_loci(db_path='sqlite:///:memory:'):
 
 
 def test_organize_and_split_features():
-    sl, _ = setup_testable_super_loci()
+    sl, controller = setup_testable_super_loci()
     transcript_full = [x for x in sl.transcribed_handlers if x.data.given_id == 'y']
     print([x.data.given_id for x in sl.transcribed_handlers])
     assert len(transcript_full) == 1
     transcript_full = transcript_full[0]
-    transcript_interpreter = gffimporter.TranscriptInterpreter(transcript_full)
+    transcript_interpreter = gffimporter.TranscriptInterpreter(transcript_full, controller)
     ordered_features = transcript_interpreter.organize_and_split_features()
     ordered_features = list(ordered_features)
     for i in [0, 4]:
@@ -740,7 +740,7 @@ def test_organize_and_split_features():
         assert 'CDS' in [x.data.data.type.value for x in ordered_features[i]]
 
     transcript_short = [x for x in sl.transcribed_handlers if x.data.given_id == 'z'][0]
-    transcript_interpreter = gffimporter.TranscriptInterpreter(transcript_short)
+    transcript_interpreter = gffimporter.TranscriptInterpreter(transcript_short, controller)
     ordered_features = transcript_interpreter.organize_and_split_features()
     ordered_features = list(ordered_features)
     assert len(ordered_features) == 1
@@ -752,10 +752,10 @@ def test_possible_types():
     five_prime = types.OnSequence.five_prime_UTR.name
     three_prime = types.OnSequence.three_prime_UTR.name
 
-    sl, _ = setup_testable_super_loci()
+    sl, controller = setup_testable_super_loci()
     transcript_full = [x for x in sl.transcribed_handlers if x.data.given_id == 'y']
     transcript_full = transcript_full[0]
-    transcript_interpreter = gffimporter.TranscriptInterpreter(transcript_full)
+    transcript_interpreter = gffimporter.TranscriptInterpreter(transcript_full, controller)
     ordered_features = transcript_interpreter.intervals_5to3(plus_strand=True)
     ordered_features = list(ordered_features)
     pt = transcript_interpreter.possible_types(ordered_features[0])
@@ -821,7 +821,7 @@ def test_transcript_interpreter():
     sl, controller = setup_testable_super_loci()
     transcript = [x for x in sl.data.transcribeds if x.given_id == 'y'][0]
     # change so that there are implicit UTRs
-    t_interp = gffimporter.TranscriptInterpreter(transcript.handler)
+    t_interp = gffimporter.TranscriptInterpreter(transcript.handler, controller)
     t_interp.decode_raw_features()
     controller.session.commit()
     # has all standard features
@@ -840,7 +840,7 @@ def test_transcript_get_first():
     # plus strand
     sl, controller = setup_testable_super_loci()
     transcript = [x for x in sl.data.transcribeds if x.given_id == 'y'][0]
-    t_interp = gffimporter.TranscriptInterpreter(transcript.handler)
+    t_interp = gffimporter.TranscriptInterpreter(transcript.handler, controller)
     i0 = t_interp.intervals_5to3(plus_strand=True)[0]
     t_interp.interpret_first_pos(i0)
     features = t_interp.clean_features
@@ -862,7 +862,7 @@ def test_transcript_get_first():
         feature.is_plus_strand = False
 
     # new transcript interpreter so the clean features reset
-    t_interp = gffimporter.TranscriptInterpreter(transcript.handler)
+    t_interp = gffimporter.TranscriptInterpreter(transcript.handler, controller)
     i0 = t_interp.intervals_5to3(plus_strand=False)[0]
     t_interp.interpret_first_pos(i0, plus_strand=False)
     features = t_interp.clean_features
@@ -880,7 +880,7 @@ def test_transcript_get_first():
 
     # test without UTR (x doesn't have last exon, and therefore will end in CDS); remember, flipped it to minus strand
     transcript = [x for x in sl.data.transcribeds if x.given_id == 'x'][0]
-    t_interp = gffimporter.TranscriptInterpreter(transcript.handler)
+    t_interp = gffimporter.TranscriptInterpreter(transcript.handler, controller)
     i0 = t_interp.intervals_5to3(plus_strand=False)[0]
     t_interp.interpret_first_pos(i0, plus_strand=False)
     features = t_interp.clean_features
@@ -917,7 +917,7 @@ def test_transcript_get_first():
 def test_transcript_transition_from_5p_to_end():
     sl, controller = setup_testable_super_loci()
     transcript = [x for x in sl.data.transcribeds if x.given_id == 'y'][0]
-    t_interp = gffimporter.TranscriptInterpreter(transcript.handler)
+    t_interp = gffimporter.TranscriptInterpreter(transcript.handler, controller)
     ivals_sets = t_interp.intervals_5to3(plus_strand=True)
     t_interp.interpret_first_pos(ivals_sets[0])
     # hit start codon
@@ -959,7 +959,7 @@ def test_non_coding_transitions():
     sl, controller = setup_testable_super_loci()
     transcript = [x for x in sl.data.transcribeds if x.given_id == 'z'][0]
     piece = transcript.transcribed_pieces[0]
-    t_interp = gffimporter.TranscriptInterpreter(transcript.handler)
+    t_interp = gffimporter.TranscriptInterpreter(transcript.handler, controller)
     # get single-exon no-CDS transcript
     cds = [x for x in transcript.transcribed_pieces[0].features if x.type.value == types.CDS][0]
     piece.handler.de_link(cds.handler)
@@ -985,7 +985,7 @@ def test_errors_not_lost():
 
     coordinates = controller.sequence_info.data.coordinates[0]
     controller.session.add(coordinates)
-    sl._mark_erroneous(gene_entry, coordinates=coordinates)
+    sl._mark_erroneous(gene_entry, coordinates=coordinates, controller=controller)
     print(sl.data.transcribeds, len(sl.data.transcribeds), '...sl transcribeds')
     feature_eh, feature_e2h = sl.feature_handlers[-2:]
 
@@ -1012,7 +1012,7 @@ def test_errors_not_lost():
 def test_setup_proteins():
     sl, controller = setup_testable_super_loci()
     transcript = [x for x in sl.data.transcribeds if x.given_id == 'y'][0]
-    t_interp = gffimporter.TranscriptInterpreter(transcript.handler)
+    t_interp = gffimporter.TranscriptInterpreter(transcript.handler, controller)
     print(t_interp.proteins)
     assert len(t_interp.proteins.keys()) == 1
     protein = t_interp.proteins['y.p'].data
@@ -1026,7 +1026,7 @@ def test_mv_features_to_prot():
     sl, controller = setup_testable_super_loci()
     controller.session.commit()
     transcript = [x for x in sl.data.transcribeds if x.given_id == 'y'][0]
-    t_interp = gffimporter.TranscriptInterpreter(transcript.handler)
+    t_interp = gffimporter.TranscriptInterpreter(transcript.handler, controller)
 
     t_interp.decode_raw_features()
     controller.session.commit()
@@ -1113,7 +1113,7 @@ def test_erroneous_splice():
     f1 = sess.query(orm.Feature).filter(orm.Feature.given_id == 'ftr000001').first()
     f0.handler.gffentry.end = f1.handler.gffentry.end = 115
 
-    ti = gffimporter.TranscriptInterpreter(transcript.handler)
+    ti = gffimporter.TranscriptInterpreter(transcript.handler, controller=controller)
     ti.decode_raw_features()
     clean_datas = [x.data for x in ti.clean_features]
     # TSS, start codon, 2x error splice, 2x error splice, 2x error no stop
