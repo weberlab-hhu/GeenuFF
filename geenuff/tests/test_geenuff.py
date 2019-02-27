@@ -995,10 +995,10 @@ def test_errors_not_lost():
         controller.session.add(feature)
     controller.session.commit()
 
-    sl.check_and_fix_structure(sess=controller.session, coordinates=coordinates)
-    for feature in sl.data.features:
-        controller.session.add(feature)
-    controller.session.commit()
+    sl.check_and_fix_structure(sess=controller.session, coordinates=coordinates, controller=controller)
+    #for feature in sl.data.features:
+    #    controller.session.add(feature)
+    #controller.session.commit()
     print('---and what features did we leave?---')
     for feature in sl.data.features:
         print(feature)
@@ -1029,9 +1029,9 @@ def test_mv_features_to_prot():
     t_interp = gffimporter.TranscriptInterpreter(transcript.handler)
 
     t_interp.decode_raw_features()
+    controller.session.commit()
     t_interp.mv_coding_features_to_proteins(controller.feature2protein_to_add)
     controller.execute_so_far()
-    controller.session.commit()
     # grab protein again jic
     protein = controller.session.query(orm.Translated).filter(orm.Translated.given_id == 'y.p').all()
     assert len(protein) == 1
@@ -1057,7 +1057,7 @@ def test_check_and_fix_structure():
     transcript = [x for x in sl.data.transcribeds if x.given_id == 'y'][0]
     #protein = [x for x in sl.data.translateds if x.given_id == 'y.p'][0]
     protein = controller.session.query(orm.Translated).filter(orm.Translated.given_id == 'y.p').all()
-
+    print(controller.session.query(orm.association_translateds_to_features).all())
     assert len(protein) == 1
     protein = protein[0]
     print(protein.id)
@@ -1099,7 +1099,7 @@ def test_check_and_fix_structure():
 
     assert len(sl.data.translateds) == 3
     controller.session.commit()
-    assert False
+
 
 def test_erroneous_splice():
     db_path = 'sqlite:///:memory:'

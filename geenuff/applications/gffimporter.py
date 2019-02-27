@@ -140,7 +140,7 @@ class ImportControl(object):
 
     def execute_so_far(self):
         conn = self.engine.connect()
-        print('adding --\/\n', self.feature2protein_to_add)
+        print('adding --\\/\n', self.feature2protein_to_add)
         conn.execute(orm.association_translateds_to_features.insert(),
                      self.feature2protein_to_add)
         self.feature2protein_to_add = []
@@ -349,6 +349,7 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
             self._mark_erroneous(self.gffentry, coordinates=coordinates)
             sess.commit()
 
+        forced_keep_handlers = []
         for transcript in self.data.transcribeds:
             piece = transcript.handler.one_piece().data
             t_interpreter = TranscriptInterpreter(transcript.handler)
@@ -364,8 +365,11 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
                 # make sure the new features link to protein if appropriate
                 sess.commit()
                 t_interpreter.mv_coding_features_to_proteins(controller.feature2protein_to_add)
+                print('post', controller.feature2protein_to_add)
+            forced_keep_handlers += t_interpreter.clean_features
         # remove old features
         self.delete_marked_underlings(sess)
+        del forced_keep_handlers
 
 
 class FeatureHandler(api.FeatureHandler, GFFDerived):
@@ -588,7 +592,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
     def mv_coding_features_to_proteins(self, feature2translated_to_add):
         # only meant for use after feature interpretation
         for feature in self.clean_features:
-            if feature.data.type in [x.value for x in types.TranslatedAll]:  # todo, fix brittle to pre/post commit
+            if feature.data.type.value in [x.value for x in types.TranslatedAll]:  # todo, fix brittle to pre/post commit
                 pid = self._get_protein_id_from_cds(feature)
                 protdata = self.proteins[pid].data
                 newlink = {'translated_id': protdata.id, 'feature_id': feature.data.id}
