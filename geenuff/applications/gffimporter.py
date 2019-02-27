@@ -28,8 +28,8 @@ class ImportControl(object):
         self.super_loci = []
         self.mk_session()
         self.features_to_add = []
-        self.feature2pieces_to_add = []
-        self.feature2protein_to_add = []
+        self.feature2transcribed_pieces_to_add = []
+        self.feature2translateds_to_add = []
 
         # counting everything that goes in
         self.feature_counter = helpers.Counter()
@@ -134,7 +134,7 @@ class ImportControl(object):
             if clean:
                 super_locus.add_n_clean_gff_entry_group(entry_group, err_handle, sequence_info=self.sequence_info.data,
                                                         session=self.session, controller=self)
-                print('right after clean...', self.feature2protein_to_add)
+                print('right after clean...', self.feature2translateds_to_add)
             else:
                 super_locus.add_gff_entry_group(entry_group, err_handle, sequence_info=self.sequence_info.data,
                                                 controller=self)
@@ -150,10 +150,21 @@ class ImportControl(object):
 
     def execute_so_far(self):
         conn = self.engine.connect()
-        print('adding --\\/\n', self.feature2protein_to_add)
-        conn.execute(orm.association_translateds_to_features.insert(),
-                     self.feature2protein_to_add)
-        self.feature2protein_to_add = []
+        print('adding --\\/\n', self.feature2translateds_to_add)
+        if self.features_to_add:
+            conn.execute(orm.Feature.__table__.insert(),
+                         self.features_to_add)
+            self.features_to_add = []
+
+        if self.feature2translateds_to_add:
+            conn.execute(orm.association_translateds_to_features.insert(),
+                         self.feature2translateds_to_add)
+            self.feature2translateds_to_add = []
+
+        if self.feature2transcribed_pieces_to_add:
+            conn.execute(orm.association_transcribeds_to_features.insert(),
+                         self.feature2transcribed_pieces_to_add)
+            self.feature2transcribed_pieces_to_add = []
 
     def clean_super_loci(self):
         for sl in self.super_loci:
@@ -363,7 +374,7 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
             self._mark_erroneous(self.gffentry, coordinates=coordinates, controller=controller)
             sess.commit()
 
-        forced_keep_handlers = []
+        #forced_keep_handlers = []
         for transcript in self.data.transcribeds:
             piece = transcript.handler.one_piece().data
             t_interpreter = TranscriptInterpreter(transcript.handler, controller=controller)
@@ -378,12 +389,12 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
                 t_interpreter.decode_raw_features()
                 # make sure the new features link to protein if appropriate
                 sess.commit()
-                t_interpreter.mv_coding_features_to_proteins(controller.feature2protein_to_add)
-                print('post', controller.feature2protein_to_add)
-            forced_keep_handlers += t_interpreter.clean_features
+                controller.execute_so_far()
+                #t_interpreter.mv_coding_features_to_proteins(controller.feature2translateds_to_add)
+            #forced_keep_handlers += t_interpreter.clean_features
         # remove old features
         self.delete_marked_underlings(sess)
-        del forced_keep_handlers
+        #del forced_keep_handlers
 
 
 class FeatureHandler(api.FeatureHandler, GFFDerived):
@@ -442,7 +453,21 @@ class FeatureHandler(api.FeatureHandler, GFFDerived):
         else:
             raise ValueError('cannot interpret strand "{}"'.format(self.gffentry.strand))
 
+        feature = {'id': self.id,
+                    'given_id': given_id,
+                    'type': gffentry.type,
+                    'coordinate_id': coordinates.id,
+                    'is_plus_strand': is_plus_strand,
+                    'score': gffentry.score,
+                    'source': gffentry.source,
+                    'phase': gffentry.phase,  # todo, do I need to handle '.'?
+                    'super_locus_id': super_locus.id,
+                    }
 
+        feature2pieces = [{'transcribed_piece_id': p.id, 'feature_id': self.id} for p in transcribed_pieces]
+        feature2translateds = [{'translated_id': p.id, 'feature_id': self.id} for p in translateds]
+
+        return feature, feature2pieces, feature2translateds
 
     # "+ strand" [upstream, downstream) or "- strand" (downstream, upstream] from 0 coordinates
     def upstream_from_interval(self, interval):
@@ -548,23 +573,29 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
 
     def __init__(self, transcript, controller):
         super().__init__(transcript)
-        self.clean_features = []  # will hold all the 'fixed' feature handlers (convenience? or can remove?)
         self.controller = controller
         try:
             self.proteins = self._setup_proteins()
         except NoGFFEntryError:
             self.proteins = None  # this way we only run into an error if we actually wanted to use proteins
 
-    def new_feature(self, template, **kwargs):
+    def new_feature(self, template, translateds=None, **kwargs):
         handler = FeatureHandler(controller=self.controller)
-        data = orm.Feature()
-        handler.add_data(data)
-        template.fax_all_attrs_to_another(another=handler)
         handler.gffentry = copy.deepcopy(template.gffentry)
-
+        #data = orm.Feature()
+        #handler.add_data(data)
+        #template.fax_all_attrs_to_another(another=handler)
+        feature, feature2pieces, feature2translateds = handler.setup_insertion_ready(handler.gffentry,
+                                                                                     template.data.super_locus,
+                                                                                     template.data.transcribed_pieces,
+                                                                                     translateds,
+                                                                                     template.data.coordinates)
         for key in kwargs:
-            handler.set_data_attribute(key, kwargs[key])
-        return handler
+            feature[key] = kwargs[key]
+
+        self.controller.features_to_add.append(feature)
+        self.controller.feature2transcribed_pieces_to_add += feature2pieces
+        self.controller.feature2translateds_to_add += feature2translateds
 
     @staticmethod
     def pick_one_interval(interval_set, target_type=None):
@@ -635,16 +666,16 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
 
         return proteins
 
-    def mv_coding_features_to_proteins(self, feature2translated_to_add):
-        # only meant for use after feature interpretation
-        for feature in self.clean_features:
-            if feature.data.type.value in [x.value for x in types.TranslatedAll]:  # todo, fix brittle to pre/post commit
-                pid = self._get_protein_id_from_cds(feature)
-                protdata = self.proteins[pid].data
-                newlink = {'translated_id': protdata.id, 'feature_id': feature.data.id}
-                if feature.data.id is None:
-                    raise ValueError('{} has no id'.format(feature.data))
-                feature2translated_to_add.append(newlink)
+    #def mv_coding_features_to_proteins(self, feature2translated_to_add):
+    #    # only meant for use after feature interpretation
+    #    for feature in self.clean_features:
+    #        if feature.data.type.value in [x.value for x in types.TranslatedAll]:  # todo, fix brittle to pre/post commit
+    #            pid = self._get_protein_id_from_cds(feature)
+    #            protdata = self.proteins[pid].data
+    #            newlink = {'translated_id': protdata.id, 'feature_id': feature.data.id}
+    #            if feature.data.id is None:
+    #                raise ValueError('{} has no id'.format(feature.data))
+    #            feature2translated_to_add.append(newlink)
 
     def is_plus_strand(self):
         features = set()
@@ -792,6 +823,10 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                                                         before0.data.id, after0.data.id)
         return is_gap
 
+    def get_protein_data(self, feature):
+        pid = self._get_protein_id_from_cds(feature)
+        return self.proteins[pid].data
+
     def handle_control_codon(self, ivals_before, ivals_after, sign, is_start=True, error_buffer=2000):
         target_after_type = None
         target_before_type = None
@@ -810,37 +845,36 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                 self.handle_splice(ivals_before, ivals_after, sign)
 
             template = after0.data
+            translated = self.get_protein_data(template)
             # it better be std phase if it's a start codon
             at = template.upstream_from_interval(after0)
             if template.data.phase == 0:  # "non-0 phase @ {} in {}".format(template.id, template.super_locus.id)
                 start = at
-                start_codon = self.new_feature(template=template, position=start, type=types.CODING,
-                                               bearing=types.START)
+                self.new_feature(template=template, position=start, type=types.CODING,
+                                 bearing=types.START, translateds=[translated])
                 self.status.saw_start(phase=0)
-                self.clean_features.append(start_codon)
             else:
                 err_start = before0.data.upstream_from_interval(before0) - sign * error_buffer  # mask prev feat. too
                 err_end = at + sign  # so that the error masks the coordinate with the close status
 
-                feature_err_open = self.new_feature(template=template, type=types.ERROR, position=err_start,
-                                                    phase=None, bearing=types.START)
-                feature_err_close = self.new_feature(template=template, type=types.ERROR, position=err_end,
-                                                     phase=None, bearing=types.END)
-                coding_status = self.new_feature(template=template, type=types.CODING, position=at,
-                                                 bearing=types.OPEN_STATUS)
-                transcribed_status = self.new_feature(template=template, type=types.TRANSCRIBED, position=at,
-                                                      phase=None, bearing=types.OPEN_STATUS)
+                self.new_feature(template=template, type=types.ERROR, position=err_start,
+                                 phase=None, bearing=types.START)
+                self.new_feature(template=template, type=types.ERROR, position=err_end,
+                                 phase=None, bearing=types.END)
+                self.new_feature(template=template, type=types.CODING, position=at,
+                                 bearing=types.OPEN_STATUS, translateds=[translated])
+                self.new_feature(template=template, type=types.TRANSCRIBED, position=at,
+                                 phase=None, bearing=types.OPEN_STATUS)
                 self.status.saw_start(template.phase)
-                self.clean_features += [feature_err_open, feature_err_close, coding_status, transcribed_status]
         else:
             # todo, confirm phase for stop codon
             template = before0.data
+            translated = self.get_protein_data(template)
             at = template.downstream_from_interval(before0)
             start = end = at
-            stop_codon = self.new_feature(template=template, position=start, end=end, type=types.CODING,
-                                          bearing=types.END)
+            self.new_feature(template=template, position=start, end=end, type=types.CODING,
+                             bearing=types.END, translateds=[translated])
             self.status.saw_stop()
-            self.clean_features.append(stop_codon)
             if is_gap:
                 self.handle_splice(ivals_before, ivals_after, sign)
 
@@ -864,11 +898,10 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         between_splice_sites = (acceptor_at - donor_at) * sign
         min_intron_len = 3  # todo, maybe get something small but not entirely impossible?
         if between_splice_sites > min_intron_len:
-            donor = self.new_feature(template=donor_tmplt, position=donor_at, phase=None,
-                                     type=types.INTRON, bearing=types.START)
-            acceptor = self.new_feature(template=acceptor_tmplt, position=acceptor_at,
-                                        type=types.INTRON, bearing=types.END)
-            self.clean_features += [donor, acceptor]
+            self.new_feature(template=donor_tmplt, position=donor_at, phase=None,
+                             type=types.INTRON, bearing=types.START)
+            self.new_feature(template=acceptor_tmplt, position=acceptor_at,
+                             type=types.INTRON, bearing=types.END)
         # do nothing if there is just no gap between exons for a technical / reporting error
         elif between_splice_sites == 0:
             pass
@@ -882,12 +915,10 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                 err_start = donor_tmplt.upstream() - 1  # to fr 0
                 err_end = acceptor_tmplt.downstream() - 2  # -1 to fr 0, -1 to excl = -2
 
-            feature_err_open = self.new_feature(template=before0.data, position=err_start,
-                                                type=types.ERROR, bearing=types.START)
-            feature_err_close = self.new_feature(template=before0.data, position=err_end,
-                                                 type=types.ERROR, bearing=types.END)
-
-            self.clean_features += [feature_err_open, feature_err_close]
+            self.new_feature(template=before0.data, position=err_start,
+                             type=types.ERROR, bearing=types.START)
+            self.new_feature(template=before0.data, position=err_end,
+                             type=types.ERROR, bearing=types.END)
 
     def interpret_first_pos(self, intervals, plus_strand=True, error_buffer=2000):
         # shortcuts
@@ -898,19 +929,18 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         possible_types = self.possible_types(intervals)
         if types.FIVE_PRIME_UTR in possible_types:
             # this should indicate we're good to go and have a transcription start site
-            tss = self.new_feature(template=i0.data, type=types.TRANSCRIBED, position=at,
-                                   phase=None, bearing=types.START)
-            self.clean_features.append(tss)
+            self.new_feature(template=i0.data, type=types.TRANSCRIBED, position=at,
+                             phase=None, bearing=types.START)
             self.status.saw_tss()
         elif cds in possible_types:
             # this could be first exon detected or start codon, ultimately, indeterminate
             cds_feature = self.pick_one_interval(intervals, target_type=cds).data
-            coding = self.new_feature(template=cds_feature, type=types.CODING, position=at,
-                                      bearing=types.OPEN_STATUS)
-            transcribed = self.new_feature(template=cds_feature, type=types.TRANSCRIBED, position=at,
-                                           bearing=types.OPEN_STATUS)
-            self.clean_features += [coding, transcribed]
-            self.status.saw_start(phase=coding.data.phase)
+            translated = self.get_protein_data(cds_feature)
+            self.new_feature(template=cds_feature, type=types.CODING, position=at,
+                             bearing=types.OPEN_STATUS, translateds=[translated])
+            self.new_feature(template=cds_feature, type=types.TRANSCRIBED, position=at,
+                             bearing=types.OPEN_STATUS)
+            self.status.saw_start(phase=cds_feature.data.phase)
             self.status.saw_tss()  # coding implies the transcript
             # mask a dummy region up-stream as it's very unclear whether it should be intergenic/intronic/utr
             if plus_strand:
@@ -919,27 +949,23 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                 if at != start_of_sequence:
                     err_start = max(start_of_sequence, at - error_buffer)
                     err_end = at + 1  # so that the error masks the coordinate with the close status
-                    feature_err_open = self.new_feature(template=cds_feature, type=types.ERROR,
-                                                        bearing=types.START,
-                                                        position=err_start, phase=None)
-                    feature_err_close = self.new_feature(template=cds_feature, type=types.ERROR,
-                                                         bearing=types.END,
-                                                         position=err_end, phase=None)
-                    self.clean_features.insert(0, feature_err_close)
-                    self.clean_features.insert(0, feature_err_open)
+                    self.new_feature(template=cds_feature, type=types.ERROR,
+                                     bearing=types.START,
+                                     position=err_start, phase=None)
+                    self.new_feature(template=cds_feature, type=types.ERROR,
+                                     bearing=types.END,
+                                     position=err_end, phase=None)
             else:
                 end_of_sequence = cds_feature.data.coordinates.end - 1   # bc we need last valid index for coordinates
                 if at != end_of_sequence:
                     err_start = min(end_of_sequence, at + error_buffer)
                     err_end = at - 1  # so that the error masks the coordinate with the close status
-                    feature_err_open = self.new_feature(template=cds_feature, type=types.ERROR,
-                                                        bearing=types.START,
-                                                        position=err_start, phase=None)
-                    feature_err_close = self.new_feature(template=cds_feature, type=types.ERROR,
-                                                         bearing=types.END,
-                                                         position=err_end, phase=None)
-                    self.clean_features.insert(0, feature_err_close)
-                    self.clean_features.insert(0, feature_err_open)
+                    self.new_feature(template=cds_feature, type=types.ERROR,
+                                     bearing=types.START,
+                                     position=err_start, phase=None)
+                    self.new_feature(template=cds_feature, type=types.ERROR,
+                                     bearing=types.END,
+                                     position=err_end, phase=None)
         else:
             raise ValueError("why's this gene not start with 5' utr nor cds? types: {}, interpretations: {}".format(
                 [x.data.data.type for x in intervals], possible_types))
@@ -950,19 +976,18 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         possible_types = self.possible_types(intervals)
         if types.THREE_PRIME_UTR in possible_types:
             # this should be transcription termination site
-            tts = self.new_feature(template=i0.data, type=types.TRANSCRIBED, bearing=types.END, position=at,
-                                   phase=None)
-            self.clean_features.append(tts)
+            self.new_feature(template=i0.data, type=types.TRANSCRIBED, bearing=types.END, position=at,
+                             phase=None)
             self.status.saw_tts()
         elif types.CDS in possible_types:
             # may or may not be stop codon, but will just mark as error (unless at edge of sequence)
             cds_feature = self.pick_one_interval(intervals, target_type=types.CDS).data
-            coding = self.new_feature(template=cds_feature, type=types.CODING, position=at,
-                                      bearing=types.CLOSE_STATUS)
-            transcribed = self.new_feature(template=cds_feature, type=types.TRANSCRIBED, position=at,
-                                           bearing=types.CLOSE_STATUS)
-            self.clean_features += [coding, transcribed]
-            self.status.saw_start(phase=coding.data.phase)
+            translated = self.get_protein_data(cds_feature)
+            self.new_feature(template=cds_feature, type=types.CODING, position=at,
+                             bearing=types.CLOSE_STATUS, translateds=[translated])
+            self.new_feature(template=cds_feature, type=types.TRANSCRIBED, position=at,
+                             bearing=types.CLOSE_STATUS)
+            self.status.saw_start(phase=cds_feature.data.phase)
             self.status.saw_tss()  # coding implies the transcript
             # may or may not be stop codon, but will just mark as error (unless at edge of sequence)
             start_of_sequence = i0.data.data.coordinates.start - 1  # because we need to be able to
@@ -971,21 +996,19 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                 if at != end_of_sequence:
                     err_start = at - 1  # so that the error masks the coordinate with the open status
                     err_end = min(at + error_buffer, end_of_sequence)
-                    feature_err_open = self.new_feature(template=i0.data, type=types.ERROR, position=err_start,
-                                                        phase=None, bearing=types.START)
+                    self.new_feature(template=i0.data, type=types.ERROR, position=err_start,
+                                     phase=None, bearing=types.START)
                     print('just set err_start at {}'.format(err_start))
-                    feature_err_close = self.new_feature(template=i0.data, type=types.ERROR, position=err_end,
-                                                         phase=None, bearing=types.END)
-                    self.clean_features += [feature_err_open, feature_err_close]
+                    self.new_feature(template=i0.data, type=types.ERROR, position=err_end,
+                                     phase=None, bearing=types.END)
             else:
                 if at != start_of_sequence:
                     err_start = at + 1  # so that the error masks the coordinate with the open status
                     err_end = max(start_of_sequence, at - error_buffer)
-                    feature_err_open = self.new_feature(template=i0.data, type=types.ERROR,
-                                                        phase=None, position=err_start, bearing=types.START)
-                    feature_err_close = self.new_feature(template=i0.data, type=types.ERROR,
-                                                         phase=None, position=err_end, bearing=types.END)
-                    self.clean_features += [feature_err_open, feature_err_close]
+                    self.new_feature(template=i0.data, type=types.ERROR,
+                                     phase=None, position=err_start, bearing=types.START)
+                    self.new_feature(template=i0.data, type=types.ERROR,
+                                     phase=None, position=err_end, bearing=types.END)
         else:
             raise ValueError("why's this gene not end with 3' utr/exon nor cds? types: {}, interpretations: {}".format(
                 [x.data.type for x in intervals], possible_types)
@@ -1016,7 +1039,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         three_prime = types.THREE_PRIME_UTR
 
         # what we see
-        #uniq_datas = set([x.data.data for x in intervals])  # todo, revert and skip unique once handled above
+        # uniq_datas = set([x.data.data for x in intervals])  # todo, revert and skip unique once handled above
         observed_types = [x.data.data.type.name for x in intervals]
         set_o_types = set(observed_types)
         # check length

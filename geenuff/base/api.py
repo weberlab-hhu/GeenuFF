@@ -52,7 +52,7 @@ class Handler(object):
                 to_copy.remove(never_copy)  # todo, confirm this is the primary key
             except KeyError:
                 pass
-        # acctually copy
+        # actually copy
         for item in to_copy:
             val = self.get_data_attribute(item)
             other.set_data_attribute(item, val)
@@ -243,11 +243,10 @@ class SuperLocusHandler(Handler):
     def delete_marked_underlings(self, sess):
         for data in self.data.features + self.data.transcribeds + self.data.translateds:
             try:
-                data.handler
+                if data.handler.delete_me:
+                    sess.delete(data)
             except AttributeError as e:
-                raise AttributeError('{}\ndata: {}'.format(e, str(data)))
-            if data.handler.delete_me:
-                sess.delete(data)
+                'Warning, swallowing: {}\ndata: {}'.format(e, str(data))
         sess.commit()
 
 

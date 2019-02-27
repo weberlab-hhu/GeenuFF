@@ -843,72 +843,79 @@ def test_transcript_get_first():
     t_interp = gffimporter.TranscriptInterpreter(transcript.handler, controller)
     i0 = t_interp.intervals_5to3(plus_strand=True)[0]
     t_interp.interpret_first_pos(i0)
-    features = t_interp.clean_features
+    controller.session.commit()
+    controller.execute_so_far()
+    features = cleaned_commited_features(controller.session)
     status = t_interp.status
     assert len(features) == 1
     f0 = features[0]
     print(f0)
     print(status.__dict__)
     print(i0[0].data.data.is_plus_strand)
-    assert f0.data.position == 0
+    assert f0.position == 0
     assert status.is_5p_utr()
-    assert f0.data.phase is None
-    assert f0.data.is_plus_strand
+    assert f0.phase is None
+    assert f0.is_plus_strand
 
     # minus strand
     sl, controller = setup_testable_super_loci()
     transcript = [x for x in sl.data.transcribeds if x.given_id == 'y'][0]
     for feature in sl.data.features:  # force minus strand
         feature.is_plus_strand = False
+        try:  # and for the from-gff features
+            feature.handler.gffentry.strand = '-'
+        except AttributeError:
+            pass
 
     # new transcript interpreter so the clean features reset
     t_interp = gffimporter.TranscriptInterpreter(transcript.handler, controller)
     i0 = t_interp.intervals_5to3(plus_strand=False)[0]
     t_interp.interpret_first_pos(i0, plus_strand=False)
-    features = t_interp.clean_features
+    controller.session.commit()
+    controller.execute_so_far()
+    features = cleaned_commited_features(controller.session)
+    features = [f for f in features if not f.is_plus_strand]
     status = t_interp.status
     assert len(features) == 1
     f0 = features[0]
     print(f0)
     print(status)
     print(i0[0].data.data.is_plus_strand)
-    print(f0.data.type)
-    assert f0.data.position == 399
+    print(f0.type)
+    assert f0.position == 399
     assert status.is_5p_utr()
-    assert f0.data.phase is None
-    assert not f0.data.is_plus_strand
+    assert f0.phase is None
 
     # test without UTR (x doesn't have last exon, and therefore will end in CDS); remember, flipped it to minus strand
     transcript = [x for x in sl.data.transcribeds if x.given_id == 'x'][0]
+    prefeatures = transcript.transcribed_pieces[0].features
+    print('prefeatures', prefeatures)
+    print([x.handler.gffentry for x in prefeatures])
     t_interp = gffimporter.TranscriptInterpreter(transcript.handler, controller)
     i0 = t_interp.intervals_5to3(plus_strand=False)[0]
     t_interp.interpret_first_pos(i0, plus_strand=False)
-    features = t_interp.clean_features
+    controller.session.commit()
+    controller.execute_so_far()
+    features = cleaned_commited_features(controller.session)
+    features = [f for f in features if transcript.handler.one_piece().data in f.transcribed_pieces]
     status = t_interp.status
     assert len(features) == 4
-    f_err_open = features[0]
-    f_err_close = features[1]
-    f_status_coding = features[2]
-    f_status_transcribed = features[3]
-    print(f_err_open, f_err_open.data)
+    f_err_open = [f for f in features if f.bearing.value == types.START and f.type.value == types.ERROR][0]
+    f_err_close = [f for f in features if f.bearing.value == types.END and f.type.value == types.ERROR][0]
+    f_status_coding = [f for f in features if f.bearing.value == types.OPEN_STATUS and f.type.value == types.CODING][0]
+    f_status_transcribed = [f for f in features if f.bearing.value == types.OPEN_STATUS and f.type.value == types.TRANSCRIBED][0]
+    print(f_err_open)
     print(status)
     print(i0)
-    # should get in_translated_region instead of a start codon
-    assert f_status_coding.data.position == 119
-    assert f_status_coding.data.type == types.CODING
-    assert f_status_coding.data.bearing == types.OPEN_STATUS
-    assert not f_status_coding.data.is_plus_strand
-    # and should get accompanying in raw transcript
-    assert f_status_transcribed.data.type == types.TRANSCRIBED
-    assert f_status_coding.data.bearing == types.OPEN_STATUS
+    print([f.is_plus_strand for f in features], 'plus strands')
+    # should get status instead of a start codon and tss
+    assert f_status_coding.position == 119
+    assert f_status_transcribed.position == 119
+    assert not f_status_coding.is_plus_strand
     # region beyond exon should be marked erroneous
-    assert not f_err_close.data.is_plus_strand and not f_err_open.data.is_plus_strand
-    assert f_err_close.data.position == 118  # so that err overlaps 1bp with the coding status checked above
-    assert f_err_open.data.position == 404
-    assert f_err_open.data.type == types.ERROR
-    assert f_err_open.data.bearing == types.START
-    assert f_err_close.data.type == types.ERROR
-    assert f_err_close.data.bearing == types.END
+    assert not f_err_close.is_plus_strand and not f_err_open.is_plus_strand
+    assert f_err_close.position == 118  # so that err overlaps 1bp with the coding status checked above
+    assert f_err_open.position == 404
     assert status.is_coding()
     assert status.seen_start
     assert status.genic
@@ -922,37 +929,51 @@ def test_transcript_transition_from_5p_to_end():
     t_interp.interpret_first_pos(ivals_sets[0])
     # hit start codon
     t_interp.interpret_transition(ivals_before=ivals_sets[0], ivals_after=ivals_sets[1], plus_strand=True)
-    features = t_interp.clean_features
-    assert features[-1].data.type == types.CODING
-    assert features[-1].data.bearing == types.START
-    assert features[-1].data.position == 10
+    controller.session.commit()
+    controller.execute_so_far()
+    features = cleaned_commited_features(controller.session)
+    assert features[-1].type.value == types.CODING
+    assert features[-1].bearing.value == types.START
+    assert features[-1].position == 10
     # hit splice site
     t_interp.interpret_transition(ivals_before=ivals_sets[1], ivals_after=ivals_sets[2], plus_strand=True)
-    assert features[-1].data.type == types.INTRON
-    assert features[-1].data.bearing == types.END
-    assert features[-2].data.type == types.INTRON
-    assert features[-2].data.bearing == types.START
-    assert features[-2].data.position == 100  # splice from
-    assert features[-1].data.position == 110  # splice to
+    controller.session.commit()
+    controller.execute_so_far()
+    features = cleaned_commited_features(controller.session)
+    assert features[-1].type.value == types.INTRON
+    assert features[-1].bearing.value == types.END
+    assert features[-2].type.value == types.INTRON
+    assert features[-2].bearing.value == types.START
+    assert features[-2].position == 100  # splice from
+    assert features[-1].position == 110  # splice to
     assert t_interp.status.is_coding()
     # hit splice site
     t_interp.interpret_transition(ivals_before=ivals_sets[2], ivals_after=ivals_sets[3], plus_strand=True)
-    assert features[-1].data.type == types.INTRON
-    assert features[-1].data.bearing == types.END
-    assert features[-2].data.type == types.INTRON
-    assert features[-2].data.bearing == types.START
-    assert features[-2].data.position == 120  # splice from
-    assert features[-1].data.position == 200  # splice to
+    controller.session.commit()
+    controller.execute_so_far()
+    features = cleaned_commited_features(controller.session)
+    assert features[-1].type.value == types.INTRON
+    assert features[-1].bearing.value == types.END
+    assert features[-2].type.value == types.INTRON
+    assert features[-2].bearing.value == types.START
+    assert features[-2].position == 120  # splice from
+    assert features[-1].position == 200  # splice to
     # hit stop codon
     t_interp.interpret_transition(ivals_before=ivals_sets[3], ivals_after=ivals_sets[4], plus_strand=True)
-    assert features[-1].data.type == types.CODING
-    assert features[-1].data.bearing == types.END
-    assert features[-1].data.position == 300
+    controller.session.commit()
+    controller.execute_so_far()
+    features = cleaned_commited_features(controller.session)
+    assert features[-1].type.value == types.CODING
+    assert features[-1].bearing.value == types.END
+    assert features[-1].position == 300
     # hit transcription termination site
     t_interp.interpret_last_pos(ivals_sets[4], plus_strand=True)
-    assert features[-1].data.type == types.TRANSCRIBED
-    assert features[-1].data.bearing == types.END
-    assert features[-1].data.position == 400
+    controller.session.commit()
+    controller.execute_so_far()
+    features = cleaned_commited_features(controller.session)
+    assert features[-1].type.value == types.TRANSCRIBED
+    assert features[-1].bearing.value == types.END
+    assert features[-1].position == 400
 
 
 def test_non_coding_transitions():
@@ -967,14 +988,19 @@ def test_non_coding_transitions():
     ivals_sets = t_interp.intervals_5to3(plus_strand=True)
     assert len(ivals_sets) == 1
     t_interp.interpret_first_pos(ivals_sets[0])
-    features = t_interp.clean_features
-    assert features[-1].data.type == types.TRANSCRIBED
-    assert features[-1].data.bearing == types.START
-    assert features[-1].data.position == 110
+    controller.session.commit()
+    controller.execute_so_far()
+    features = cleaned_commited_features(controller.session)
+    assert features[-1].type.value == types.TRANSCRIBED
+    assert features[-1].bearing.value == types.START
+    assert features[-1].position == 110
     t_interp.interpret_last_pos(ivals_sets[0], plus_strand=True)
-    assert features[-1].data.type == types.TRANSCRIBED
-    assert features[-1].data.bearing == types.END
-    assert features[-1].data.position == 120
+    controller.session.commit()
+    controller.execute_so_far()
+    features = cleaned_commited_features(controller.session)
+    assert features[-1].type.value == types.TRANSCRIBED
+    assert features[-1].bearing.value == types.END
+    assert features[-1].position == 120
     assert len(features) == 2
 
 
@@ -1030,7 +1056,7 @@ def test_mv_features_to_prot():
 
     t_interp.decode_raw_features()
     controller.session.commit()
-    t_interp.mv_coding_features_to_proteins(controller.feature2protein_to_add)
+    t_interp.mv_coding_features_to_proteins(controller.feature2translateds_to_add)
     controller.execute_so_far()
     # grab protein again jic
     protein = controller.session.query(orm.Translated).filter(orm.Translated.given_id == 'y.p').all()
@@ -1101,6 +1127,13 @@ def test_check_and_fix_structure():
     controller.session.commit()
 
 
+def cleaned_commited_features(sess):
+    all_features = sess.query(orm.Feature).all()
+    clean_datas = [x for x in all_features if x.type.value in [types.TRANSCRIBED, types.CODING, types.INTRON,
+                                                               types.TRANS_INTRON, types.ERROR]]
+    return clean_datas
+
+
 def test_erroneous_splice():
     db_path = 'sqlite:///:memory:'
 
@@ -1115,18 +1148,20 @@ def test_erroneous_splice():
 
     ti = gffimporter.TranscriptInterpreter(transcript.handler, controller=controller)
     ti.decode_raw_features()
-    clean_datas = [x.data for x in ti.clean_features]
+    sess.commit()
+    controller.execute_so_far()
+    clean_datas = cleaned_commited_features(sess)
     # TSS, start codon, 2x error splice, 2x error splice, 2x error no stop
     print('---\n'.join([str(x) for x in clean_datas]))
     assert len(clean_datas) == 10
 
-    assert len([x for x in clean_datas if x.type == types.ERROR]) == 6
+    assert len([x for x in clean_datas if x.type.value == types.ERROR]) == 6
     # make sure splice error covers whole exon-intron-exon region
-    assert clean_datas[2].type == types.ERROR
-    assert clean_datas[2].bearing == types.START
+    assert clean_datas[2].type.value == types.ERROR
+    assert clean_datas[2].bearing.value == types.START
     assert clean_datas[2].position == 10
-    assert clean_datas[3].type == types.ERROR
-    assert clean_datas[3].bearing == types.END
+    assert clean_datas[3].type.value == types.ERROR
+    assert clean_datas[3].bearing.value == types.END
     assert clean_datas[3].position == 120
     sess.commit()
 
