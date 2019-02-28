@@ -302,6 +302,7 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
 
         elif in_values(entry.type, types.OnSequence):
             feature = FeatureHandler(controller)
+            feature.gffentry = copy.deepcopy(entry)
             assert len(self.transcribed_handlers) > 0, "no transcribeds found before feature"
             # MOD_READIN, will need to set up features with temporary linkage, but without entering them into final db
             feature.add_shortcuts_from_gffentry()
@@ -352,9 +353,11 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
         # dummy transcript
         # todo, CLEAN UP / get in functions
         transcribed_e_handler = TranscribedHandler(controller)
+        transcribed_e_handler.gffentry = copy.deepcopy(entry)
         transcribed = transcribed_e_handler.setup_insertion_ready(super_locus=self)
         controller.transcribeds_to_add.append(transcribed)
         piece_handler = TranscribedPieceHandler(controller)
+        piece_handler.gffentry = copy.deepcopy(entry)
         piece = piece_handler.setup_insertion_ready(super_locus=self, transcribed=transcribed_e_handler)
         controller.transcribed_pieces_to_add.append(piece)
         # open error
@@ -464,7 +467,7 @@ class FeatureHandler(api.FeatureHandler, GFFDerived):
 
         parents = self.gffentry.get_Parent()
         for piece in transcribed_pieces:
-            assert piece.given_id in parents
+            assert piece.gffentry.get_ID() in parents
 
         if self._is_plus_strand is None or self._given_id is None:
             self.add_shortcuts_from_gffentry()
