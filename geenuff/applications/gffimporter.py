@@ -786,7 +786,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             self.handle_splice(ivals_before, ivals_after, sign)
         else:
             raise ValueError('wrong feature types after three prime: b: {}, a: {}'.format(
-                [x.data.type for x in ivals_before], [x.data.type for x in ivals_after]))
+                [x.gffentry.type for x in ivals_before], [x.gffentry.type for x in ivals_after]))
 
     def handle_from_5p_utr(self, ivals_before, ivals_after, before_types, after_types, sign):
         assert types.FIVE_PRIME_UTR in before_types
@@ -798,7 +798,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             self.handle_splice(ivals_before, ivals_after, sign)
         else:
             raise ValueError('wrong feature types after five prime: b: {}, a: {}'.format(
-                [x.data.type for x in ivals_before], [x.data.type for x in ivals_after]))
+                [x.gffentry.type for x in ivals_before], [x.gffentry.type for x in ivals_after]))
 
     def handle_from_intergenic(self):
         raise NotImplementedError  # todo later
@@ -1036,7 +1036,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
 
         # what we see
         # uniq_datas = set([x.data.data for x in intervals])  # todo, revert and skip unique once handled above
-        observed_types = [x.data.data.type.name for x in intervals]
+        observed_types = [x.data.gffentry.type for x in intervals]
         set_o_types = set(observed_types)
         # check length
         if len(intervals) not in [1, 2]:
