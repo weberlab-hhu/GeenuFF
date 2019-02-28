@@ -27,9 +27,15 @@ class ImportControl(object):
         self.sequence_info = None
         self.super_loci = []
         self.mk_session()
+        # queues for adding to db
         self.features_to_add = []
         self.feature2transcribed_pieces_to_add = []
         self.feature2translateds_to_add = []
+        self.translated2transcribeds_to_add = []
+        self.translateds_to_add = []
+        self.transcribeds_to_add = []
+        self.transcribed_pieces_to_add = []
+        self.super_loci_to_add = []
 
         # counting everything that goes in
         self.feature_counter = helpers.Counter()
@@ -134,7 +140,6 @@ class ImportControl(object):
             if clean:
                 super_locus.add_n_clean_gff_entry_group(entry_group, err_handle, sequence_info=self.sequence_info.data,
                                                         session=self.session, controller=self)
-                print('right after clean...', self.feature2translateds_to_add)
             else:
                 super_locus.add_gff_entry_group(entry_group, err_handle, sequence_info=self.sequence_info.data,
                                                 controller=self)
@@ -149,27 +154,25 @@ class ImportControl(object):
         err_handle.close()
 
     def execute_so_far(self):
+        insert_lists = [(orm.SuperLocus.__table__.insert(), self.super_loci_to_add),
+                        (orm.Transcribed.__table__.insert(), self.transcribeds_to_add),
+                        (orm.TranscribedPiece.__table__.insert(), self.transcribed_pieces_to_add),
+                        (orm.Translated.__table__.insert(), self.translateds_to_add),
+                        (orm.association_translateds_to_transcribeds.insert(), self.translated2transcribeds_to_add),
+                        (orm.Feature.__table__.insert(), self.features_to_add),
+                        (orm.association_transcribeds_to_features.insert(), self.feature2transcribed_pieces_to_add),
+                        (orm.association_translateds_to_features.insert(), self.feature2translateds_to_add)
+                        ]
         conn = self.engine.connect()
-        print('adding --\\/\n', self.feature2translateds_to_add)
-        if self.features_to_add:
-            conn.execute(orm.Feature.__table__.insert(),
-                         self.features_to_add)
-            self.features_to_add = []
-
-        if self.feature2translateds_to_add:
-            conn.execute(orm.association_translateds_to_features.insert(),
-                         self.feature2translateds_to_add)
-            self.feature2translateds_to_add = []
-
-        if self.feature2transcribed_pieces_to_add:
-            conn.execute(orm.association_transcribeds_to_features.insert(),
-                         self.feature2transcribed_pieces_to_add)
-            self.feature2transcribed_pieces_to_add = []
+        for insert, a_list in insert_lists:
+            if a_list:
+                conn.execute(insert, a_list)
+            del a_list[:]
 
     def clean_super_loci(self):
         for sl in self.super_loci:
             coordinates = self.sequence_info.gffid_to_coords[sl.gffentry.seqid]
-            sl.check_and_fix_structure(self.session, coordinates)
+            sl.check_and_fix_structure(self.session, coordinates, controller=self)
 
 
 def in_values(x, enum):
@@ -265,9 +268,9 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
         if controller is not None:
             self.id = controller.super_locus_counter()
         self.transcribed_handlers = []
-        self.translated_handlers = []
-        self.transcribed_piece_handlers = []
-        self.feature_handlers = []
+        # self.translated_handlers = []
+        # self.transcribed_piece_handlers = []
+        # self.feature_handlers = []
 
     def gen_data_from_gffentry(self, gffentry, **kwargs):
         data = self.data_type(type=gffentry.type,
@@ -285,12 +288,12 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
 
         elif in_values(entry.type, types.TranscriptLevelAll):
             transcribed = TranscribedHandler(controller)
-            transcribed.process_gffentry(entry, super_locus=self.data)
+            transcribed.process_gffentry(entry, super_locus=self.data, gen_data=False)
             self.transcribed_handlers.append(transcribed)
 
             piece = TranscribedPieceHandler(controller)
-            piece.process_gffentry(entry, super_locus=self.data, transcribed=transcribed.data)
-            self.transcribed_piece_handlers.append(piece)
+            piece.process_gffentry(entry, super_locus=self.data, transcribed=transcribed.data, gen_data=False)
+            transcribed.transcribed_piece_handlers.append(piece)
 
         elif in_values(entry.type, types.OnSequence):
             feature = FeatureHandler(controller)
@@ -299,8 +302,9 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
             # MOD_READIN, will need to set up features with temporary linkage, but without entering them into final db
             feature.process_gffentry(entry, super_locus=self.data,
                                      transcribed_pieces=[self.transcribed_handlers[-1].one_piece().data],
-                                     coordinates=coordinates)
-            self.feature_handlers.append(feature)
+                                     coordinates=coordinates, gen_data=False)
+            feature.add_shortcuts_from_gffentry(gffentry=entry, ) # ADVARK
+            self.transcribed_handlers[-1].feature_handlers.append(feature)
         else:
             raise ValueError("problem handling entry of type {}".format(entry.type))
 
@@ -325,7 +329,8 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
 
     def add_n_clean_gff_entry_group(self, entries, ts_err_handle, sequence_info, session, controller):
         self.add_gff_entry_group(entries, ts_err_handle, sequence_info, controller)
-        coordinates = sequence_info.gffid_to_coords[self.gffentry.seqid]
+        session.commit()
+        coordinates = sequence_info.handler.gffid_to_coords[self.gffentry.seqid]
         self.check_and_fix_structure(session, coordinates, controller=controller)
 
     def _mark_erroneous(self, entry, coordinates, controller, msg=''):
@@ -344,6 +349,7 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
             err_start = entry.end
             err_end = entry.start
         # dummy transcript
+        # todo, add to queue, not db
         transcribed_e_handler = TranscribedHandler(controller)
         transcribed_e = orm.Transcribed(super_locus=self.data)
         transcribed_e_handler.add_data(transcribed_e)
@@ -351,21 +357,21 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
         piece = orm.TranscribedPiece(super_locus=self.data, transcribed=transcribed_e)
         piece_handler.add_data(piece)
         # open error
-        feature_err_open = FeatureHandler(controller)
+        feature_err_open = FeatureHandler(controller, processed=True)
         feature_err_open.process_gffentry(entry, super_locus=self.data, coordinates=coordinates)
         for key, val in [('type', types.ERROR), ('bearing', types.START), ('position', err_start),
                          ('transcribed_pieces', [piece])]:
             feature_err_open.set_data_attribute(key, val)
         # close error
-        feature_err_close = FeatureHandler(controller)
+        feature_err_close = FeatureHandler(controller, processed=True)
         feature_err_close.process_gffentry(entry, super_locus=self.data, coordinates=coordinates)
         for key, val in [('type', types.ERROR), ('bearing', types.END), ('position', err_end),
                          ('transcribed_pieces', [piece])]:
             feature_err_close.set_data_attribute(key, val)
         # sf.gen_data_from_gffentry(entry, super_locus=self.data)
-        self.feature_handlers += [feature_err_open, feature_err_close]
+        transcribed_e_handler.feature_handlers += [feature_err_open, feature_err_close]
         self.transcribed_handlers.append(transcribed_e_handler)
-        self.transcribed_piece_handlers.append(piece_handler)
+        transcribed_e_handler.transcribed_piece_handlers.append(piece_handler)
 
     def check_and_fix_structure(self, sess, coordinates, controller):
         # todo, add against sequence check to see if start/stop and splice sites are possible or not, e.g. is start ATG?
@@ -379,7 +385,7 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
             piece = transcript.handler.one_piece().data
             t_interpreter = TranscriptInterpreter(transcript.handler, controller=controller)
             # skip any transcript consisting of only processed features (in context, should just be pre-interp errors)
-            if t_interpreter.has_processed_features_only():
+            if t_interpreter.has_no_unprocessed_features():
                 pass
             else:
                 # mark old features
@@ -399,41 +405,44 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
 
 class FeatureHandler(api.FeatureHandler, GFFDerived):
 
-    def __init__(self, controller=None):
+    def __init__(self, controller=None, processed=False):
         api.FeatureHandler.__init__(self)
         GFFDerived.__init__(self)
         if controller is not None:
             self.id = controller.feature_counter()
+        self.processed = processed
+        self._is_plus_strand = None
+        self._given_id = None
 
-    def gen_data_from_gffentry(self, gffentry, super_locus=None, transcribed_pieces=None, translateds=None,
-                               coordinates=None, **kwargs):
-        if transcribed_pieces is None:
-            transcribed_pieces = []
-        if translateds is None:
-            translateds = []
+    @property
+    def is_plus_strand(self):
+        if self.data is not None:
+            return self.data.is_plus_strand
+        elif self._is_plus_strand is not None:
+            return self._is_plus_strand
+        else:
+            raise ValueError('attempt to use ._is_plus_strand while it is still None')
 
-        parents = gffentry.get_Parent()
-        for piece in transcribed_pieces:
-            assert piece.given_id in parents
+    @property
+    def given_id(self):
+        if self.data is not None:
+            return self.data.given_id
+        elif self._given_id is not None:
+            return self._given_id
+        else:
+            raise ValueError('attempt to use ._given_id while it is still None')
 
-        given_id = gffentry.get_ID()  # todo, None on missing
-        is_plus_strand = gffentry.strand == '+'
+    def add_shortcuts_from_gffentry(self):
 
-        data = self.data_type(
-            given_id=given_id,
-            type=gffentry.type,
-            coordinates=coordinates,
-            is_plus_strand=is_plus_strand,
-            score=gffentry.score,
-            source=gffentry.source,
-            phase=gffentry.phase,
-            super_locus=super_locus,
-            transcribed_pieces=transcribed_pieces,
-            translateds=translateds
-        )
-        self.add_data(data)
+        self._given_id = self.gffentry.get_ID()
+        if self.gffentry.strand == '+':
+            self._is_plus_strand = True
+        elif self.gffentry.strand == '-':
+            self._is_plus_strand = False
+        else:
+            raise ValueError('cannot interpret strand "{}"'.format(self.gffentry.strand))
 
-    def setup_insertion_ready(self, gffentry, super_locus=None, transcribed_pieces=None, translateds=None,
+    def setup_insertion_ready(self, super_locus=None, transcribed_pieces=None, translateds=None,
                               coordinates=None):
 
         if transcribed_pieces is None:
@@ -445,24 +454,19 @@ class FeatureHandler(api.FeatureHandler, GFFDerived):
         for piece in transcribed_pieces:
             assert piece.given_id in parents
 
-        given_id = self.gffentry.get_ID()  # todo, None on missing
-        if self.gffentry.strand == '+':
-            is_plus_strand = True
-        elif self.gffentry.strand == '-':
-            is_plus_strand = False
-        else:
-            raise ValueError('cannot interpret strand "{}"'.format(self.gffentry.strand))
+        if self._is_plus_strand is None or self._given_id is None:
+            self.add_shortcuts_from_gffentry()
 
         feature = {'id': self.id,
-                    'given_id': given_id,
-                    'type': gffentry.type,
-                    'coordinate_id': coordinates.id,
-                    'is_plus_strand': is_plus_strand,
-                    'score': gffentry.score,
-                    'source': gffentry.source,
-                    'phase': gffentry.phase,  # todo, do I need to handle '.'?
-                    'super_locus_id': super_locus.id,
-                    }
+                   'given_id': self.given_id,
+                   'type': self.gffentry.type,
+                   'coordinate_id': coordinates.id,
+                   'is_plus_strand': self.is_plus_strand,
+                   'score': self.gffentry.score,
+                   'source': self.gffentry.source,
+                   'phase': self.gffentry.phase,  # todo, do I need to handle '.'?
+                   'super_locus_id': super_locus.id,
+                   }
 
         feature2pieces = [{'transcribed_piece_id': p.id, 'feature_id': self.id} for p in transcribed_pieces]
         feature2translateds = [{'translated_id': p.id, 'feature_id': self.id} for p in translateds]
@@ -471,25 +475,25 @@ class FeatureHandler(api.FeatureHandler, GFFDerived):
 
     # "+ strand" [upstream, downstream) or "- strand" (downstream, upstream] from 0 coordinates
     def upstream_from_interval(self, interval):
-        if self.data.is_plus_strand:
+        if self.is_plus_strand:
             return interval.begin
         else:
             return interval.end - 1  # -1 bc as this is now a start, it should be _inclusive_ (and flipped)
 
     def downstream_from_interval(self, interval):
-        if self.data.is_plus_strand:
+        if self.is_plus_strand:
             return interval.end
         else:
             return interval.begin - 1  # -1 to be _exclusive_ (and flipped)
 
     def upstream(self):
-        if self.data.is_plus_strand:
+        if self.is_plus_strand:
             return self.gffentry.start
         else:
             return self.gffentry.end
 
     def downstream(self):
-        if self.data.is_plus_strand:
+        if self.is_plus_strand:
             return self.gffentry.end
         else:
             return self.gffentry.start
@@ -509,6 +513,9 @@ class TranscribedHandler(api.TranscribedHandler, GFFDerived):
         GFFDerived.__init__(self)
         if controller is not None:
             self.id = controller.transcribed_counter()
+        self.transcribed_piece_handlers = []
+        self.feature_handlers = []
+        self.translated_handlers = []
 
     def gen_data_from_gffentry(self, gffentry, super_locus=None, **kwargs):
         parents = gffentry.get_Parent()
@@ -523,9 +530,9 @@ class TranscribedHandler(api.TranscribedHandler, GFFDerived):
             raise NotImplementedError  # todo handle multi inheritance, etc...
 
     def one_piece(self):
-        pieces = self.data.transcribed_pieces
+        pieces = self.transcribed_piece_handlers
         assert len(pieces) == 1
-        return pieces[0].handler
+        return pieces[0]
 
 
 class TranscribedPieceHandler(api.TranscribedPieceHandler, GFFDerived):
@@ -554,6 +561,11 @@ class TranslatedHandler(api.TranslatedHandler):
         if controller is not None:
             self.id = controller.translated_counter()
 
+    def setup_insertion_ready(self, transcribed_handler, super_locus_handler, given_id):
+        translated = {'id': self.id, 'super_locus_id': super_locus_handler.id, 'given_id': given_id}
+        translated_to_transcribed = {'translated_id': self.id, 'transcribed_id': transcribed_handler.id}
+        return translated, translated_to_transcribed
+
 
 class NoTranscriptError(Exception):
     pass
@@ -580,13 +592,10 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             self.proteins = None  # this way we only run into an error if we actually wanted to use proteins
 
     def new_feature(self, template, translateds=None, **kwargs):
-        handler = FeatureHandler(controller=self.controller)
+        handler = FeatureHandler(controller=self.controller, processed=True)
         handler.gffentry = copy.deepcopy(template.gffentry)
-        #data = orm.Feature()
-        #handler.add_data(data)
-        #template.fax_all_attrs_to_another(another=handler)
-        feature, feature2pieces, feature2translateds = handler.setup_insertion_ready(handler.gffentry,
-                                                                                     template.data.super_locus,
+
+        feature, feature2pieces, feature2translateds = handler.setup_insertion_ready(template.data.super_locus,
                                                                                      template.data.transcribed_pieces,
                                                                                      translateds,
                                                                                      template.data.coordinates)
@@ -633,17 +642,16 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
     def _get_raw_protein_ids(self):
         # only meant for use before feature interpretation
         protein_ids = set()
-        for piece in self.transcript.data.transcribed_pieces:
-            for feature in piece.features:
-                try:
-                    if feature.type.value == types.CDS:
-                        protein_id = self._get_protein_id_from_cds(feature.handler)
-                        protein_ids.add(protein_id)
-                except AttributeError as e:
-                    print('failing here.........')
-                    print(len(piece.features))
-                    print(piece.features)
-                    raise e
+        for feature in self.transcript.feature_handlers:
+            try:
+                if feature.gffentry.type == types.CDS:
+                    protein_id = self._get_protein_id_from_cds(feature.handler)
+                    protein_ids.add(protein_id)
+            except AttributeError as e:
+                print('failing here.........')
+                print(len(self.transcript.feature_handlers))
+                print(self.transcript.feature_handlers)
+                raise e
         return protein_ids
 
     def _setup_proteins(self):
@@ -653,29 +661,17 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         for key in pids:
             # setup blank protein
             protein = TranslatedHandler(controller=self.controller)
-            pdata = orm.Translated()
-            protein.add_data(pdata)
-            # copy most all attributes from self to protein (except:
-            # translateds bc invalid, and
-            # features bc at this point they are all input features that'll be removed anyways
-            self.transcript.fax_all_attrs_to_another(another=protein,
-                                                     skip_linking=['translateds', 'transcribed_pieces'])
-            pdata.transcribeds = [self.transcript.data]  # link back to transcript
-            pdata.given_id = key  # set given_id to what was found
+            # ready translated and link to transcribed for database entry
+            translated, translated_to_transcribed = protein.setup_insertion_ready(
+                transcribed_handler=self.transcript,
+                super_locus_handler=self.super_locus,
+                given_id=key
+            )
+            self.controller.translateds2transcribeds_to_add.append(translated_to_transcribed)
+            self.controller.translateds_to_add.append(translated)
             proteins[key] = protein
 
         return proteins
-
-    #def mv_coding_features_to_proteins(self, feature2translated_to_add):
-    #    # only meant for use after feature interpretation
-    #    for feature in self.clean_features:
-    #        if feature.data.type.value in [x.value for x in types.TranslatedAll]:  # todo, fix brittle to pre/post commit
-    #            pid = self._get_protein_id_from_cds(feature)
-    #            protdata = self.proteins[pid].data
-    #            newlink = {'translated_id': protdata.id, 'feature_id': feature.data.id}
-    #            if feature.data.id is None:
-    #                raise ValueError('{} has no id'.format(feature.data))
-    #            feature2translated_to_add.append(newlink)
 
     def is_plus_strand(self):
         features = set()
@@ -998,7 +994,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                     err_end = min(at + error_buffer, end_of_sequence)
                     self.new_feature(template=i0.data, type=types.ERROR, position=err_start,
                                      phase=None, bearing=types.START)
-                    print('just set err_start at {}'.format(err_start))
+
                     self.new_feature(template=i0.data, type=types.ERROR, position=err_end,
                                      phase=None, bearing=types.END)
             else:
@@ -1086,15 +1082,13 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         yield out
 
     def _all_features(self):
-        for piece in self.transcript.data.transcribed_pieces:
-            for feature in piece.features:
-                yield feature
+        return self.transcript.feature_handlers
 
-    def has_processed_features_only(self):
-        out = True
-        for feature in self._all_features():
-            if feature.type.value not in [x.value for x in types.KeepOnSequence]:
-                out = False
+    def has_no_unprocessed_features(self):
+        # note,
+        out = False
+        if self._all_features() == []:
+            out = True
         return out
 
 
