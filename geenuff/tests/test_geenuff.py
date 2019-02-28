@@ -816,7 +816,6 @@ def test_fullcopy():
     assert new.transcribed_pieces == [scribedpiece]
 
 
-
 def test_transcript_interpreter():
     sl, controller = setup_testable_super_loci()
     transcript = [x for x in sl.data.transcribeds if x.given_id == 'y'][0]
@@ -825,15 +824,19 @@ def test_transcript_interpreter():
     t_interp.decode_raw_features()
     controller.session.commit()
     # has all standard features
-    types_out = set([x.data.type.value for x in t_interp.clean_features])
+    controller.session.commit()
+    controller.execute_so_far()
+    features = cleaned_commited_features(controller.session)
+    types_out = set([x.type.value for x in features])
     assert types_out == {types.CODING,
                          types.TRANSCRIBED,
                          types.INTRON}
-    bearings_out = set([x.data.bearing.value for x in t_interp.clean_features])
+    bearings_out = set([x.bearing.value for x in features])
     assert bearings_out == {types.START, types.END}
 
-    assert t_interp.clean_features[-1].data.position == 400
-    assert t_interp.clean_features[0].data.position == 0
+    transcribeds = [x for x in features if x.type.value == types.TRANSCRIBED]
+    assert max([x.position for x in transcribeds]) == 400
+    assert min([x.position for x in transcribeds]) == 0
 
 
 def test_transcript_get_first():
@@ -1056,7 +1059,6 @@ def test_mv_features_to_prot():
 
     t_interp.decode_raw_features()
     controller.session.commit()
-    t_interp.mv_coding_features_to_proteins(controller.feature2translateds_to_add)
     controller.execute_so_far()
     # grab protein again jic
     protein = controller.session.query(orm.Translated).filter(orm.Translated.given_id == 'y.p').all()
