@@ -289,12 +289,14 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
 
         elif in_values(entry.type, types.TranscriptLevelAll):
             transcribed = TranscribedHandler(controller)
+            transcribed.gffentry = copy.deepcopy(entry)
             #transcribed.process_gffentry(entry, super_locus=self.data, gen_data=False)
             transcribed_add = transcribed.setup_insertion_ready(gffentry=entry, super_locus=self.data)
             controller.transcribeds_to_add.append(transcribed_add)
             self.transcribed_handlers.append(transcribed)
 
             piece = TranscribedPieceHandler(controller)
+            piece.gffentry = copy.deepcopy(entry)
             piece_add = piece.setup_insertion_ready(entry, super_locus=self.data, transcribed=transcribed,
                                                     gen_data=False)
             controller.transcribed_pieces_to_add.append(piece_add)
@@ -398,7 +400,7 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
         #forced_keep_handlers = []
         for transcript in self.data.transcribeds:
             piece = transcript.handler.one_piece().data
-            t_interpreter = TranscriptInterpreter(transcript.handler, controller=controller)
+            t_interpreter = TranscriptInterpreter(transcript.handler, super_locus=self, controller=controller)
             # skip any transcript consisting of only processed features (in context, should just be pre-interp errors)
             if t_interpreter.has_no_unprocessed_features():
                 pass
@@ -603,6 +605,7 @@ class TranscribedPieceHandler(api.TranscribedPieceHandler, GFFDerived):
                              'given_id': given_id}
         return transcribed_piece
 
+
 class TranslatedHandler(api.TranslatedHandler):
     def __init__(self, controller=None):  # todo, all handlers, controller=None
         super().__init__()
@@ -631,8 +634,8 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
     """takes raw/from-gff transcript, and makes totally explicit"""
     HANDLED = 'handled'
 
-    def __init__(self, transcript, controller):
-        super().__init__(transcript)
+    def __init__(self, transcript, super_locus, controller):
+        super().__init__(transcript, super_locus, session=controller.session)
         self.controller = controller
         try:
             self.proteins = self._setup_proteins()
@@ -715,7 +718,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                 super_locus_handler=self.super_locus,
                 given_id=key
             )
-            self.controller.translateds2transcribeds_to_add.append(translated_to_transcribed)
+            self.controller.translated2transcribeds_to_add.append(translated_to_transcribed)
             self.controller.translateds_to_add.append(translated)
             proteins[key] = protein
 

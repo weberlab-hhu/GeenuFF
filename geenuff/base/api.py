@@ -603,11 +603,12 @@ def bearing_match(feature, previous):
 
 class TranscriptInterpBase(object):
     # todo, move this to generic location and/or skip entirely
-    def __init__(self, transcript, session=None):
+    def __init__(self, transcript, super_locus, session=None):
         assert isinstance(transcript, TranscribedHandler)
         self.status = TranscriptStatus()
         self.transcript = transcript
         self.session = session
+        self.super_locus = super_locus
 
     def transition_5p_to_3p(self):
         status = TranscriptStatus()
@@ -712,10 +713,6 @@ class TranscriptInterpBase(object):
             raise IndecipherableLinkageError("Multiple possible within-transcript {} links found from {}, ({})".format(
                 direction, current_piece, collapsed
             ))
-
-    @property
-    def super_locus(self):
-        return self.transcript.data.super_locus.handler
 
     @staticmethod
     def update_status(status, aligned_features):

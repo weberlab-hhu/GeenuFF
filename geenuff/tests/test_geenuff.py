@@ -1040,22 +1040,24 @@ def test_errors_not_lost():
 
 def test_setup_proteins():
     sl, controller = setup_testable_super_loci()
-    transcript = [x for x in sl.data.transcribeds if x.given_id == 'y'][0]
-    t_interp = gffimporter.TranscriptInterpreter(transcript.handler, controller)
+    transcript = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
+    t_interp = gffimporter.TranscriptInterpreter(transcript, sl, controller)
+    controller.execute_so_far()
     print(t_interp.proteins)
     assert len(t_interp.proteins.keys()) == 1
-    protein = t_interp.proteins['y.p'].data
-    assert transcript in protein.transcribeds
-    assert protein in transcript.translateds
-    assert protein.given_id == 'y.p'
-    controller.session.commit()
+
+    transcript_orm = controller.session.query(orm.Transcribed).filter(orm.Transcribed.given_id == 'y').first()
+    protein_orm = controller.session.query(orm.Translated).filter(orm.Translated.given_id == 'y.p').first()
+    assert transcript_orm in protein_orm.transcribeds
+    assert protein_orm in transcript_orm.translateds
+    assert protein_orm.given_id == 'y.p'
 
 
 def test_mv_features_to_prot():
     sl, controller = setup_testable_super_loci()
     controller.session.commit()
     transcript = [x for x in sl.data.transcribeds if x.given_id == 'y'][0]
-    t_interp = gffimporter.TranscriptInterpreter(transcript.handler, controller)
+    t_interp = gffimporter.TranscriptInterpreter(transcript.handler, sl, controller)
 
     t_interp.decode_raw_features()
     controller.session.commit()
