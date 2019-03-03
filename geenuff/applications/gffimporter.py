@@ -643,13 +643,15 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             self.proteins = None  # this way we only run into an error if we actually wanted to use proteins
 
     def new_feature(self, template, translateds=None, **kwargs):
+        coordinates = self.controller.sequence_info.gffid_to_coords[template.gffentry.seqid]
         handler = FeatureHandler(controller=self.controller, processed=True)
         handler.gffentry = copy.deepcopy(template.gffentry)
 
-        feature, feature2pieces, feature2translateds = handler.setup_insertion_ready(template.data.super_locus,
-                                                                                     template.data.transcribed_pieces,
-                                                                                     translateds,
-                                                                                     template.data.coordinates)
+        feature, feature2pieces, feature2translateds = handler.setup_insertion_ready(
+            self.super_locus,
+            self.transcript.transcribed_piece_handlers,  # todo, add flexibility for parsing trans-splicing...
+            translateds,
+            coordinates)
         for key in kwargs:
             feature[key] = kwargs[key]
 
@@ -725,12 +727,8 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         return proteins
 
     def is_plus_strand(self):
-        features = set()
-        for piece in self.transcript.data.transcribed_pieces:
-            for feature in piece.features:
-                features.add(feature)
-        features = list(features)
-        seqids = [x.coordinates.seqid for x in features]
+        features = self.transcript.feature_handlers
+        seqids = [x.gffentry.seqid for x in features]
         if not all([x == seqids[0] for x in seqids]):
             raise TransSplicingError("non matching seqids {}, for {}".format(seqids, self.super_locus.id))
         if all([x.is_plus_strand for x in features]):
@@ -779,7 +777,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
     @staticmethod
     def matches_edge_before(ival):
         data = ival.data
-        if data.data.is_plus_strand:
+        if data.is_plus_strand:
             out = data.py_end == ival.end
         else:
             out = data.py_start == ival.begin
@@ -788,7 +786,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
     @staticmethod
     def matches_edge_after(ival):
         data = ival.data
-        if data.data.is_plus_strand:
+        if data.is_plus_strand:
             out = data.py_start == ival.begin
         else:
             out = data.py_end == ival.end
@@ -1034,7 +1032,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                              bearing=types.CLOSE_STATUS, translateds=[translated])
             self.new_feature(template=cds_feature, type=types.TRANSCRIBED, position=at,
                              bearing=types.CLOSE_STATUS)
-            self.status.saw_start(phase=cds_feature.data.phase)
+            self.status.saw_start(phase=cds_feature.gffentry.phase)
             self.status.saw_tss()  # coding implies the transcript
             # may or may not be stop codon, but will just mark as error (unless at edge of sequence)
             start_of_sequence = self.controller.sequence_info.gffid_to_coords[cds_feature.gffentry.seqid].start - 1
@@ -1119,7 +1117,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         features = set()
         for feature in self._all_features():
             features.add(feature)
-        features = [f.handler for f in features]
+
         for f in features:
             tree[helpers.as_py_start(f.gffentry.start):helpers.as_py_end(f.gffentry.end)] = f
         tree.split_overlaps()

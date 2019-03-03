@@ -1144,13 +1144,19 @@ def test_erroneous_splice():
     sl, controller = setup_testable_super_loci(db_path)
     sess = controller.session
     # get target transcript
-    transcript = [x for x in sl.data.transcribeds if x.given_id == 'x'][0]
+    transcript = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'x'][0]
+    print(sl.data.transcribeds, '<- transcribeds')
     # fish out "first exon" features and extend so intron is of -length
-    f0 = sess.query(orm.Feature).filter(orm.Feature.given_id == 'ftr000000').first()
-    f1 = sess.query(orm.Feature).filter(orm.Feature.given_id == 'ftr000001').first()
-    f0.handler.gffentry.end = f1.handler.gffentry.end = 115
+    features = []
+    for scribed in sl.transcribed_handlers:
+        features += scribed.feature_handlers
+    f0_handler = [f for f in features if f.gffentry.get_ID() == 'ftr000000'][0]
+    f1_handler = [f for f in features if f.gffentry.get_ID() == 'ftr000001'][0]
+    #f0 = sess.query(orm.Feature).filter(orm.Feature.given_id == 'ftr000000').first()
+    #f1 = sess.query(orm.Feature).filter(orm.Feature.given_id == 'ftr000001').first()
+    f0_handler.gffentry.end = f1_handler.gffentry.end = 115
 
-    ti = gffimporter.TranscriptInterpreter(transcript.handler, controller=controller)
+    ti = gffimporter.TranscriptInterpreter(transcript, controller=controller, super_locus=sl)
     ti.decode_raw_features()
     sess.commit()
     controller.execute_so_far()
