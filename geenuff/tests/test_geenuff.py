@@ -842,8 +842,8 @@ def test_transcript_interpreter():
 def test_transcript_get_first():
     # plus strand
     sl, controller = setup_testable_super_loci()
-    transcript = [x for x in sl.data.transcribeds if x.given_id == 'y'][0]
-    t_interp = gffimporter.TranscriptInterpreter(transcript.handler, controller)
+    transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
+    t_interp = gffimporter.TranscriptInterpreter(transcript_handler, super_locus=sl, controller=controller)
     i0 = t_interp.intervals_5to3(plus_strand=True)[0]
     t_interp.interpret_first_pos(i0)
     controller.session.commit()
@@ -852,31 +852,28 @@ def test_transcript_get_first():
     status = t_interp.status
     assert len(features) == 1
     f0 = features[0]
-    print(f0)
-    print(status.__dict__)
-    print(i0[0].data.data.is_plus_strand)
     assert f0.position == 0
     assert status.is_5p_utr()
     assert f0.phase is None
     assert f0.is_plus_strand
 
+def test_transcript_get_first_minus_strand():
     # minus strand
     sl, controller = setup_testable_super_loci()
-    transcript = [x for x in sl.data.transcribeds if x.given_id == 'y'][0]
-    for feature in sl.data.features:  # force minus strand
-        feature.is_plus_strand = False
-        try:  # and for the from-gff features
-            feature.handler.gffentry.strand = '-'
-        except AttributeError:
-            pass
+    transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
+    for transcript_handler in sl.transcribed_handlers:
+        for feature in transcript_handler.feature_handlers:
+            feature.gffentry.strand = '-'
+            feature.add_shortcuts_from_gffentry()
 
     # new transcript interpreter so the clean features reset
-    t_interp = gffimporter.TranscriptInterpreter(transcript.handler, controller)
+    t_interp = gffimporter.TranscriptInterpreter(transcript_handler, super_locus=sl, controller=controller)
     i0 = t_interp.intervals_5to3(plus_strand=False)[0]
     t_interp.interpret_first_pos(i0, plus_strand=False)
     controller.session.commit()
     controller.execute_so_far()
     features = cleaned_commited_features(controller.session)
+    print(features)
     features = [f for f in features if not f.is_plus_strand]
     status = t_interp.status
     assert len(features) == 1
@@ -926,8 +923,8 @@ def test_transcript_get_first():
 
 def test_transcript_transition_from_5p_to_end():
     sl, controller = setup_testable_super_loci()
-    transcript = [x for x in sl.data.transcribeds if x.given_id == 'y'][0]
-    t_interp = gffimporter.TranscriptInterpreter(transcript.handler, controller)
+    transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
+    t_interp = gffimporter.TranscriptInterpreter(transcript_handler, super_locus=sl, controller=controller)
     ivals_sets = t_interp.intervals_5to3(plus_strand=True)
     t_interp.interpret_first_pos(ivals_sets[0])
     # hit start codon
