@@ -329,7 +329,7 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
         except AssertionError as e:
             coordinates = sequence_info.handler.gffid_to_coords[entries[0].seqid]
             self._mark_erroneous(entries[0], coordinates, controller, str(e))
-            # todo, log to file
+            logging.warning('marking errer bc {}'.format(e))
 
     def add_n_clean_gff_entry_group(self, entries, ts_err_handle, sequence_info, session, controller):
         self.add_gff_entry_group(entries, ts_err_handle, sequence_info, controller)
@@ -393,21 +393,19 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
     def check_and_fix_structure(self, sess, coordinates, controller):
         # todo, add against sequence check to see if start/stop and splice sites are possible or not, e.g. is start ATG?
         # if it's empty (no bottom level features at all) mark as erroneous
-        if not self.data.features:
+        features = []
+        for transcript in self.transcribed_handlers:
+            features += transcript.feature_handlers
+        if not features:
             self._mark_erroneous(self.gffentry, coordinates=coordinates, controller=controller)
             sess.commit()
 
-        #forced_keep_handlers = []
-        for transcript in self.data.transcribeds:
-            piece = transcript.handler.one_piece().data
-            t_interpreter = TranscriptInterpreter(transcript.handler, super_locus=self, controller=controller)
+        for transcript in self.transcribed_handlers:
+            t_interpreter = TranscriptInterpreter(transcript, super_locus=self, controller=controller)
             # skip any transcript consisting of only processed features (in context, should just be pre-interp errors)
             if t_interpreter.has_no_unprocessed_features():
                 pass
             else:
-                # mark old features
-                for feature in piece.features:
-                    feature.handler.mark_for_deletion()
                 # make new features
                 t_interpreter.decode_raw_features()
                 # make sure the new features link to protein if appropriate
@@ -415,9 +413,6 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
                 controller.execute_so_far()
                 #t_interpreter.mv_coding_features_to_proteins(controller.feature2translateds_to_add)
             #forced_keep_handlers += t_interpreter.clean_features
-        # remove old features
-        self.delete_marked_underlings(sess)
-        #del forced_keep_handlers
 
 
 class FeatureHandler(api.FeatureHandler, GFFDerived):
@@ -468,8 +463,9 @@ class FeatureHandler(api.FeatureHandler, GFFDerived):
             translateds = []
 
         parents = self.gffentry.get_Parent()
-        for piece in transcribed_pieces:
-            assert piece.gffentry.get_ID() in parents
+        if parents is not None:  # which can occur e.g. when we just copied gffentry from gene for an error
+            for piece in transcribed_pieces:
+                assert piece.gffentry.get_ID() in parents
 
         if self._is_plus_strand is None or self._given_id is None:
             self.add_shortcuts_from_gffentry()
@@ -761,8 +757,8 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             slice_frm_after = any([x['matches_edge'] for x in marked_after])
             if slice_frm_before and slice_frm_after:
                 logging.warning('slice causer on both sides with repeates\nbefore: {}, after: {}'.format(
-                    [x.data.type for x in ivals_before],
-                    [x.data.type for x in ivals_after]
+                    [x.data.gffentry.type for x in ivals_before],
+                    [x.data.gffentry.type for x in ivals_after]
                 ))
             # finally, keep non repeats or where this side didn't cause slice
             ivals_before = [x['interval'] for x in marked_before if not x['repeated'] or not slice_frm_before]
@@ -984,7 +980,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                              bearing=types.OPEN_STATUS, translateds=[translated])
             self.new_feature(template=cds_feature, type=types.TRANSCRIBED, position=at,
                              bearing=types.OPEN_STATUS)
-            self.status.saw_start(phase=cds_feature.data.phase)
+            self.status.saw_start(phase=cds_feature.gffentry.phase)
             self.status.saw_tss()  # coding implies the transcript
             # mask a dummy region up-stream as it's very unclear whether it should be intergenic/intronic/utr
             if plus_strand:
@@ -1137,9 +1133,10 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
 
     def has_no_unprocessed_features(self):
         # note,
-        out = False
-        if self._all_features() == []:
-            out = True
+        out = True
+        for feature in self._all_features():
+            if not feature.processed:
+                out = False
         return out
 
 

@@ -981,13 +981,17 @@ def test_transcript_transition_from_5p_to_end():
 
 def test_non_coding_transitions():
     sl, controller = setup_testable_super_loci()
-    transcript = [x for x in sl.data.transcribeds if x.given_id == 'z'][0]
-    piece = transcript.transcribed_pieces[0]
-    t_interp = gffimporter.TranscriptInterpreter(transcript.handler, controller)
+    transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'z'][0]
+    piece = transcript_handler.one_piece()
+    t_interp = gffimporter.TranscriptInterpreter(transcript_handler, super_locus=sl, controller=controller)
     # get single-exon no-CDS transcript
-    cds = [x for x in transcript.transcribed_pieces[0].features if x.type.value == types.CDS][0]
-    piece.handler.de_link(cds.handler)
-    print(transcript)
+    # delete CDS feature
+    features = transcript_handler.feature_handlers
+    for i in range(len(features) - 1, -1, -1):
+        print(i)
+        if features[i].gffentry.type == types.CDS:
+            del features[i]
+    # check we just setup TSS then TTS in that order
     ivals_sets = t_interp.intervals_5to3(plus_strand=True)
     assert len(ivals_sets) == 1
     t_interp.interpret_first_pos(ivals_sets[0])
@@ -1013,29 +1017,16 @@ def test_errors_not_lost():
     gene_entry = gffhelper.GFFObject(s)
 
     coordinates = controller.sequence_info.data.coordinates[0]
-    controller.session.add(coordinates)
-    sl._mark_erroneous(gene_entry, coordinates=coordinates, controller=controller)
-    print(sl.data.transcribeds, len(sl.data.transcribeds), '...sl transcribeds')
-    feature_eh, feature_e2h = sl.feature_handlers[-2:]
 
-    print('what features did we start with::?')
-    for feature in sl.data.features:
-        print(feature)
-        controller.session.add(feature)
-    controller.session.commit()
+    sl._mark_erroneous(gene_entry, coordinates=coordinates, controller=controller)
+    assert len(sl.transcribed_handlers) == 4
+    transcribed_e = sl.transcribed_handlers[-1]
 
     sl.check_and_fix_structure(sess=controller.session, coordinates=coordinates, controller=controller)
     #for feature in sl.data.features:
-    #    controller.session.add(feature)
-    #controller.session.commit()
-    print('---and what features did we leave?---')
-    for feature in sl.data.features:
-        print(feature)
-    print(feature_eh.delete_me)
-    print(str(feature_eh.data), 'hello...')
-    # note, you probably get sqlalchemy.orm.exc.DetachedInstanceError before failing on AssertionError below
-    assert feature_eh.data in sl.data.features
-    assert feature_e2h.data in sl.data.features
+
+    features = controller.session.query(orm.Feature).filter(orm.Feature.given_id == 'eg_missing_children').all()
+    assert len(features) == 2
 
 
 def test_setup_proteins():
@@ -1056,8 +1047,8 @@ def test_setup_proteins():
 def test_mv_features_to_prot():
     sl, controller = setup_testable_super_loci()
     controller.session.commit()
-    transcript = [x for x in sl.data.transcribeds if x.given_id == 'y'][0]
-    t_interp = gffimporter.TranscriptInterpreter(transcript.handler, sl, controller)
+    transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
+    t_interp = gffimporter.TranscriptInterpreter(transcript_handler, sl, controller)
 
     t_interp.decode_raw_features()
     controller.session.commit()
@@ -1084,7 +1075,6 @@ def test_check_and_fix_structure():
     sl.check_and_fix_structure(controller.session, coordinates=coordinates, controller=controller)
     controller.execute_so_far()
     # check handling of nice transcript
-    transcript = [x for x in sl.data.transcribeds if x.given_id == 'y'][0]
     #protein = [x for x in sl.data.translateds if x.given_id == 'y.p'][0]
     protein = controller.session.query(orm.Translated).filter(orm.Translated.given_id == 'y.p').all()
     print(controller.session.query(orm.association_translateds_to_features).all())
@@ -1098,7 +1088,8 @@ def test_check_and_fix_structure():
     assert set([x.position for x in protein.features]) == {10, 300}
     assert set([x.bearing.value for x in protein.features]) == {types.START, types.END}
     # check we get a transcript with tss, 2x(dss, ass), and tts (+ start & stop codons)
-    piece = transcript.handler.one_piece().data
+    piece = controller.session.query(orm.TranscribedPiece).filter(orm.TranscribedPiece.given_id == 'y').first()
+    print(piece)
     assert len(piece.features) == 8
     assert set([x.type.value for x in piece.features]) == {types.TRANSCRIBED,
                                                            types.INTRON,
@@ -1106,8 +1097,7 @@ def test_check_and_fix_structure():
                                                            }
     assert set([x.bearing.value for x in piece.features]) == {types.START, types.END}
     # check handling of truncated transcript
-    transcript = [x for x in sl.data.transcribeds if x.given_id == 'x'][0]
-    piece = transcript.handler.one_piece().data
+    piece = controller.session.query(orm.TranscribedPiece).filter(orm.TranscribedPiece.given_id == 'x').first()
     protein = [x for x in sl.data.translateds if x.given_id == 'x.p'][0]
     print(protein.features)
     assert len(protein.features) == 2
