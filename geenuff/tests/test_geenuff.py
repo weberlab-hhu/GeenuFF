@@ -844,7 +844,10 @@ def test_transcript_get_first():
     sl, controller = setup_testable_super_loci()
     transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
     t_interp = gffimporter.TranscriptInterpreter(transcript_handler, super_locus=sl, controller=controller)
-    i0 = t_interp.intervals_5to3(plus_strand=True)[0]
+    sorted_intervals = t_interp.intervals_5to3(plus_strand=True)
+    i0 = sorted_intervals[0]
+    for intv in sorted_intervals:
+        print(intv)
     t_interp.interpret_first_pos(i0)
     controller.session.commit()
     controller.execute_so_far()
@@ -860,15 +863,18 @@ def test_transcript_get_first():
 def test_transcript_get_first_minus_strand():
     # minus strand
     sl, controller = setup_testable_super_loci()
-    transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
     for transcript_handler in sl.transcribed_handlers:
         for feature in transcript_handler.feature_handlers:
             feature.gffentry.strand = '-'
             feature.add_shortcuts_from_gffentry()
 
+    transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
+
     # new transcript interpreter so the clean features reset
     t_interp = gffimporter.TranscriptInterpreter(transcript_handler, super_locus=sl, controller=controller)
-    i0 = t_interp.intervals_5to3(plus_strand=False)[0]
+    sorted_intervals = t_interp.intervals_5to3(plus_strand=False)
+
+    i0 = sorted_intervals[0]
     t_interp.interpret_first_pos(i0, plus_strand=False)
     controller.session.commit()
     controller.execute_so_far()
@@ -880,24 +886,33 @@ def test_transcript_get_first_minus_strand():
     f0 = features[0]
     print(f0)
     print(status)
-    print(i0[0].data.data.is_plus_strand)
     print(f0.type)
     assert f0.position == 399
     assert status.is_5p_utr()
     assert f0.phase is None
 
+def test_transcript_get_first_without_UTR():
+    # minus strand
+    sl, controller = setup_testable_super_loci()
+    for transcript_handler in sl.transcribed_handlers:
+        for feature in transcript_handler.feature_handlers:
+            feature.gffentry.strand = '-'
+            feature.add_shortcuts_from_gffentry()
+
+    transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'x'][0]
+
+    # new transcript interpreter so the clean features reset
+    t_interp = gffimporter.TranscriptInterpreter(transcript_handler, super_locus=sl, controller=controller)
     # test without UTR (x doesn't have last exon, and therefore will end in CDS); remember, flipped it to minus strand
-    transcript = [x for x in sl.data.transcribeds if x.given_id == 'x'][0]
-    prefeatures = transcript.transcribed_pieces[0].features
+    prefeatures = transcript_handler.feature_handlers
     print('prefeatures', prefeatures)
     print([x.handler.gffentry for x in prefeatures])
-    t_interp = gffimporter.TranscriptInterpreter(transcript.handler, controller)
     i0 = t_interp.intervals_5to3(plus_strand=False)[0]
     t_interp.interpret_first_pos(i0, plus_strand=False)
     controller.session.commit()
     controller.execute_so_far()
     features = cleaned_commited_features(controller.session)
-    features = [f for f in features if transcript.handler.one_piece().data in f.transcribed_pieces]
+    features = [f for f in features if transcript_handler.one_piece().data in f.transcribed_pieces]
     status = t_interp.status
     assert len(features) == 4
     f_err_open = [f for f in features if f.bearing.value == types.START and f.type.value == types.ERROR][0]
