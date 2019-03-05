@@ -254,7 +254,6 @@ class GFFDerived(object):
         data = None
         if gen_data:
             data = self.gen_data_from_gffentry(gffentry, **kwargs)
-            #self.add_data(data)
         return data
 
     def gen_data_from_gffentry(self, gffentry, **kwargs):
@@ -269,13 +268,11 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
         if controller is not None:
             self.id = controller.super_locus_counter()
         self.transcribed_handlers = []
-        # self.translated_handlers = []
-        # self.transcribed_piece_handlers = []
-        # self.feature_handlers = []
 
     def gen_data_from_gffentry(self, gffentry, **kwargs):
         data = self.data_type(type=gffentry.type,
-                              given_id=gffentry.get_ID())
+                              given_id=gffentry.get_ID(),
+                              id=self.id)
         self.add_data(data)
         # todo, grab more aliases from gff attribute
 
@@ -290,17 +287,11 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
         elif in_values(entry.type, types.TranscriptLevelAll):
             transcribed = TranscribedHandler(controller)
             transcribed.gffentry = copy.deepcopy(entry)
-            #transcribed.process_gffentry(entry, super_locus=self.data, gen_data=False)
-            transcribed_add = transcribed.setup_insertion_ready(gffentry=entry, super_locus=self.data)
-            controller.transcribeds_to_add.append(transcribed_add)
-            self.transcribed_handlers.append(transcribed)
 
-            piece = TranscribedPieceHandler(controller)
-            piece.gffentry = copy.deepcopy(entry)
-            piece_add = piece.setup_insertion_ready(entry, super_locus=self.data, transcribed=transcribed,
-                                                    gen_data=False)
+            transcribed_add, piece_add = transcribed.setup_insertion_ready(gffentry=entry, super_locus=self.data)
+            controller.transcribeds_to_add.append(transcribed_add)
             controller.transcribed_pieces_to_add.append(piece_add)
-            transcribed.transcribed_piece_handlers.append(piece)
+            self.transcribed_handlers.append(transcribed)
 
         elif in_values(entry.type, types.OnSequence):
             feature = FeatureHandler(controller)
@@ -356,11 +347,9 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
         # todo, CLEAN UP / get in functions
         transcribed_e_handler = TranscribedHandler(controller)
         transcribed_e_handler.gffentry = copy.deepcopy(entry)
-        transcribed = transcribed_e_handler.setup_insertion_ready(super_locus=self)
+        transcribed, piece = transcribed_e_handler.setup_insertion_ready(super_locus=self)
+        piece_handler = transcribed_e_handler.transcribed_piece_handlers[0]
         controller.transcribeds_to_add.append(transcribed)
-        piece_handler = TranscribedPieceHandler(controller)
-        piece_handler.gffentry = copy.deepcopy(entry)
-        piece = piece_handler.setup_insertion_ready(super_locus=self, transcribed=transcribed_e_handler)
         controller.transcribed_pieces_to_add.append(piece)
         # open error
         feature_err_open = FeatureHandler(controller, processed=True)
@@ -385,10 +374,9 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
         controller.features_to_add.append(feature)
         controller.feature2transcribed_pieces_to_add += feature2pieces
         controller.feature2translateds_to_add += feature2translateds
-        # sf.gen_data_from_gffentry(entry, super_locus=self.data)
+
         transcribed_e_handler.feature_handlers += [feature_err_open, feature_err_close]
         self.transcribed_handlers.append(transcribed_e_handler)
-        transcribed_e_handler.transcribed_piece_handlers.append(piece_handler)
 
     def check_and_fix_structure(self, sess, coordinates, controller):
         # todo, add against sequence check to see if start/stop and splice sites are possible or not, e.g. is start ATG?
@@ -472,7 +460,6 @@ class FeatureHandler(api.FeatureHandler, GFFDerived):
 
         feature = {'id': self.id,
                    'given_id': self.given_id,
-                   'type': self.gffentry.type,
                    'coordinate_id': coordinates.id,
                    'is_plus_strand': self.is_plus_strand,
                    'score': self.gffentry.score,
@@ -526,21 +513,10 @@ class TranscribedHandler(api.TranscribedHandler, GFFDerived):
         GFFDerived.__init__(self)
         if controller is not None:
             self.id = controller.transcribed_counter()
+        self.controlller = controller
         self.transcribed_piece_handlers = []
         self.feature_handlers = []
         self.translated_handlers = []
-
-    #def gen_data_from_gffentry(self, gffentry, super_locus=None, **kwargs):
-    #    parents = gffentry.get_Parent()
-    #    # the simple case
-    #    if len(parents) == 1:
-    #        assert super_locus.given_id == parents[0]
-    #        data = self.data_type(type=gffentry.type,
-    #                              given_id=gffentry.get_ID(),
-    #                              super_locus=super_locus)
-    #        self.add_data(data)
-    #    else:
-    #        raise NotImplementedError  # todo handle multi inheritance, etc...
 
     def setup_insertion_ready(self, gffentry=None, super_locus=None, **kwargs):
         if gffentry is not None:
@@ -555,10 +531,15 @@ class TranscribedHandler(api.TranscribedHandler, GFFDerived):
         else:
             entry_type = given_id = None
 
-        transcribed = {'type': entry_type, 'given_id': given_id, 'super_locus_id': super_locus.id,
-                       'id': self.id}
+        transcribed_2_add = {'type': entry_type, 'given_id': given_id, 'super_locus_id': super_locus.id,
+                             'id': self.id}
 
-        return transcribed
+        piece = TranscribedPieceHandler(controller=self.controlller)
+        piece.gffentry = copy.deepcopy(gffentry)
+
+        piece_2_add = piece.setup_insertion_ready(gffentry, super_locus=super_locus, transcribed=self)
+        self.transcribed_piece_handlers.append(piece)
+        return transcribed_2_add, piece_2_add
 
     def one_piece(self):
         pieces = self.transcribed_piece_handlers
@@ -572,18 +553,6 @@ class TranscribedPieceHandler(api.TranscribedPieceHandler, GFFDerived):
         GFFDerived.__init__(self)
         if controller is not None:
             self.id = controller.transcribed_piece_counter()
-
-    #def gen_data_from_gffentry(self, gffentry, super_locus=None, transcribed=None, **kwargs):
-    #    parents = gffentry.get_Parent()
-    #    # the simple case
-    #    if len(parents) == 1:
-    #        assert super_locus.given_id == parents[0]
-    #        data = self.data_type(given_id=gffentry.get_ID(),
-    #                              super_locus=super_locus,
-    #                              transcribed=transcribed)
-    #        self.add_data(data)
-    #    else:
-    #        raise NotImplementedError  # todo handle multi inheritance, etc...
 
     def setup_insertion_ready(self, gffentry=None, super_locus=None, transcribed=None, **kwargs):
         if gffentry is not None:
