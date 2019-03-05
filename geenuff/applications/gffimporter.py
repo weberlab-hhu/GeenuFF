@@ -120,11 +120,14 @@ class ImportControl(object):
 
         self._setup_sequence_info()
         self.sequence_info.add_sequences(seq_path)
+        self.session.commit()
 
     def _setup_sequence_info(self):
         self.sequence_info = SequenceInfoHandler(controller=self)
         seq_info = orm.SequenceInfo(annotated_genome=self.annotated_genome.data)
         self.sequence_info.add_data(seq_info)
+        self.session.add(seq_info)
+        self.session.commit()
 
     def add_gff(self, gff_file, clean=True):
         # final prepping of seqid match up
@@ -144,8 +147,7 @@ class ImportControl(object):
             else:
                 super_locus.add_gff_entry_group(entry_group, err_handle, sequence_info=self.sequence_info.data,
                                                 controller=self)
-            self.session.add(super_locus.data)
-            self.session.commit()
+
             super_loci.append(super_locus)  # just to keep some direct python link to this
             if not i % 500:
                 self.execute_so_far()
@@ -249,14 +251,15 @@ class GFFDerived(object):
     def __init__(self):
         self.gffentry = None
 
-    def process_gffentry(self, gffentry, gen_data=True, **kwargs):
-        self.gffentry = gffentry
-        data = None
-        if gen_data:
-            data = self.gen_data_from_gffentry(gffentry, **kwargs)
-        return data
+    # todo, consider reviving but wrapping setup_insertion_ready
+    #def process_gffentry(self, gffentry, gen_data=True, **kwargs):
+    #    self.gffentry = gffentry
+    #    data = None
+    #    if gen_data:
+    #        data = self.gen_data_from_gffentry(gffentry, **kwargs)
+    #    return data
 
-    def gen_data_from_gffentry(self, gffentry, **kwargs):
+    def setup_insertion_ready(self, **kwargs):
         # should create 'data' object (annotations_orm.Base subclass) and then call self.add_data(data)
         raise NotImplementedError
 
@@ -276,19 +279,29 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
         self.add_data(data)
         # todo, grab more aliases from gff attribute
 
+    def setup_insertion_ready(self):
+        return {'type': self.gffentry.type, 'given_id': self.gffentry.get_ID(), 'id': self.id}
+
+    @property
+    def given_id(self):
+        return self.gffentry.get_ID()
+
     def add_gff_entry(self, entry, sequence_info, controller):
         exceptions = entry.attrib_filter(tag="exception")
         for exception in [x.value for x in exceptions]:
             if 'trans-splicing' in exception:
                 raise TransSplicingError('trans-splice in attribute {} {}'.format(entry.get_ID(), entry.attribute))
         if in_values(entry.type, types.SuperLocusAll):
-            self.process_gffentry(gffentry=entry)
+            self.gffentry = entry
+            to_add = self.setup_insertion_ready()
+            controller.super_loci_to_add.append(to_add)
+            #self.process_gffentry(gffentry=entry)
 
         elif in_values(entry.type, types.TranscriptLevelAll):
             transcribed = TranscribedHandler(controller)
             transcribed.gffentry = copy.deepcopy(entry)
 
-            transcribed_add, piece_add = transcribed.setup_insertion_ready(gffentry=entry, super_locus=self.data)
+            transcribed_add, piece_add = transcribed.setup_insertion_ready(gffentry=entry, super_locus=self)
             controller.transcribeds_to_add.append(transcribed_add)
             controller.transcribed_pieces_to_add.append(piece_add)
             self.transcribed_handlers.append(transcribed)
@@ -331,7 +344,7 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
         logging.warning(
             '{species}:{seqid}, {start}-{end}:{gene_id} by {src}, {msg} - marked erroneous'.format(
                 src=entry.source, species="todo", seqid=entry.seqid, start=entry.start,
-                end=entry.end, gene_id=self.data.given_id, msg=msg
+                end=entry.end, gene_id=self.given_id, msg=msg
             ))
         # reset start and stop so
         if entry.strand == '+':
@@ -352,7 +365,7 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
         # open error
         feature_err_open = FeatureHandler(controller, processed=True)
         feature_err_open.gffentry = copy.deepcopy(entry)
-        packed = feature_err_open.setup_insertion_ready(super_locus=self.data, transcribed_pieces=[piece_handler],
+        packed = feature_err_open.setup_insertion_ready(super_locus=self, transcribed_pieces=[piece_handler],
                                                         coordinates=coordinates)
         feature, feature2pieces, feature2translateds = packed
         for key, val in [('type', types.ERROR), ('bearing', types.START), ('position', err_start)]:
@@ -364,7 +377,7 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
         # close error
         feature_err_close = FeatureHandler(controller, processed=True)
         feature_err_close.gffentry = copy.deepcopy(entry)
-        packed = feature_err_close.setup_insertion_ready(super_locus=self.data,transcribed_pieces=[piece_handler],
+        packed = feature_err_close.setup_insertion_ready(super_locus=self, transcribed_pieces=[piece_handler],
                                                          coordinates=coordinates)
         feature, feature2pieces, feature2translateds = packed
         for key, val in [('type', types.ERROR), ('bearing', types.END), ('position', err_end)]:

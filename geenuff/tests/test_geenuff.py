@@ -991,11 +991,8 @@ def test_errors_not_lost():
 
     sl._mark_erroneous(gene_entry, coordinates=coordinates, controller=controller)
     assert len(sl.transcribed_handlers) == 4
-    transcribed_e = sl.transcribed_handlers[-1]
 
     sl.check_and_fix_structure(coordinates=coordinates, controller=controller)
-    #for feature in sl.data.features:
-
     features = controller.session.query(orm.Feature).filter(orm.Feature.given_id == 'eg_missing_children').all()
     assert len(features) == 2
 
@@ -1042,11 +1039,10 @@ def test_check_and_fix_structure():
         os.remove(rel_path)
     sl, controller = setup_testable_super_loci(db_path)
     coordinates = controller.sequence_info.data.coordinates[0]
-    #todo WEDS, what's up with the indeterminant behaviour?
+
     sl.check_and_fix_structure(coordinates=coordinates, controller=controller)
     controller.execute_so_far()
     # check handling of nice transcript
-    #protein = [x for x in sl.data.translateds if x.given_id == 'y.p'][0]
     protein = controller.session.query(orm.Translated).filter(orm.Translated.given_id == 'y.p').all()
     print(controller.session.query(orm.association_translateds_to_features).all())
     assert len(protein) == 1
@@ -1069,7 +1065,7 @@ def test_check_and_fix_structure():
     assert set([x.bearing.value for x in piece.features]) == {types.START, types.END}
     # check handling of truncated transcript
     piece = controller.session.query(orm.TranscribedPiece).filter(orm.TranscribedPiece.given_id == 'x').first()
-    protein = [x for x in sl.data.translateds if x.given_id == 'x.p'][0]
+    protein = controller.session.query(orm.Translated).filter(orm.Translated.given_id == 'x.p').first()
     print(protein.features)
     assert len(protein.features) == 2
     assert set([x.type.value for x in protein.features]) == {types.CODING}
@@ -1088,8 +1084,9 @@ def test_check_and_fix_structure():
     assert set([x.bearing.value for x in transcribed_fs]) == {types.START, types.CLOSE_STATUS}
     assert set([x.position for x in transcribed_fs]) == {0, 120}
 
-    assert len(sl.data.translateds) == 3
-    controller.session.commit()
+    sl_datas = controller.session.query(orm.SuperLocus).all()
+    assert len(sl_datas) == 1
+    assert len(sl_datas[0].translateds) == 3
 
 
 def cleaned_commited_features(sess):
@@ -1106,7 +1103,6 @@ def test_erroneous_splice():
     sess = controller.session
     # get target transcript
     transcript = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'x'][0]
-    print(sl.data.transcribeds, '<- transcribeds')
     # fish out "first exon" features and extend so intron is of -length
     features = []
     for scribed in sl.transcribed_handlers:
