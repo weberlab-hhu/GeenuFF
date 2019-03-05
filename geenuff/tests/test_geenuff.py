@@ -638,32 +638,32 @@ def test_data_frm_gffentry():
     mrna_string = 'NC_015438.2\tBestRefSeq\tmRNA\t13024\t15024\t.\t+\t.\tID=rna0;Parent=gene0;Dbxref=GeneID:'
     exon_string = 'NC_015438.2\tGnomon\texon\t4343\t4809\t.\t+\t.\tID=id1;Parent=rna0;Dbxref=GeneID:104645797'
     gene_entry = gffhelper.GFFObject(gene_string)
+    controller.clean_entry(gene_entry)
     handler = gffimporter.SuperLocusHandler()
-    handler.gen_data_from_gffentry(gene_entry)
-    handler.data.sequence_info = slice
+    handler.gffentry = gene_entry
+    sl2add = handler.setup_insertion_ready()
+
     print(sliceh.gffid_to_coords.keys())
     print(sliceh._gff_seq_ids)
-    sess.add(handler.data)
-    sess.commit()
-    assert handler.data.given_id == 'gene0'
-    assert handler.data.type.value == 'gene'
+    assert sl2add['given_id'] == 'gene0'
+    assert sl2add['type'] == 'gene'
 
     mrna_entry = gffhelper.GFFObject(mrna_string)
     mrna_handler = gffimporter.TranscribedHandler()
-    mrna2add, piece2add = mrna_handler.setup_insertion_ready(mrna_entry, super_locus=handler.data)
+    mrna2add, piece2add = mrna_handler.setup_insertion_ready(mrna_entry, super_locus=handler)
     piece_handler = mrna_handler.transcribed_piece_handlers[0]
     assert piece2add['transcribed_id'] == mrna2add['id'] == mrna_handler.id
 
     assert mrna2add['given_id'] == 'rna0'
     assert mrna2add['type'] == 'mRNA'
-    assert mrna2add['super_locus_id'] == handler.data.id
+    assert mrna2add['super_locus_id'] == handler.id
 
     exon_entry = gffhelper.GFFObject(exon_string)
     controller.clean_entry(exon_entry)
     exon_handler = gffimporter.FeatureHandler()
     exon_handler.gffentry = exon_entry
     exon2add, feature2pieces, feature2translateds = exon_handler.setup_insertion_ready(
-        super_locus=handler.data, transcribed_pieces=[piece_handler], coordinates=coors)
+        super_locus=handler, transcribed_pieces=[piece_handler], coordinates=coors)
 
     # accessed via gffentry
     assert exon_handler.gffentry.start == 4343
@@ -674,7 +674,7 @@ def test_data_frm_gffentry():
     assert exon2add['is_plus_strand']
     assert exon2add['score'] is None
     assert exon2add['coordinate_id'] == coors.id
-    assert exon2add['super_locus_id'] == handler.data.id
+    assert exon2add['super_locus_id'] == handler.id
     assert feature2pieces[0] == {'transcribed_piece_id': piece_handler.id, 'feature_id': exon2add['id']}
     assert feature2translateds == []
 
