@@ -722,13 +722,17 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
 
             # warn if slice-causer (matches_edge) is on both sides
             # should be fine in cases with [exon, CDS] -> [exon, UTR] or similar
-            slice_frm_before = any([x['matches_edge'] for x in marked_before])
-            slice_frm_after = any([x['matches_edge'] for x in marked_after])
+            matches_before = [x['interval'] for x in marked_before if x['matches_edge']]
+            slice_frm_before = bool(matches_before)
+            matches_after = [x['interval'] for x in marked_after if x['matches_edge']]
+            slice_frm_after = bool(matches_after)
             if slice_frm_before and slice_frm_after:
-                logging.warning('slice causer on both sides with repeates\nbefore: {}, after: {}'.format(
-                    [x.data.gffentry.type for x in ivals_before],
-                    [x.data.gffentry.type for x in ivals_after]
-                ))
+                # if it's not a splice site
+                if matches_before[0].end == matches_after[0].begin:
+                    logging.warning('slice causer on both sides with repeates\nbefore: {}, after: {}'.format(
+                        [(x.data.gffentry.type, x.data.gffentry.start, x.data.gffentry.end) for x in ivals_before],
+                        [(x.data.gffentry.type, x.data.gffentry.start, x.data.gffentry.end) for x in ivals_after]
+                    ))
             # finally, keep non repeats or where this side didn't cause slice
             ivals_before = [x['interval'] for x in marked_before if not x['repeated'] or not slice_frm_before]
             ivals_after = [x['interval'] for x in marked_after if not x['repeated'] or not slice_frm_after]
