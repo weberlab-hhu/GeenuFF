@@ -459,6 +459,7 @@ class FeatureHandler(api.FeatureHandler, GFFDerived):
             self.add_shortcuts_from_gffentry()
 
         feature = {'id': self.id,
+                   'subtype': 'general',
                    'given_id': self.given_id,
                    'coordinate_id': coordinates.id,
                    'is_plus_strand': self.is_plus_strand,

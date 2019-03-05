@@ -116,6 +116,10 @@ class Transcribed(Base):
 
     pairs = relationship('UpDownPair', back_populates='transcribed')
 
+    def __repr__(self):
+        return '<Transcribed, {}, "{}" of type {}, with {} pieces>'.format(self.id, self.given_id, self.type,
+                                                                           len(self.transcribed_pieces))
+
 
 class TranscribedPiece(Base):
     __tablename__ = 'transcribed_pieces'
