@@ -173,7 +173,7 @@ class ImportControl(object):
     def clean_super_loci(self):
         for sl in self.super_loci:
             coordinates = self.sequence_info.gffid_to_coords[sl.gffentry.seqid]
-            sl.check_and_fix_structure(self.session, coordinates, controller=self)
+            sl.check_and_fix_structure(coordinates, controller=self)
 
 
 def in_values(x, enum):
@@ -311,7 +311,6 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
     def add_gff_entry_group(self, entries, ts_err_handle, sequence_info, controller):
         try:
             self._add_gff_entry_group(entries, sequence_info, controller)
-            #self.check_and_fix_structure(entries)
         except TransSplicingError as e:
             coordinates = sequence_info.handler.gffid_to_coords[entries[0].seqid]
             self._mark_erroneous(entries[0], coordinates, controller, 'trans-splicing')
@@ -324,9 +323,8 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
 
     def add_n_clean_gff_entry_group(self, entries, ts_err_handle, sequence_info, session, controller):
         self.add_gff_entry_group(entries, ts_err_handle, sequence_info, controller)
-        session.commit()
         coordinates = sequence_info.handler.gffid_to_coords[self.gffentry.seqid]
-        self.check_and_fix_structure(session, coordinates, controller=controller)
+        self.check_and_fix_structure(coordinates, controller=controller)
 
     def _mark_erroneous(self, entry, coordinates, controller, msg=''):
         assert entry.type in [x.value for x in types.SuperLocusAll]
@@ -378,7 +376,7 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
         transcribed_e_handler.feature_handlers += [feature_err_open, feature_err_close]
         self.transcribed_handlers.append(transcribed_e_handler)
 
-    def check_and_fix_structure(self, sess, coordinates, controller):
+    def check_and_fix_structure(self, coordinates, controller):
         # todo, add against sequence check to see if start/stop and splice sites are possible or not, e.g. is start ATG?
         # if it's empty (no bottom level features at all) mark as erroneous
         features = []
@@ -386,7 +384,6 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
             features += transcript.feature_handlers
         if not features:
             self._mark_erroneous(self.gffentry, coordinates=coordinates, controller=controller)
-            sess.commit()
 
         for transcript in self.transcribed_handlers:
             t_interpreter = TranscriptInterpreter(transcript, super_locus=self, controller=controller)
@@ -397,10 +394,7 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
                 # make new features
                 t_interpreter.decode_raw_features()
                 # make sure the new features link to protein if appropriate
-                sess.commit()
                 controller.execute_so_far()
-                #t_interpreter.mv_coding_features_to_proteins(controller.feature2translateds_to_add)
-            #forced_keep_handlers += t_interpreter.clean_features
 
 
 class FeatureHandler(api.FeatureHandler, GFFDerived):

@@ -993,7 +993,7 @@ def test_errors_not_lost():
     assert len(sl.transcribed_handlers) == 4
     transcribed_e = sl.transcribed_handlers[-1]
 
-    sl.check_and_fix_structure(sess=controller.session, coordinates=coordinates, controller=controller)
+    sl.check_and_fix_structure(coordinates=coordinates, controller=controller)
     #for feature in sl.data.features:
 
     features = controller.session.query(orm.Feature).filter(orm.Feature.given_id == 'eg_missing_children').all()
@@ -1043,7 +1043,7 @@ def test_check_and_fix_structure():
     sl, controller = setup_testable_super_loci(db_path)
     coordinates = controller.sequence_info.data.coordinates[0]
     #todo WEDS, what's up with the indeterminant behaviour?
-    sl.check_and_fix_structure(controller.session, coordinates=coordinates, controller=controller)
+    sl.check_and_fix_structure(coordinates=coordinates, controller=controller)
     controller.execute_so_far()
     # check handling of nice transcript
     #protein = [x for x in sl.data.translateds if x.given_id == 'y.p'][0]
