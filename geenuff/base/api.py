@@ -626,8 +626,10 @@ class TranscriptInterpBase(object):
     def sorted_features(piece):
         features = piece.features
         # confirm strand & seqid
-        assert all([f.coordinates == features[0].coordinates for f in features])
-        assert all([f.is_plus_strand == features[0].is_plus_strand for f in features])
+        assert all([f.coordinates == features[0].coordinates for f in features]), \
+            'not all matching: {}'.format([(f.id, f.coordinates) for f in features])
+        assert all([f.is_plus_strand == features[0].is_plus_strand for f in features]), \
+            'not all matching: {}'.format([(f.id, f.is_plus_strand) for f in features])
         features = sorted(features, key=lambda x: x.pos_cmp_key())
         if not features[0].is_plus_strand:
             features.reverse()
