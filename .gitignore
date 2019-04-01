@@ -1,3 +1,6 @@
+# Project specific
+geenuff/testdata/dummyloci_annotations.sqlitedb
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
