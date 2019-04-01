@@ -98,8 +98,8 @@ def as_py_end(end):
 
 
 class Counter(object):
-    def __init__(self):
-        self._at = 0
+    def __init__(self, at=0):
+        self._at = at
 
     def __call__(self, *args, **kwargs):
         self._at += 1

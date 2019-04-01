@@ -143,7 +143,7 @@ class ImportControl(object):
                     ' sequence_info cannot be None when .add_gff is called, use (self.add_sequences(...)')
             if clean:
                 super_locus.add_n_clean_gff_entry_group(entry_group, err_handle, sequence_info=self.sequence_info.data,
-                                                        session=self.session, controller=self)
+                                                        controller=self)
             else:
                 super_locus.add_gff_entry_group(entry_group, err_handle, sequence_info=self.sequence_info.data,
                                                 controller=self)
@@ -272,21 +272,14 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
             self.id = controller.super_locus_counter()
         self.transcribed_handlers = []
 
-    def gen_data_from_gffentry(self, gffentry, **kwargs):
-        data = self.data_type(type=gffentry.type,
-                              given_id=gffentry.get_ID(),
-                              id=self.id)
-        self.add_data(data)
-        # todo, grab more aliases from gff attribute
-
     def setup_insertion_ready(self):
+        # todo, grab more aliases from gff attribute?
         return {'type': self.gffentry.type, 'given_id': self.gffentry.get_ID(), 'id': self.id}
-
     @property
     def given_id(self):
         return self.gffentry.get_ID()
 
-    def add_gff_entry(self, entry, sequence_info, controller):
+    def add_gff_entry(self, entry, controller):
         exceptions = entry.attrib_filter(tag="exception")
         for exception in [x.value for x in exceptions]:
             if 'trans-splicing' in exception:
@@ -316,14 +309,14 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
         else:
             raise ValueError("problem handling entry of type {}".format(entry.type))
 
-    def _add_gff_entry_group(self, entries, sequence_info, controller):
+    def _add_gff_entry_group(self, entries, controller):
         entries = list(entries)
         for entry in entries:
-            self.add_gff_entry(entry, sequence_info, controller)
+            self.add_gff_entry(entry, controller)
 
     def add_gff_entry_group(self, entries, ts_err_handle, sequence_info, controller):
         try:
-            self._add_gff_entry_group(entries, sequence_info, controller)
+            self._add_gff_entry_group(entries, controller)
         except TransSplicingError as e:
             coordinates = sequence_info.handler.gffid_to_coords[entries[0].seqid]
             self._mark_erroneous(entries[0], coordinates, controller, 'trans-splicing')
@@ -334,7 +327,7 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
             self._mark_erroneous(entries[0], coordinates, controller, str(e))
             logging.warning('marking errer bc {}'.format(e))
 
-    def add_n_clean_gff_entry_group(self, entries, ts_err_handle, sequence_info, session, controller):
+    def add_n_clean_gff_entry_group(self, entries, ts_err_handle, sequence_info, controller):
         self.add_gff_entry_group(entries, ts_err_handle, sequence_info, controller)
         coordinates = sequence_info.handler.gffid_to_coords[self.gffentry.seqid]
         self.check_and_fix_structure(coordinates, controller=controller)
@@ -466,6 +459,7 @@ class FeatureHandler(api.FeatureHandler, GFFDerived):
             self.add_shortcuts_from_gffentry()
 
         feature = {'id': self.id,
+                   'subtype': 'general',
                    'given_id': self.given_id,
                    'coordinate_id': coordinates.id,
                    'is_plus_strand': self.is_plus_strand,
