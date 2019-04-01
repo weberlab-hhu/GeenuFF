@@ -62,7 +62,7 @@ then the following section explains _why_ we think it's worth it.
 
 Historically, gene annotations have been encoded in some variation
 of the gff format (gtf, gff, gff3), see
-[http://gmod.org/wiki/GFF3](http://gmod.org/wiki/GFF3]).
+[http://gmod.org/wiki/GFF3](http://gmod.org/wiki/GFF3).
 There are a variety of drawbacks to these formats. Some are somewhat
 more superficial, such as the custom encoding of key, value
 pairs specifying both relationships and extra meta info 
@@ -271,7 +271,7 @@ The most common usage of a gff-like file is simply to denote which sequences
 belong to the original transcript, the final transcript and the proteins. This
 works decently with the `[inclusive start, inclusive end]` coordinates the gff-like
 formats use. However, the _implicit_ components are then inverted, and tedious, e.g.
-for an intron the coordinates are `(exclude end exon_i, exclude start exon_i+1`,
+for an intron the coordinates are `(exclude end exon_i, exclude start exon_i+1)`,
 or for the 3' untranslated region (UTR) the coordinates are 
 `[inclusive start exon, exclude start CDS)`.
 
@@ -393,11 +393,11 @@ important if trying to encode a partial protein sequence.
 * they have a source
 * they have two additional subtypes: upstream and downstream features (more info below)
 * they have many to many relationship with translateds (mostly to assign the 'protein_id')
-* they have a many to may relationship with transcribed_pieces.
+* they have a many to many relationship with transcribed_pieces.
 
 __Feature pairing:__ 
 Features _must_ always delineate a range / come in pairs on a 
-trabscribed_piece. So, where there is a feature of type X with bearing "status_open" or 
+transcribed_piece. So, where there is a feature of type X with bearing "status_open" or 
 "start", then there must be a feature downstream (3') on the same transcribed_piece,
 of this that is also of type X and is of either bearing "status_close" or "end". 
 Similarly, there may be no feature with the bearing "end" or "status_close" without
