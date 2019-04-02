@@ -17,20 +17,7 @@ class AnnotatedGenome(Base):
     accession = Column(String)
     version = Column(String)
     acquired_from = Column(String)
-    sequence_infos = relationship("SequenceInfo", back_populates="annotated_genome")
-
-
-class SequenceInfo(Base):
-    __tablename__ = "sequence_infos"
-
-    id = Column(Integer, primary_key=True)
-    # relations
-    annotated_genome_id = Column(Integer, ForeignKey('annotated_genomes.id'), nullable=False)
-    annotated_genome = relationship('AnnotatedGenome', back_populates="sequence_infos")
-    coordinates = relationship('Coordinates', back_populates="sequence_info")
-
-    def __repr__(self):
-        return '<{}: {}, in {}, with {}>'.format(type(self), self.id, self.annotated_genome, self.coordinates)
+    coordinates = relationship("Coordinates", back_populates="annotated_genome")
 
 
 class Coordinates(Base):
@@ -41,8 +28,8 @@ class Coordinates(Base):
     end = Column(Integer, nullable=False)
     seqid = Column(String, nullable=False)
     sha1 = Column(String)
-    sequence_info_id = Column(Integer, ForeignKey('sequence_infos.id'))
-    sequence_info = relationship('SequenceInfo', back_populates='coordinates')
+    annotated_genome_id = Column(Integer, ForeignKey('annotated_genomes.id'))
+    annotated_genome = relationship('AnnotatedGenome', back_populates='coordinates')
 
     features = relationship('Feature', back_populates='coordinates')
 

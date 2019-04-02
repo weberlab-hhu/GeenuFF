@@ -1,7 +1,11 @@
+from dustdas import gffhelper, fastahelper
 import copy
+import hashlib
 from types import GeneratorType
+
 from . import orm
 from . import types
+from . import helpers
 
 
 def convert2list(obj):
@@ -152,54 +156,103 @@ class Handler(object):
 
 
 class AnnotatedGenomeHandler(Handler):
+    def __init__(self, controller=None):
+        super().__init__()
+        if controller is not None:
+            self.id = controller.coord_handler_import_counter()
+        self.mapper = None
+        self._coords_by_seqid = None
+        self._gffid_to_coords = None
+        self._gff_seq_ids = None
+
+    @staticmethod
+    def hashseq(seq):
+        m = hashlib.sha1()
+        m.update(seq.encode())
+        return m.hexdigest()
+
     @property
     def data_type(self):
         return orm.AnnotatedGenome
 
     @property
     def _valid_links(self):
-        return [SequenceInfoHandler]
+        return [CoordinatesHandler]
+
+    @property
+    def gffid_to_coords(self):
+        if not self._gffid_to_coords:
+            self._gffid_to_coords = {}
+            for gffid in self._gff_seq_ids:
+                fa_id = self.mapper(gffid)
+                x = self.coords_by_seqid[fa_id]
+                self._gffid_to_coords[gffid] = x
+        return self._gffid_to_coords
+
+    @property
+    def coords_by_seqid(self):
+        if not self._coords_by_seqid:
+            self._coords_by_seqid = {c.seqid: c for c in self.data.coordinates}
+        return self._coords_by_seqid
 
     def link_to(self, other):
-        if isinstance(other, SequenceInfoHandler):
+        if isinstance(other, CoordinatesHandler):
             other.data.annotated_genome = self.data
             # switched as below maybe checks other.data integrity, and fails on NULL anno genome?
-            # self.data.sequence_infos.append(other.data)
+            # self.data.coordinates.append(other.data)
         else:
             raise self._link_value_error(other)
 
     def de_link(self, other):
-        if isinstance(other, SequenceInfoHandler):
-            self.data.sequence_infos.remove(other.data)
+        if isinstance(other, CoordinatesHandler):
+            self.data.coordinates.remove(other.data)
         else:
             raise self._link_value_error(other)
 
+    def mk_mapper(self, gff_file=None):
+        fa_ids = [e.seqid for e in self.data.coordinates]
+        if gff_file is not None:  # allow setup without ado when we know IDs match exactly
+            self._gff_seq_ids = helpers.get_seqids_from_gff(gff_file)
+        else:
+            self._gff_seq_ids = fa_ids
+        mapper, is_forward = helpers.two_way_key_match(fa_ids, self._gff_seq_ids)
+        self.mapper = mapper
 
-class SequenceInfoHandler(Handler):
+        if not is_forward:
+            raise NotImplementedError("Still need to implement backward match if fasta IDs "
+                                      "are subset of gff IDs")
+
+    def add_sequences(self, seq_file):
+        self.add_fasta(seq_file)
+
+    def add_fasta(self, seq_file, id_delim=' '):
+        fp = fastahelper.FastaParser()
+        for fasta_header, seq in fp.read_fasta(seq_file):
+            seqid = fasta_header.split(id_delim)[0]
+            # todo, parallelize sequence & annotation format, then import directly from ~Slice
+            orm.Coordinates(start=0, end=len(seq), seqid=seqid, sha1=self.hashseq(seq),
+                            annotated_genome=self.data)
+
+
+class CoordinatesHandler(Handler):
 
     @property
     def data_type(self):
-        return orm.SequenceInfo
+        return orm.Coordinates
 
     @property
     def _valid_links(self):
-        return [AnnotatedGenomeHandler, SuperLocusHandler]
+        return [AnnotatedGenomeHandler]
 
     def link_to(self, other):
         if isinstance(other, AnnotatedGenomeHandler):
             self.data.annotated_genome = other.data
-            # switched as below maybe checks other.data integrity, and fails on NULL anno genome?
-            # self.data.sequence_infos.append(other.data)
-        elif isinstance(other, SuperLocusHandler):
-            other.data.sequence_info = self.data
         else:
             raise self._link_value_error(other)
 
     def de_link(self, other):
         if isinstance(other, AnnotatedGenomeHandler):
-            other.data.sequence_infos.remove(self.data)
-        elif isinstance(other, SuperLocusHandler):
-            self.data.super_loci.remove(other.data)
+            other.data.coordinates.remove(self.data)
         else:
             raise self._link_value_error(other)
 
@@ -222,20 +275,16 @@ class SuperLocusHandler(Handler):
 
     @property
     def _valid_links(self):
-        return [SequenceInfoHandler, TranscribedHandler, TranslatedHandler, FeatureHandler]
+        return [TranscribedHandler, TranslatedHandler, FeatureHandler]
 
     def link_to(self, other):
-        if isinstance(other, SequenceInfoHandler):
-            self.data.sequence_info = other.data
-        elif any([isinstance(other, x) for x in [TranscribedHandler, TranslatedHandler, FeatureHandler]]):
+        if any([isinstance(other, x) for x in [TranscribedHandler, TranslatedHandler, FeatureHandler]]):
             other.data.super_locus = self.data
         else:
             raise self._link_value_error(other)
 
     def de_link(self, other):
-        if isinstance(other, SequenceInfoHandler):
-            other.data.super_loci.remove(self.data)
-        elif any([isinstance(other, x) for x in [TranscribedHandler, TranslatedHandler, FeatureHandler]]):
+        if any([isinstance(other, x) for x in [TranscribedHandler, TranslatedHandler, FeatureHandler]]):
             other.data.super_locus = None
         else:
             raise self._link_value_error(other)

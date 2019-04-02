@@ -22,31 +22,31 @@ def mk_session(db_path='sqlite:///:memory:'):
     return Session()
 
 
-def test_annogenome2sequence_infos_relation():
+def test_annogenome2coordinate_relation():
     sess = mk_session()
     ag = orm.AnnotatedGenome(species='Athaliana', version='1.2', acquired_from='Phytozome12')
-    sequence_info = orm.SequenceInfo(annotated_genome=ag)
-    assert ag is sequence_info.annotated_genome
+    coord = orm.Coordinates(start=0, end=30, seqid='abc', annotated_genome=ag)
+    assert ag is coord.annotated_genome
     # actually put everything in db
-    sess.add(sequence_info)
+    sess.add(coord)
     sess.commit()
     # check primary keys were assigned
     assert ag.id == 1
-    assert sequence_info.id == 1
-    # check we can access sequence_info from ag
-    sequence_info_q = ag.sequence_infos[0]
-    assert sequence_info is sequence_info_q
-    assert ag is sequence_info.annotated_genome
-    assert ag.id == sequence_info_q.annotated_genome_id
+    assert coord.id == 1
+    # check we can access coordinates from ag
+    coord_q = ag.coordinates[0]
+    assert coord is coord_q
+    assert ag is coord.annotated_genome
+    assert ag.id == coord_q.annotated_genome_id
     # check we get logical behavior on deletion
-    sess.delete(sequence_info)
+    sess.delete(coord)
     sess.commit()
-    assert len(ag.sequence_infos) == 0
-    print(sequence_info.annotated_genome)
+    assert len(ag.coordinates) == 0
+    print(coord.annotated_genome)
     sess.delete(ag)
     sess.commit()
     with pytest.raises(sqlalchemy.exc.InvalidRequestError):
-        sess.add(sequence_info)
+        sess.add(coord)
 
 
 def test_coordinate_constraints():
@@ -73,19 +73,16 @@ def test_coordinate_constraints():
         sess.commit()
 
 
-def test_coordinate_seqinfo_query():
+def test_coordinates_insert():
     sess = mk_session()
     ag = orm.AnnotatedGenome()
-    si_model = orm.SequenceInfo(annotated_genome=ag)
-    slic = api.SequenceInfoHandler()
-    slic.add_data(si_model)
-    coors = orm.Coordinates(start=1, end=30, seqid='abc', sequence_info=si_model)
-    coors2 = orm.Coordinates(start=11, end=330, seqid='def', sequence_info=si_model)
+    coords = orm.Coordinates(start=1, end=30, seqid='abc', annotated_genome=ag)
+    coords2 = orm.Coordinates(start=11, end=330, seqid='def', annotated_genome=ag)
     sl = orm.SuperLocus()
-    f0 = orm.Feature(super_locus=sl, coordinates=coors)
-    f1 = orm.Feature(super_locus=sl, coordinates=coors2)
+    f0 = orm.Feature(super_locus=sl, coordinates=coords)
+    f1 = orm.Feature(super_locus=sl, coordinates=coords2)
     # should be ok
-    sess.add_all([coors, coors2, sl, f0, f1])
+    sess.add_all([coords, coords2, sl, f0, f1])
     assert f0.coordinates.start == 1
     assert f1.coordinates.end == 330
     #assert seq_info is slic.seq_info
@@ -213,18 +210,18 @@ def test_delinking_from_oneside():
     sess = mk_session()
     ag = orm.AnnotatedGenome()
     place_holder = orm.AnnotatedGenome()
-    si0 = orm.SequenceInfo(annotated_genome=ag)
-    si1 = orm.SequenceInfo(annotated_genome=ag)
-    sess.add_all([ag, si0, si1])
+    coord0 = orm.Coordinates(start=1, end=30, seqid='abc', annotated_genome=ag)
+    coord1 = orm.Coordinates(start=11, end=330, seqid='def', annotated_genome=ag)
+    sess.add_all([ag, coord0, coord1])
     sess.commit()
-    assert len(ag.sequence_infos) == 2
-    ag.sequence_infos.remove(si0)
-    si0.annotated_genome = place_holder  # else we'll fail the not NULL constraint
+    assert len(ag.coordinates) == 2
+    ag.coordinates.remove(coord0)
+    coord0.annotated_genome = place_holder  # else we'll fail the not NULL constraint
     sess.commit()
     # removed from ag
-    assert len(ag.sequence_infos) == 1
+    assert len(ag.coordinates) == 1
     # but still in table
-    assert len(sess.query(orm.SequenceInfo).all()) == 2
+    assert len(sess.query(orm.Coordinates).all()) == 2
 
 
 # section: annotations
@@ -262,21 +259,26 @@ def test_swap_link_annogenome2seqinfo():
     ag, agh = setup_data_handler(api.AnnotatedGenomeHandler, orm.AnnotatedGenome)
     ag2, ag2h = setup_data_handler(api.AnnotatedGenomeHandler, orm.AnnotatedGenome)
 
-    si, sih = setup_data_handler(api.SequenceInfoHandler, orm.SequenceInfo, annotated_genome=ag)
+    ci, cih = setup_data_handler(api.CoordinatesHandler,
+                                 orm.Coordinates,
+                                 start=1,
+                                 end=30,
+                                 seqid='abc',
+                                 annotated_genome=ag)
 
-    sess.add_all([ag, ag2, si])
+    sess.add_all([ag, ag2, ci])
     sess.commit()
-    assert agh.data.sequence_infos == [sih.data]
-    agh.de_link(sih)
-    ag2h.link_to(sih)
+    assert agh.data.coordinates == [cih.data]
+    agh.de_link(cih)
+    ag2h.link_to(cih)
     sess.commit()
-    assert agh.data.sequence_infos == []
-    assert ag2h.data.sequence_infos == [sih.data]
-    # swap back from sequence info interface
-    sih.de_link(ag2h)
-    sih.link_to(agh)
-    assert agh.data.sequence_infos == [sih.data]
-    assert ag2h.data.sequence_infos == []
+    assert agh.data.coordinates == []
+    assert ag2h.data.coordinates == [cih.data]
+    # swap back from coordinates info interface
+    cih.de_link(ag2h)
+    cih.link_to(agh)
+    assert agh.data.coordinates == [cih.data]
+    assert ag2h.data.coordinates == []
 
 
 def test_swap_links_superlocus2ttfs():
@@ -434,12 +436,14 @@ def test_replacelinks():
     assert len(scribedpiece.features) == 3
 
 
+"""
+Should not be rewritten for new db scheme
+
 def test_order_pieces():
     sess = mk_session()
     ag = orm.AnnotatedGenome(species='Athaliana', version='1.2', acquired_from='Phytozome12')
-    sequence_info = orm.SequenceInfo(annotated_genome=ag)
-    coor = orm.Coordinates(seqid='a', start=1, end=1000, sequence_info=sequence_info)
-    sess.add_all([ag, sequence_info, coor])
+    coor = orm.Coordinates(seqid='a', start=1, end=1000, annotated_genome=ag)
+    sess.add_all([ag, coor])
     sess.commit()
     # setup one transcribed handler with pieces
     sl, slh = setup_data_handler(api.SuperLocusHandler, orm.SuperLocus)
@@ -495,6 +499,7 @@ def test_order_pieces():
     sess.commit()
     with pytest.raises(api.IndecipherableLinkageError):
         ti.sort_pieces()
+"""
 
 
 class TransspliceDemoData(object):
@@ -628,12 +633,12 @@ def test_data_frm_gffentry():
 
     sess = controller.session
     ag = orm.AnnotatedGenome()
-    slice, sliceh = setup_data_handler(gffimporter.SequenceInfoHandler, orm.SequenceInfo,
-                                       annotated_genome=ag)
-    coors = orm.Coordinates(seqid='NC_015438.2', start=1, end=100000, sequence_info=slice)
-    sess.add_all([ag, slice, coors])
+    ag, agh = setup_data_handler(api.AnnotatedGenomeHandler, orm.AnnotatedGenome)
+    coords = orm.Coordinates(start=1, end=100000, seqid='NC_015438.2', annotated_genome=ag)
+
+    sess.add_all([ag, coords])
     sess.commit()
-    sliceh.mk_mapper()  # todo, why doesn't this work WAS HERE
+    agh.mk_mapper()  # todo, why doesn't this work WAS HERE
     gene_string = 'NC_015438.2\tGnomon\tgene\t4343\t5685\t.\t+\t.\tID=gene0;Dbxref=GeneID:104645797;Name=LOC10'
     mrna_string = 'NC_015438.2\tBestRefSeq\tmRNA\t13024\t15024\t.\t+\t.\tID=rna0;Parent=gene0;Dbxref=GeneID:'
     exon_string = 'NC_015438.2\tGnomon\texon\t4343\t4809\t.\t+\t.\tID=id1;Parent=rna0;Dbxref=GeneID:104645797'
@@ -643,8 +648,8 @@ def test_data_frm_gffentry():
     handler.gffentry = gene_entry
     sl2add = handler.setup_insertion_ready()
 
-    print(sliceh.gffid_to_coords.keys())
-    print(sliceh._gff_seq_ids)
+    print(agh.gffid_to_coords.keys())
+    print(agh._gff_seq_ids)
     assert sl2add['given_id'] == 'gene0'
     assert sl2add['type'] == 'gene'
 
@@ -663,7 +668,7 @@ def test_data_frm_gffentry():
     exon_handler = gffimporter.FeatureHandler()
     exon_handler.gffentry = exon_entry
     exon2add, feature2pieces, feature2translateds = exon_handler.setup_insertion_ready(
-        super_locus=handler, transcribed_pieces=[piece_handler], coordinates=coors)
+        super_locus=handler, transcribed_pieces=[piece_handler], coordinates=coords)
 
     # accessed via gffentry
     assert exon_handler.gffentry.start == 4343
@@ -673,7 +678,7 @@ def test_data_frm_gffentry():
     # ready to add
     assert exon2add['is_plus_strand']
     assert exon2add['score'] is None
-    assert exon2add['coordinate_id'] == coors.id
+    assert exon2add['coordinate_id'] == coords.id
     assert exon2add['super_locus_id'] == handler.id
     assert feature2pieces[0] == {'transcribed_piece_id': piece_handler.id, 'feature_id': exon2add['id']}
     assert feature2translateds == []
@@ -732,7 +737,7 @@ def test_import_seqinfo():
     controller.mk_session()
     seq_path = 'testdata/dummyloci.fa'
     controller.add_sequences(seq_path)
-    coors = controller.sequence_info.data.coordinates
+    coors = controller.anno_genome_handler.data.coordinates
     assert len(coors) == 1
     assert coors[0].seqid == '1'
     assert coors[0].start == 0
@@ -987,7 +992,7 @@ def test_errors_not_lost():
     s = "1\tGnomon\tgene\t20\t405\t0.\t-\t0\tID=eg_missing_children"
     gene_entry = gffhelper.GFFObject(s)
 
-    coordinates = controller.sequence_info.data.coordinates[0]
+    coordinates = controller.anno_genome_handler.data.coordinates[0]
 
     sl._mark_erroneous(gene_entry, coordinates=coordinates, controller=controller)
     assert len(sl.transcribed_handlers) == 4
@@ -1038,7 +1043,7 @@ def test_check_and_fix_structure():
     if os.path.exists(rel_path):
         os.remove(rel_path)
     sl, controller = setup_testable_super_loci(db_path)
-    coordinates = controller.sequence_info.data.coordinates[0]
+    coordinates = controller.anno_genome_handler.data.coordinates[0]
 
     sl.check_and_fix_structure(coordinates=coordinates, controller=controller)
     controller.execute_so_far()
