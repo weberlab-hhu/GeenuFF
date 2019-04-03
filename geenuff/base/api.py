@@ -2,6 +2,7 @@ from dustdas import gffhelper, fastahelper
 import copy
 import hashlib
 from types import GeneratorType
+import intervaltree
 
 from . import orm
 from . import types
@@ -651,6 +652,123 @@ class TranscriptInterpBase(object):
         for piece in self.sort_pieces():
             out.append(self.sorted_features(piece))
         return out
+
+    # helpers for classic transitions below
+    def _ranges_by_type(self, target_type):
+        ranges = []
+        current = None
+        for aligned_features, status, piece in self.transition_5p_to_3p():
+            features_of_type = [f for f in aligned_features if f.type == target_type]
+            assert len(features_of_type) in [0, 1], "cannot interpret aligned features of the same type {}".format(
+                features_of_type
+            )
+            if len(features_of_type) == 1:  # and 0 is simply ignored...
+                feature = features_of_type[0]
+                if self._is_open_or_start(feature):
+                    current = {"coordinate_id": feature.coordinate_id,
+                               "begin": feature.position,
+                               "is_plus_strand": feature.is_plus_strand}
+                else:
+                    assert current is not None, "start/open must be seen before end/close for {}".format(feature)
+                    current["end"] = feature.position
+                    ranges.append(tuple(current))
+                    current = None
+        return ranges
+
+    @staticmethod
+    def _is_open_or_start(feature):
+        if feature.bearing in [types.START, types.OPEN_STATUS]:
+            return True
+        elif feature.bearing in [types.END, types.CLOSE_STATUS]:
+            return False
+        else:
+            raise ValueError("failed to interpret bearing {}".format(feature.bearing))
+
+    @staticmethod
+    def _make_trees(ranges):
+        trees = {}
+        for r in ranges:
+            coord_isplus = (r["coordinate_id"], r["is_plus_strand"])
+            if coord_isplus not in trees:
+                trees[coord_isplus] = intervaltree.IntervalTree()
+            trees[coord_isplus][r["begin"], r["end"]] = r
+        return trees
+
+    def _subtract_ranges(self, subtract_from, to_subtract):
+        keep_trees = self._make_trees(subtract_from)
+        subtract_trees = self._make_trees(to_subtract)
+        out = []
+        for key in keep_trees:
+            for chop_out in subtract_trees[key]:
+                keep_trees[key].chop(chop_out.begin, chop_out.end)
+            for kept in keep_trees[key]:
+                kept.data["begin"] = kept.begin
+                kept.data["end"] = kept.end
+                out.append(kept.data)
+        return out
+
+    # the following should always return in the format
+    # [{"coordinate_id": _, "begin": _, "end": _, "is_plus_strand: _}, ... ]
+    # common 'interpretations' or extractions of transcript-related data
+    def transcribed_ranges(self):
+        return self._ranges_by_type(types.TRANSCRIBED)
+
+    def translated_ranges(self):
+        return self._ranges_by_type(types.CODING)
+
+    def intronic_ranges(self):
+        return self._ranges_by_type(types.INTRON)
+
+    def trans_intronic_ranges(self):
+        return self._ranges_by_type(types.TRANS_INTRON)
+
+    def error_ranges(self):
+        return self._ranges_by_type(types.ERROR)
+
+    def cis_exonic_ranges(self):  # AKA exon
+        transcribeds = self._ranges_by_type(types.TRANSCRIBED)
+        introns = self._ranges_by_type(types.INTRON)
+        exons = self._subtract_ranges(subtract_from=transcribeds, to_subtract=introns)
+        return exons
+
+    def translated_exonic_ranges(self):  # AKA CDS
+        # todo, somewhere, maybe not here, consider further consistency checking
+        #  e.g. (that all CODING regions are within TRANSCRIBED regions)
+        translateds = self._ranges_by_type(types.CODING)
+        introns = self._ranges_by_type(types.INTRON)
+        coding_exons = self._subtract_ranges(subtract_from=translateds, to_subtract=introns)
+        return coding_exons
+
+    def untranslated_exonic_ranges(self):  # AKA UTR
+        exons = self.cis_exonic_ranges()
+        translateds = self._ranges_by_type(types.CODING)
+        utrs = self._subtract_ranges(subtract_from=exons, to_subtract=translateds)
+        return utrs
+
+    # point transitions (sites)
+    def transcription_start_sites(self):
+        pass
+
+    def translation_start_sites(self):  # AKA start codon
+        pass
+
+    def intron_start_sites(self):  # AKA Donor splice site
+        pass
+
+    def trans_intron_start_sites(self):
+        pass
+
+    def transcription_end_sites(self):
+        pass
+
+    def translation_end_sites(self):  # AKA follows stop codon
+        pass
+
+    def intron_end_sites(self):  # AKA follows acceptor splice site
+        pass
+
+    def trans_intron_end_sites(self):
+        pass
 
 
 class HandleMaker(object):

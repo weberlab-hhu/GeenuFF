@@ -14,7 +14,7 @@ from ..applications import gffimporter
 from .. import types
 from .. import helpers
 
-# section: annotations_orm
+# section: orm
 def mk_session(db_path='sqlite:///:memory:'):
     engine = create_engine(db_path, echo=False)
     orm.Base.metadata.create_all(engine)
@@ -191,7 +191,7 @@ def test_delinking_from_oneside():
     assert len(sess.query(orm.Coordinates).all()) == 2
 
 
-# section: annotations
+# section: api
 def test_copy_over_attr():
     sess = mk_session()
     data_ag, dummy_ag = setup_data_handler(api.AnnotatedGenomeHandler, orm.AnnotatedGenome,
@@ -538,7 +538,12 @@ def test_transition_transsplice():
     assert [x[1].in_trans_intron for x in ti_transitions] == [bool(x) for x in [0, 0, 1, 1, 0, 1, 1, 0, 0, 0]]
 
 
-# section: gff_2_annotations
+def test_biointerp_features():
+    # todo, features -> coding ranges, exonic ranges, coding & exonic ranges, intronic ranges, etc...
+    pass
+
+
+# section: gffimporter
 def test_data_frm_gffentry():
     #sess = mk_session()
     controller = gffimporter.ImportControl(database_path='sqlite:///:memory:', err_path=None)
@@ -1075,6 +1080,12 @@ def test_gff_grouper():
     assert len(x) == 5
     for group in x:
         assert group[0].type == 'gene'
+
+
+def test_import_through_biointerpretation():
+    # todo, import from gff. Check expected values for e.g. intronic ranges
+    pass
+
 
 # section: types
 def test_enum_non_inheritance():
