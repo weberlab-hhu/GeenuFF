@@ -1,6 +1,7 @@
 from dustdas import gffhelper
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import IntegrityError
 import sqlalchemy
 import pytest
 import os
@@ -369,6 +370,29 @@ def test_replacelinks():
 
     assert len(slated.features) == 0
     assert len(scribedpiece.features) == 3
+
+
+def test_transcribed_pieces_unique_constraints():
+    sess = mk_session()
+    transcribed0 = orm.Transcribed()
+    transcribed1 = orm.Transcribed()
+
+    # test if same position for different transcribed_id goes through
+    piece_tr0_pos0 = orm.TranscribedPiece(transcribed=transcribed0, position=0)
+    piece_tr1_pos0 = orm.TranscribedPiece(transcribed=transcribed1, position=0)
+    sess.add_all([transcribed0, piece_tr0_pos0, piece_tr1_pos0])
+    sess.commit()
+
+    # same transcibed_id but different position
+    piece_tr0_pos1 = orm.TranscribedPiece(transcribed=transcribed0, position=1)
+    sess.add(piece_tr0_pos1)
+    sess.commit()
+
+    # test if unique constraint works
+    piece_tr0_pos1_2nd = orm.TranscribedPiece(transcribed=transcribed0, position=1)
+    sess.add(piece_tr0_pos1_2nd)
+    with pytest.raises(IntegrityError):
+        sess.commit()
 
 
 def test_order_pieces():
