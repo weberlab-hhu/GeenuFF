@@ -707,9 +707,9 @@ class TranscriptInterpBase(object):
                 out.append(kept.data)
         return out
 
+    # common 'interpretations' or extractions of transcript-related data
     # the following should always return in the format
     # [{"coordinate_id": _, "begin": _, "end": _, "is_plus_strand: _}, ... ]
-    # common 'interpretations' or extractions of transcript-related data
     def transcribed_ranges(self):
         return self._ranges_by_type(types.TRANSCRIBED)
 
@@ -746,29 +746,42 @@ class TranscriptInterpBase(object):
         return utrs
 
     # point transitions (sites)
+    # the following should always return in the format
+    # [{"coordinate_id": _, "position": _, "is_plus_strand: _}, ... ]
+    def _get_by_type_and_bearing(self, target_type, target_bearing):
+        out = []
+        for piece in self.transcript.data.transcribed_pieces:
+            for feature in piece.features:
+                if feature.bearing == target_bearing and \
+                        feature.type == target_type:
+                    out.append({"coordinate_id": feature.coordinate_id,
+                                "position": feature.position,
+                                "is_plus_strand": feature.is_plus_strand})
+        return out
+
     def transcription_start_sites(self):
-        pass
+        return self._get_by_type_and_bearing(types.TRANSCRIBED, types.START)
 
     def translation_start_sites(self):  # AKA start codon
-        pass
+        return self._get_by_type_and_bearing(types.CODING, types.START)
 
     def intron_start_sites(self):  # AKA Donor splice site
-        pass
+        return self._get_by_type_and_bearing(types.INTRON, types.START)
 
     def trans_intron_start_sites(self):
-        pass
+        return self._get_by_type_and_bearing(types.TRANS_INTRON, types.START)
 
     def transcription_end_sites(self):
-        pass
+        return self._get_by_type_and_bearing(types.TRANSCRIBED, types.END)
 
     def translation_end_sites(self):  # AKA follows stop codon
-        pass
+        return self._get_by_type_and_bearing(types.CODING, types.END)
 
     def intron_end_sites(self):  # AKA follows acceptor splice site
-        pass
+        return self._get_by_type_and_bearing(types.INTRON, types.END)
 
     def trans_intron_end_sites(self):
-        pass
+        return self._get_by_type_and_bearing(types.TRANS_INTRON, types.END)
 
 
 class HandleMaker(object):
