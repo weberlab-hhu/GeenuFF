@@ -1,7 +1,7 @@
 from . import types
 
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy import Table, Column, Integer, ForeignKey, String, Enum, CheckConstraint, Boolean, Float
+from sqlalchemy import Table, Column, Integer, ForeignKey, String, Enum, CheckConstraint, UniqueConstraint, Boolean, Float
 from sqlalchemy.orm import relationship
 
 # setup classes for data holding
@@ -101,8 +101,6 @@ class Transcribed(Base):
 
     transcribed_pieces = relationship('TranscribedPiece', back_populates='transcribed')
 
-    pairs = relationship('UpDownPair', back_populates='transcribed')
-
     def __repr__(self):
         return '<Transcribed, {}, "{}" of type {}, with {} pieces>'.format(self.id, self.given_id, self.type,
                                                                            len(self.transcribed_pieces))
@@ -114,6 +112,8 @@ class TranscribedPiece(Base):
     id = Column(Integer, primary_key=True)
     given_id = Column(String)
 
+    position = Column(Integer, nullable=False)
+
     super_locus_id = Column(Integer, ForeignKey('super_loci.id'))
     super_locus = relationship('SuperLocus', back_populates='transcribed_pieces')
 
@@ -122,6 +122,8 @@ class TranscribedPiece(Base):
 
     features = relationship('Feature', secondary=association_transcribeds_to_features,
                             back_populates='transcribed_pieces')
+
+    __table_args__ = (UniqueConstraint('transcribed_id', 'position'),)
 
     def __repr__(self):
         return "<TranscribedPiece, {}: with features {}>".format(
@@ -198,49 +200,3 @@ class Feature(Base):
 
     def pos_cmp_key(self):
         return self.coordinates.seqid, self.is_plus_strand, self.position
-
-
-class DownstreamFeature(Feature):
-    __tablename__ = 'downstream_features'
-
-    id = Column(Integer, ForeignKey('features.id'), primary_key=True)
-    pairs = relationship('UpDownPair', back_populates="downstream")
-
-    __mapper_args__ = {
-        'polymorphic_identity': 'downstream'
-    }
-
-
-class UpstreamFeature(Feature):
-    __tablename__ = 'upstream_features'
-
-    id = Column(Integer, ForeignKey('features.id'), primary_key=True)
-    pairs = relationship('UpDownPair', back_populates='upstream')
-
-    __mapper_args__ = {
-        'polymorphic_identity': 'upstream'
-    }
-
-
-# todo, association table DownstreamFeature <-> UpstreamFeature + fk -> Transcribed
-class UpDownPair(Base):
-    __tablename__ = 'up_down_pairs'
-
-    id = Column(Integer, primary_key=True)
-    upstream_id = Column(Integer, ForeignKey('upstream_features.id'))
-    upstream = relationship('UpstreamFeature', uselist=False, back_populates="pairs")
-
-    downstream_id = Column(Integer, ForeignKey('downstream_features.id'))
-    downstream = relationship('DownstreamFeature', uselist=False, back_populates='pairs')
-
-    transcribed_id = Column(Integer, ForeignKey('transcribeds.id'))
-    transcribed = relationship('Transcribed', uselist=False, back_populates='pairs')
-
-    def pos_cmp_key(self):
-        upstream_key = (None, None, None, None)
-        downstream_key = (None, None, None, None)
-        if self.upstream is not None:
-            upstream_key = self.upstream.pos_cmp_key()
-        if self.downstream is not None:
-            downstream_key = self.downstream.pos_cmp_key()
-        return upstream_key + downstream_key

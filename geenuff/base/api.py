@@ -311,22 +311,20 @@ class TranscribedHandler(Handler):
 
     @property
     def _valid_links(self):
-        return [TranslatedHandler, SuperLocusHandler, TranscribedPieceHandler, UpDownPairHandler]
+        return [TranslatedHandler, SuperLocusHandler, TranscribedPieceHandler]
 
     def link_to(self, other):
         if isinstance(other, SuperLocusHandler):
             self.data.super_locus = other.data
-        elif any([isinstance(other, x) for x in [UpDownPairHandler, TranscribedPieceHandler]]):
+        elif isinstance(other, TranscribedPieceHandler):
             other.data.transcribed = self.data
-        elif any([isinstance(other, x) for x in [TranslatedHandler]]):
+        elif isinstance(other, TranslatedHandler):
             other.data.transcribeds.append(self.data)
         else:
             raise self._link_value_error(other)
 
     def de_link(self, other):
-        if isinstance(other, UpDownPairHandler):
-            other.data.transcribed = None
-        elif any([isinstance(other, x) for x in self._valid_links]):
+        if any([isinstance(other, x) for x in self._valid_links]):
             other.data.transcribeds.remove(self.data)
         else:
             raise self._link_value_error(other)
@@ -420,97 +418,6 @@ class FeatureHandler(Handler):
 
     def cmp_key(self):
         return self.data.cmp_key()
-
-    def pos_cmp_key(self):
-        return self.data.pos_cmp_key()
-
-
-class DownstreamFeatureHandler(FeatureHandler):
-    def __init__(self):
-        super().__init__()
-        self.linkable += ['pairs']
-
-    @property
-    def data_type(self):
-        return orm.DownstreamFeature
-
-    @property
-    def _valid_links(self):
-        return super()._valid_links + [UpDownPairHandler]
-
-    def link_to(self, other):
-        try:
-            super().link_to(other)
-        except ValueError:
-            if isinstance(other, UpDownPairHandler):
-                other.downstream = self.data
-            else:
-                raise self._link_value_error(other)
-
-    def de_link(self, other):
-        if any([isinstance(other, x) for x in [TranscribedPieceHandler, SuperLocusHandler, TranslatedHandler]]):
-            other.data.features.remove(self.data)
-        elif isinstance(other, UpDownPairHandler):
-            other.data.downstream = None
-        else:
-            raise self._link_value_error(other)
-
-
-class UpstreamFeatureHandler(FeatureHandler):
-    def __init__(self):
-        super().__init__()
-        self.linkable += ['pairs']
-
-    @property
-    def data_type(self):
-        return orm.UpstreamFeature
-
-    @property
-    def _valid_links(self):
-        return super()._valid_links + [UpDownPairHandler]
-
-    def link_to(self, other):
-        try:
-            super().link_to(other)
-        except ValueError:
-            if isinstance(other, UpDownPairHandler):
-                other.upstream = self.data
-            else:
-                raise self._link_value_error(other)
-
-    def de_link(self, other):
-        if any([isinstance(other, x) for x in [TranscribedPieceHandler, SuperLocusHandler, TranslatedHandler]]):
-            other.data.features.remove(self.data)
-        elif isinstance(other, UpDownPairHandler):
-            other.data.upstream = None
-        else:
-            raise self._link_value_error(other)
-
-
-class UpDownPairHandler(Handler):
-    def __init__(self):
-        super().__init__()
-        self.linkable += ['upstream', 'transcribed', 'downstream']
-
-    @property
-    def data_type(self):
-        return orm.UpDownPair
-
-    @property
-    def _valid_links(self):
-        return [TranscribedHandler, DownstreamFeatureHandler, UpstreamFeatureHandler]
-
-    def link_to(self, other):
-        if any([isinstance(other, x) for x in self._valid_links]):
-            other.data.pairs.append(self.data)
-        else:
-            raise self._link_value_error(other)
-
-    def de_link(self, other):
-        if any([isinstance(other, x) for x in self._valid_links]):
-            other.data.pairs.remove(self.data)
-        else:
-            raise self._link_value_error(other)
 
     def pos_cmp_key(self):
         return self.data.pos_cmp_key()
@@ -686,84 +593,8 @@ class TranscriptInterpBase(object):
 
     def sort_pieces(self):
         pieces = self.transcript.data.transcribed_pieces
-        # start with one piece, extend until both ends are reached
-        ordered_pieces = pieces[0:1]
-        self._extend_to_end(ordered_pieces, downstream=True)
-        self._extend_to_end(ordered_pieces, downstream=False)
-        assert set(ordered_pieces) == set(pieces), "{} != {}".format(set(ordered_pieces), set(pieces))
+        ordered_pieces = sorted(pieces, key=lambda x: x.position)
         return ordered_pieces
-
-    def _extend_to_end(self, ordered_pieces, downstream=True, filter_fn=None):
-        if downstream:
-            next_fn = self.get_downstream_link
-            latest_i = -1
-            attr = 'downstream'
-        else:
-            next_fn = self.get_upstream_link
-            latest_i = 0
-            attr = 'upstream'
-
-        while True:
-            nextlink = next_fn(current_piece=ordered_pieces[latest_i])
-            if nextlink is None:
-                break
-            nextstream = nextlink.__getattribute__(attr)
-
-            nextpiece = self._get_one_piece_from_stream(nextstream)
-            if nextpiece in ordered_pieces:
-                raise IndecipherableLinkageError('Circular linkage inserting {} into {}'.format(nextpiece,
-                                                                                                ordered_pieces))
-            else:
-                self._extend_by_one(ordered_pieces, nextpiece, downstream)
-
-    @staticmethod
-    def _extend_by_one(ordered_pieces, new, downstream=True):
-        if downstream:
-            ordered_pieces.append(new)
-        else:
-            ordered_pieces.insert(0, new)
-
-    def _get_one_piece_from_stream(self, stream):
-        pieces = self.transcript.data.transcribed_pieces
-        matches = [x for x in stream.transcribed_pieces if x in pieces]
-        assert len(matches) == 1, 'len(matches) != 1, matches: {}'.format(matches)  # todo; can we guarantee this?
-        return matches[0]
-
-    def get_upstream_link(self, current_piece):
-        downstreams = self.session.query(orm.DownstreamFeature).all()
-        # DownstreamFeature s of this pice
-        downstreams_current = [x for x in downstreams if current_piece in x.transcribed_pieces]
-        links = self._find_matching_links(updown_candidates=downstreams_current, get_upstreams=True)
-        return self._links_list2link(links, direction='upstream', current_piece=current_piece)
-
-    def get_downstream_link(self, current_piece):
-        upstreams = self.session.query(orm.UpstreamFeature).all()
-        upstreams_current = [x for x in upstreams if current_piece in x.transcribed_pieces]
-        links = self._find_matching_links(updown_candidates=upstreams_current, get_upstreams=False)
-        return self._links_list2link(links, direction='downstream', current_piece=current_piece)
-
-    def _find_matching_links(self, updown_candidates, get_upstreams=True):
-        links = []
-        pairs = self.transcript.data.pairs
-        for cand in updown_candidates:
-            if get_upstreams:
-                links += [x for x in pairs if x.downstream == cand]
-            else:
-                links += [x for x in pairs if x.upstream == cand]
-        return links
-
-    def _links_list2link(self, links, direction, current_piece):
-        stacked = self.stack_matches(links)
-        collapsed = [x[0] for x in stacked]
-
-        if len(collapsed) == 0:
-            return None
-        elif len(collapsed) == 1:
-            return collapsed[0]
-        else:
-            raise IndecipherableLinkageError("Multiple possible within-transcript {} links found from {}, ({})".format(
-                direction, current_piece, collapsed
-            ))
 
     @staticmethod
     def update_status(status, aligned_features):
@@ -822,10 +653,6 @@ class TranscriptInterpBase(object):
         return out
 
 
-class IndecipherableLinkageError(Exception):
-    pass
-
-
 class HandleMaker(object):
     def __init__(self, super_locus_handler):
         self.super_locus_handler = super_locus_handler
@@ -844,9 +671,7 @@ class HandleMaker(object):
         datas += sl.transcribed_pieces
         datas += sl.translateds
         datas += sl.features
-        for transcribed in sl.transcribeds:
-            datas.append(transcribed)
-            datas += transcribed.pairs
+        datas += sl.transcribeds
 
         for item in datas:
             self.handles.append(self._get_or_make_one_handler(item))
@@ -870,9 +695,6 @@ class HandleMaker(object):
                (TranscribedHandler, orm.Transcribed),
                (TranslatedHandler, orm.Translated),
                (TranscribedPieceHandler, orm.TranscribedPiece),
-               (FeatureHandler, orm.Feature),
-               (UpstreamFeatureHandler, orm.UpstreamFeature),
-               (DownstreamFeatureHandler, orm.DownstreamFeature),
-               (UpDownPairHandler, orm.UpDownPair)]
+               (FeatureHandler, orm.Feature)]
 
         return self._get_paired_item(type(old_data), search_col=1, return_col=0, nested_list=key)

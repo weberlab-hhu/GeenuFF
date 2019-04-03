@@ -22,6 +22,13 @@ def mk_session(db_path='sqlite:///:memory:'):
     return Session()
 
 
+def setup_data_handler(handler_type, data_type, **kwargs):
+    data = data_type(**kwargs)
+    handler = handler_type()
+    handler.add_data(data)
+    return data, handler
+
+
 def test_annogenome2coordinate_relation():
     sess = mk_session()
     ag = orm.AnnotatedGenome(species='Athaliana', version='1.2', acquired_from='Phytozome12')
@@ -166,46 +173,6 @@ def test_feature_has_its_things():
     sess.rollback()
 
 
-def test_feature_streamlinks():
-    sess = mk_session()
-    f = orm.Feature(position=1)
-    pair = orm.UpDownPair()
-    sfA0 = orm.UpstreamFeature(position=2, pairs=[pair])
-    sfA1 = orm.DownstreamFeature(position=3, pairs=[pair])
-    sess.add_all([f, sfA0, sfA1, pair])
-    sess.commit()
-    sfA0back = sess.query(orm.UpstreamFeature).first()
-    assert sfA0back is sfA0
-    sfA1back = sfA0back.pairs[0].downstream
-    assert sfA1 is sfA1back
-    assert sfA1.pairs[0].upstream is sfA0
-    sf_friendless = orm.DownstreamFeature(position=4)
-    sess.add(sf_friendless)
-    sess.commit()
-    downstreams = sess.query(orm.DownstreamFeature).all()
-    pre_downlinked = sess.query(orm.UpDownPair).filter(
-        orm.DownstreamFeature != None  # todo, isn't there a 'right' way to do this?
-    ).all()
-    downlinked = [x.downstream for x in pre_downlinked]
-    print([(x.position, x.pairs) for x in downstreams])
-    print([(x.position, x.pairs[0].upstream) for x in downlinked])
-    assert len(downstreams) == 2
-    assert len(downlinked) == 1
-
-
-def test_linking_via_fkey():
-    sess = mk_session()
-    sfA0 = orm.UpstreamFeature(position=2)
-    sfA1 = orm.DownstreamFeature(position=3)
-    sess.add_all([sfA0, sfA1])
-    sess.commit()
-    pair = orm.UpDownPair(upstream_id=sfA0.id, downstream_id=sfA1.id)
-    sess.add_all([pair])
-    sess.commit()
-    assert sfA1.pairs[0].upstream is sfA0
-    assert sfA0.pairs[0].downstream is sfA1
-
-
 def test_delinking_from_oneside():
     sess = mk_session()
     ag = orm.AnnotatedGenome()
@@ -332,7 +299,9 @@ def test_swap_links_t2t2f():
     slc = orm.SuperLocus()
 
     scribedpiece, scribedpieceh = setup_data_handler(api.TranscribedPieceHandler,
-                                                     orm.TranscribedPiece, super_locus=slc)
+                                                     orm.TranscribedPiece,
+                                                     super_locus=slc,
+                                                     position=0)
     scribed, scribedh = setup_data_handler(api.TranscribedHandler, orm.Transcribed,
                                            super_locus=slc, transcribed_pieces=[scribedpiece])
     slated, slatedh = setup_data_handler(api.TranslatedHandler, orm.Translated, super_locus=slc,
@@ -374,48 +343,14 @@ def test_swap_links_t2t2f():
     sess.commit()
 
 
-def test_updownhandler_links():
-    sess = mk_session()
-    coor_old = orm.Coordinates(start=1, end=1000, seqid='a')
-    coor_new = orm.Coordinates(start=1, end=100, seqid='a')
-    slc = orm.SuperLocus()
-    scribedpiece, scribedpieceh = setup_data_handler(api.TranscribedPieceHandler,
-                                                     orm.TranscribedPiece, super_locus=slc)
-    scribed, scribedh = setup_data_handler(api.TranscribedHandler, orm.Transcribed,
-                                           super_locus=slc, transcribed_pieces=[scribedpiece])
-    up, uph = setup_data_handler(api.UpstreamFeatureHandler, orm.UpstreamFeature, super_locus=slc,
-                                 transcribed_pieces=[scribedpiece], coordinates=coor_old)
-    up2, up2h = setup_data_handler(api.UpstreamFeatureHandler, orm.UpstreamFeature, super_locus=slc,
-                                   transcribed_pieces=[scribedpiece], coordinates=coor_new)
-
-    down, downh = setup_data_handler(api.DownstreamFeatureHandler, orm.DownstreamFeature,
-                                     coordinates=coor_old)
-
-    pair, pairh = setup_data_handler(api.UpDownPairHandler, orm.UpDownPair, transcribed=scribed,
-                                     upstream=up, downstream=down)
-    sess.add_all([up, up2, down, slc, coor_old, coor_new, pair])
-    sess.commit()
-    assert up2.pairs == []
-    assert up.pairs[0].downstream == down
-    pairh.de_link(uph)
-    pairh.link_to(up2h)
-    assert up2.pairs[0].downstream == down
-    assert up.pairs == []
-
-
-def setup_data_handler(handler_type, data_type, **kwargs):
-    data = data_type(**kwargs)
-    handler = handler_type()
-    handler.add_data(data)
-    return data, handler
-
-
 def test_replacelinks():
     sess = mk_session()
     slc = orm.SuperLocus()
 
     scribedpiece, scribedpieceh = setup_data_handler(api.TranscribedPieceHandler,
-                                                     orm.TranscribedPiece, super_locus=slc)
+                                                     orm.TranscribedPiece,
+                                                     super_locus=slc,
+                                                     position=0)
     assert scribedpiece.super_locus is slc
     slated, slatedh = setup_data_handler(api.TranslatedHandler, orm.Translated, super_locus=slc)
     f0, f0h = setup_data_handler(api.FeatureHandler, orm.Feature, super_locus=slc,
@@ -436,9 +371,6 @@ def test_replacelinks():
     assert len(scribedpiece.features) == 3
 
 
-"""
-Should not be rewritten for new db scheme
-
 def test_order_pieces():
     sess = mk_session()
     ag = orm.AnnotatedGenome(species='Athaliana', version='1.2', acquired_from='Phytozome12')
@@ -449,36 +381,35 @@ def test_order_pieces():
     sl, slh = setup_data_handler(api.SuperLocusHandler, orm.SuperLocus)
     scribed, scribedh = setup_data_handler(api.TranscribedHandler, orm.Transcribed, super_locus=sl)
     ti = api.TranscriptInterpBase(transcript=scribedh, super_locus=sl, session=sess)
-    piece1 = orm.TranscribedPiece()
-    piece0 = orm.TranscribedPiece()
-    piece2 = orm.TranscribedPiece()
+    # wrong order
+    piece1 = orm.TranscribedPiece(position=1)
+    piece0 = orm.TranscribedPiece(position=0)
+    piece2 = orm.TranscribedPiece(position=2)
     scribed.transcribed_pieces = [piece0, piece1, piece2]
-    sess.add_all([scribed, piece0, piece1, piece2])
+    sess.add_all([scribed, piece1, piece0, piece2])
     sess.commit()
     # setup some paired features
-    feature0u = orm.UpstreamFeature(transcribed_pieces=[piece0], coordinates=coor, position=100, given_id='0u',
-                                    is_plus_strand=True)
-    feature1d = orm.DownstreamFeature(transcribed_pieces=[piece1], coordinates=coor, position=1, given_id='1d',
-                                      is_plus_strand=True)
-    feature1u = orm.UpstreamFeature(transcribed_pieces=[piece1], coordinates=coor, position=100, given_id='1u',
-                                    is_plus_strand=True)
-    feature2d = orm.DownstreamFeature(transcribed_pieces=[piece2], coordinates=coor, position=1, given_id='2d',
-                                      is_plus_strand=True)
-    pair01 = orm.UpDownPair(upstream=feature0u, downstream=feature1d, transcribed=scribed)
-    pair12 = orm.UpDownPair(upstream=feature1u, downstream=feature2d, transcribed=scribed)
-    # check getting upstream link
-    upstream_link = ti.get_upstream_link(piece1)
-    assert upstream_link is pair01
-    upstream = upstream_link.upstream
-    assert upstream is feature0u
-    assert upstream.transcribed_pieces == [piece0]
-    # check getting downstream link
-    downstream_link = ti.get_downstream_link(piece1)
-    assert downstream_link is pair12
-    downstream = downstream_link.downstream
-    assert downstream is feature2d
-    assert downstream.transcribed_pieces == [piece2]
-    # and see if they can be ordered as expected overall
+    feature0u = orm.Feature(transcribed_pieces=[piece0],
+                            coordinates=coor,
+                            position=100,
+                            given_id='0u',
+                            is_plus_strand=True)
+    feature1d = orm.Feature(transcribed_pieces=[piece1],
+                            coordinates=coor,
+                            position=1,
+                            given_id='1d',
+                            is_plus_strand=True)
+    feature1u = orm.Feature(transcribed_pieces=[piece1],
+                            coordinates=coor,
+                            position=100,
+                            given_id='1u',
+                            is_plus_strand=True)
+    feature2d = orm.Feature(transcribed_pieces=[piece2],
+                            coordinates=coor,
+                            position=1,
+                            given_id='2d',
+                            is_plus_strand=True)
+    # see if they can be ordered as expected overall
     op = ti.sort_pieces()
     print([piece0, piece1, piece2], 'expected')
     print(op, 'sorted')
@@ -489,17 +420,6 @@ def test_order_pieces():
                 [feature1d, feature1u],
                 [feature2d]]
     assert fully_sorted == expected
-    # finally make it circular, and make sure it throws an error
-    feature2u = orm.UpstreamFeature(transcribed_pieces=[piece2], coordinates=coor, position=100, given_id='2u',
-                                    is_plus_strand=True)
-    feature0d = orm.DownstreamFeature(transcribed_pieces=[piece0], coordinates=coor, position=1, given_id='0d',
-                                      is_plus_strand=True)
-    pair20 = orm.UpDownPair(upstream=feature2u, downstream=feature0d, transcribed=scribed)
-    sess.add(pair20)
-    sess.commit()
-    with pytest.raises(api.IndecipherableLinkageError):
-        ti.sort_pieces()
-"""
 
 
 class TransspliceDemoData(object):
@@ -518,10 +438,10 @@ class TransspliceDemoData(object):
         self.ti = api.TranscriptInterpBase(transcript=self.scribedh, super_locus=self.sl, session=sess)
         self.tiflip = api.TranscriptInterpBase(transcript=self.scribedfliph, super_locus=self.sl, session=sess)
 
-        self.pieceA2D = orm.TranscribedPiece(super_locus=self.sl)
-        self.pieceA2Dp = orm.TranscribedPiece(super_locus=self.sl)
-        self.pieceE2H = orm.TranscribedPiece(super_locus=self.sl)
-        self.pieceEp2Hp = orm.TranscribedPiece(super_locus=self.sl)
+        self.pieceA2D = orm.TranscribedPiece(super_locus=self.sl, position=0)
+        self.pieceE2H = orm.TranscribedPiece(super_locus=self.sl, position=1)
+        self.pieceA2Dp = orm.TranscribedPiece(super_locus=self.sl, position=0)
+        self.pieceEp2Hp = orm.TranscribedPiece(super_locus=self.sl, position=1)
         self.scribed.transcribed_pieces = [self.pieceA2D, self.pieceE2H]
         self.scribedflip.transcribed_pieces = [self.pieceA2Dp, self.pieceEp2Hp]
         # pieceA2D features
@@ -539,19 +459,19 @@ class TransspliceDemoData(object):
         self.fD = orm.Feature(coordinates=self.old_coor, position=40, given_id='D',
                               is_plus_strand=True, super_locus=self.sl,
                               type=types.TRANSCRIBED, bearing=types.END)
-        self.fADs0 = orm.UpstreamFeature(coordinates=self.old_coor, position=40, given_id='ADs0',
-                                         is_plus_strand=True, super_locus=self.sl,
-                                         type=types.TRANS_INTRON, bearing=types.CLOSE_STATUS)
-        self.fADs1 = orm.UpstreamFeature(coordinates=self.old_coor, position=40, given_id='ADs1',
-                                         is_plus_strand=True, super_locus=self.sl,
-                                         type=types.CODING, bearing=types.CLOSE_STATUS)
+        self.fADs0 = orm.Feature(coordinates=self.old_coor, position=40, given_id='ADs0',
+                                 is_plus_strand=True, super_locus=self.sl,
+                                 type=types.TRANS_INTRON, bearing=types.CLOSE_STATUS)
+        self.fADs1 = orm.Feature(coordinates=self.old_coor, position=40, given_id='ADs1',
+                                 is_plus_strand=True, super_locus=self.sl,
+                                 type=types.CODING, bearing=types.CLOSE_STATUS)
         # pieceE2H features
-        self.fEHs0 = orm.DownstreamFeature(coordinates=self.old_coor, position=910, given_id='EHs0',
-                                           is_plus_strand=True, super_locus=self.sl,
-                                           type=types.TRANS_INTRON, bearing=types.OPEN_STATUS)
-        self.fEHs1 = orm.DownstreamFeature(coordinates=self.old_coor, position=910, given_id='EHs1',
-                                           is_plus_strand=True, super_locus=self.sl,
-                                           type=types.CODING, bearing=types.OPEN_STATUS)
+        self.fEHs0 = orm.Feature(coordinates=self.old_coor, position=910, given_id='EHs0',
+                                 is_plus_strand=True, super_locus=self.sl,
+                                 type=types.TRANS_INTRON, bearing=types.OPEN_STATUS)
+        self.fEHs1 = orm.Feature(coordinates=self.old_coor, position=910, given_id='EHs1',
+                                 is_plus_strand=True, super_locus=self.sl,
+                                 type=types.CODING, bearing=types.OPEN_STATUS)
         self.fE = orm.Feature(coordinates=self.old_coor, position=910, given_id='E',
                               is_plus_strand=True, super_locus=self.sl,
                               type=types.TRANSCRIBED, bearing=types.START)
@@ -565,12 +485,12 @@ class TransspliceDemoData(object):
                               is_plus_strand=True, super_locus=self.sl,
                               type=types.TRANSCRIBED, bearing=types.END)
         # pieceEp2Hp features
-        self.fEHps0 = orm.DownstreamFeature(coordinates=self.old_coor, position=940, given_id='EHsp0',
-                                            is_plus_strand=False, super_locus=self.sl,
-                                            type=types.TRANS_INTRON, bearing=types.OPEN_STATUS)
-        self.fEHps1 = orm.DownstreamFeature(coordinates=self.old_coor, position=940, given_id='EHsp1',
-                                            is_plus_strand=False, super_locus=self.sl,
-                                            type=types.CODING, bearing=types.OPEN_STATUS)
+        self.fEHps0 = orm.Feature(coordinates=self.old_coor, position=940, given_id='EHsp0',
+                                  is_plus_strand=False, super_locus=self.sl,
+                                  type=types.TRANS_INTRON, bearing=types.OPEN_STATUS)
+        self.fEHps1 = orm.Feature(coordinates=self.old_coor, position=940, given_id='EHsp1',
+                                  is_plus_strand=False, super_locus=self.sl,
+                                  type=types.CODING, bearing=types.OPEN_STATUS)
         self.fEp = orm.Feature(coordinates=self.old_coor, position=940, given_id='Ep',
                                is_plus_strand=False, super_locus=self.sl,
                                type=types.TRANSCRIBED, bearing=types.START)
@@ -588,15 +508,7 @@ class TransspliceDemoData(object):
         self.pieceA2Dp.features = [self.fA, self.fB, self.fC, self.fD, self.fADs0, self.fADs1]
         self.pieceE2H.features = [self.fE, self.fF, self.fG, self.fH, self.fEHs0, self.fEHs1]
         self.pieceEp2Hp.features = [self.fEp, self.fFp, self.fGp, self.fHp, self.fEHps0, self.fEHps1]
-        self.pairADEH0 = orm.UpDownPair(upstream=self.fADs0, downstream=self.fEHs0,
-                                        transcribed=self.scribed)
-        self.pairADEH1 = orm.UpDownPair(upstream=self.fADs1, downstream=self.fEHs1,
-                                        transcribed=self.scribed)
-        self.pairADEHp0 = orm.UpDownPair(upstream=self.fADs0, downstream=self.fEHps0,
-                                         transcribed=self.scribedflip)
-        self.pairADEHp1 = orm.UpDownPair(upstream=self.fADs1, downstream=self.fEHps1,
-                                         transcribed=self.scribedflip)
-        sess.add_all([self.sl, self.pairADEH0, self.pairADEH1, self.pairADEHp0, self.pairADEHp1])
+        sess.add(self.sl)
         sess.commit()
 
     def make_all_handlers(self):
@@ -750,8 +662,11 @@ def test_fullcopy():
     sl, slh = setup_data_handler(api.SuperLocusHandler, orm.SuperLocus)
     scribed, scribedh = setup_data_handler(api.TranscribedHandler, orm.Transcribed, super_locus=sl)
     scribedpiece, scribedpieceh = setup_data_handler(api.TranscribedPieceHandler,
-                                                     orm.TranscribedPiece, transcribed=scribed,
-                                                     super_locus=sl, given_id='soup', )
+                                                     orm.TranscribedPiece,
+                                                     given_id='soup',
+                                                     transcribed=scribed,
+                                                     super_locus=sl,
+                                                     position=0)
     f, fh = setup_data_handler(api.FeatureHandler, orm.Feature, super_locus=sl,
                                transcribed_pieces=[scribedpiece], position=13)
     sess.add_all([scribedpiece, f])

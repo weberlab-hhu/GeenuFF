@@ -457,13 +457,20 @@ class TranscribedHandler(api.TranscribedHandler, GFFDerived):
         else:
             entry_type = given_id = None
 
-        transcribed_2_add = {'type': entry_type, 'given_id': given_id, 'super_locus_id': super_locus.id,
-                             'id': self.id}
+        transcribed_2_add = {
+            'type': entry_type,
+            'given_id': given_id,
+            'super_locus_id': super_locus.id,
+            'id': self.id
+        }
 
         piece = TranscribedPieceHandler(controller=self.controlller)
         piece.gffentry = copy.deepcopy(gffentry)
 
-        piece_2_add = piece.setup_insertion_ready(gffentry, super_locus=super_locus, transcribed=self)
+        piece_2_add = piece.setup_insertion_ready(gffentry,
+                                                  super_locus=super_locus,
+                                                  transcribed=self,
+                                                  position=0)
         self.transcribed_piece_handlers.append(piece)
         return transcribed_2_add, piece_2_add
 
@@ -480,7 +487,7 @@ class TranscribedPieceHandler(api.TranscribedPieceHandler, GFFDerived):
         if controller is not None:
             self.id = controller.transcribed_piece_counter()
 
-    def setup_insertion_ready(self, gffentry=None, super_locus=None, transcribed=None, **kwargs):
+    def setup_insertion_ready(self, gffentry=None, super_locus=None, transcribed=None, position=0):
         if gffentry is not None:
             parents = gffentry.get_Parent()
             # the simple case
@@ -492,8 +499,13 @@ class TranscribedPieceHandler(api.TranscribedPieceHandler, GFFDerived):
         else:
             given_id = None
 
-        transcribed_piece = {'id': self.id, 'transcribed_id': transcribed.id, 'super_locus_id': super_locus.id,
-                             'given_id': given_id}
+        transcribed_piece = {
+            'id': self.id,
+            'transcribed_id': transcribed.id,
+            'super_locus_id': super_locus.id,
+            'given_id': given_id,
+            'position': position,
+        }
         return transcribed_piece
 
 
@@ -504,8 +516,15 @@ class TranslatedHandler(api.TranslatedHandler):
             self.id = controller.translated_counter()
 
     def setup_insertion_ready(self, transcribed_handler, super_locus_handler, given_id):
-        translated = {'id': self.id, 'super_locus_id': super_locus_handler.id, 'given_id': given_id}
-        translated_to_transcribed = {'translated_id': self.id, 'transcribed_id': transcribed_handler.id}
+        translated = {
+            'id': self.id,
+            'super_locus_id': super_locus_handler.id,
+            'given_id': given_id
+        }
+        translated_to_transcribed = {
+            'translated_id': self.id,
+            'transcribed_id': transcribed_handler.id
+        }
         return translated, translated_to_transcribed
 
 
