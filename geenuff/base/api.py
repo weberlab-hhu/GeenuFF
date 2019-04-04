@@ -658,12 +658,14 @@ class TranscriptInterpBase(object):
         ranges = []
         current = None
         for aligned_features, status, piece in self.transition_5p_to_3p():
-            features_of_type = [f for f in aligned_features if f.type == target_type]
+            print('aligned_features {}'.format(aligned_features))
+            features_of_type = [f for f in aligned_features if f.type.value == target_type]
             assert len(features_of_type) in [0, 1], "cannot interpret aligned features of the same type {}".format(
                 features_of_type
             )
             if len(features_of_type) == 1:  # and 0 is simply ignored...
                 feature = features_of_type[0]
+                print('pre if else')
                 if self._is_open_or_start(feature):
                     current = {"coordinate_id": feature.coordinate_id,
                                "begin": feature.position,
@@ -671,15 +673,16 @@ class TranscriptInterpBase(object):
                 else:
                     assert current is not None, "start/open must be seen before end/close for {}".format(feature)
                     current["end"] = feature.position
-                    ranges.append(tuple(current))
+                    ranges.append(current)
+                    print(ranges)
                     current = None
         return ranges
 
     @staticmethod
     def _is_open_or_start(feature):
-        if feature.bearing in [types.START, types.OPEN_STATUS]:
+        if feature.bearing.value in [types.START, types.OPEN_STATUS]:
             return True
-        elif feature.bearing in [types.END, types.CLOSE_STATUS]:
+        elif feature.bearing.value in [types.END, types.CLOSE_STATUS]:
             return False
         else:
             raise ValueError("failed to interpret bearing {}".format(feature.bearing))

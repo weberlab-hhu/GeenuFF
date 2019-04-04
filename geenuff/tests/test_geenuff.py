@@ -538,10 +538,59 @@ def test_transition_transsplice():
     assert [x[1].in_trans_intron for x in ti_transitions] == [bool(x) for x in [0, 0, 1, 1, 0, 1, 1, 0, 0, 0]]
 
 
-def test_biointerp_features():
-    # todo, features -> coding ranges, exonic ranges, coding & exonic ranges, intronic ranges, etc...
-    pass
+class BiointerpDemoDataCoding(object):
+    def __init__(self, sess, is_plus_strand):
+        self.sl, self.sl_handler = setup_data_handler(api.SuperLocusHandler, orm.SuperLocus)
+        self.scribed, self.scribed_handler = setup_data_handler(
+            api.TranscribedHandler, orm.Transcribed, super_locus=self.sl)
 
+        self.piece = orm.TranscribedPiece(super_locus=self.sl, position=0, transcribed=self.scribed)
+
+        self.ti = api.TranscriptInterpBase(transcript=self.scribed_handler, super_locus=self.sl, session=sess)
+
+        # setup ranges for a two-exon coding gene
+        self.coordinates = orm.Coordinates(seqid='a', start=1, end=2000)
+        # transcribed: [.......................................................................)
+        self.transcribed_start = orm.Feature(super_locus=self.sl, coordinates=self.coordinates,
+                                             is_plus_strand=is_plus_strand, position=100,
+                                             type=types.TRANSCRIBED, bearing=types.START)
+        self.transcribed_end = orm.Feature(super_locus=self.sl, coordinates=self.coordinates,
+                                           is_plus_strand=is_plus_strand, position=900,
+                                           type=types.TRANSCRIBED, bearing=types.END)
+        # coding:              [...............................................)
+        self.coding_start = orm.Feature(super_locus=self.sl, coordinates=self.coordinates,
+                                        is_plus_strand=is_plus_strand, position=200,
+                                        type=types.CODING, bearing=types.START)
+        self.coding_end = orm.Feature(super_locus=self.sl, coordinates=self.coordinates,
+                                      is_plus_strand=is_plus_strand, position=800,
+                                      type=types.CODING, bearing=types.END)
+        # intron:                       [...........................)
+        self.intron_start = orm.Feature(super_locus=self.sl, coordinates=self.coordinates,
+                                        is_plus_strand=is_plus_strand, position=300,
+                                        type=types.INTRON, bearing=types.START)
+        self.intron_end = orm.Feature(super_locus=self.sl, coordinates=self.coordinates,
+                                      is_plus_strand=is_plus_strand, position=700,
+                                      type=types.INTRON, bearing=types.END)
+
+        self.piece.features = [self.transcribed_start, self.transcribed_end,
+                               self.coding_start, self.coding_end,
+                               self.intron_start, self.intron_end]
+
+        sess.add(self.sl)
+        sess.commit()
+
+
+def test_biointerp_features_as_ranges():
+    # todo, features -> coding ranges, exonic ranges, coding & exonic ranges, intronic ranges, etc...
+    sess = mk_session()
+    d = BiointerpDemoDataCoding(sess, is_plus_strand=True)  # setup
+    assert d.ti.translated_ranges() == [{"coordinate_id": 1, "is_plus_strand": True,
+                                         "start": 100, "end": 900}]
+
+
+
+def test_biointerp_features_as_transitions():
+    pass
 
 # section: gffimporter
 def test_data_frm_gffentry():
