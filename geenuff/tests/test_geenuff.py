@@ -15,6 +15,7 @@ from ..applications import gffimporter
 from .. import types
 from .. import helpers
 
+### Helper functions ###
 # section: annotations_orm
 def mk_session(db_path='sqlite:///:memory:'):
     engine = create_engine(db_path, echo=False)
@@ -30,7 +31,32 @@ def setup_data_handler(handler_type, data_type, **kwargs):
     return data, handler
 
 
+def setup_testable_super_loci(db_path='sqlite:///:memory:'):
+    controller = gffimporter.ImportControl(err_path='/dev/null', database_path=db_path)
+    controller.mk_session()
+    controller.add_sequences('testdata/dummyloci.fa')
+    controller.add_gff('testdata/dummyloci.gff3', clean=False)
+    return controller.super_loci[0], controller
+
+
+def cleaned_commited_features(sess):
+    all_features = sess.query(orm.Feature).all()
+    allowed_types = [
+        types.TRANSCRIBED,
+        types.CODING,
+        types.INTRON,
+        types.TRANS_INTRON,
+        types.ERROR
+    ]
+    clean_datas = [x for x in all_features if x.type.value in allowed_types]
+    return clean_datas
+
+
+### The actual tests ###
 def test_annogenome2coordinate_relation():
+    """Check if everything is consistent when we add an AnnotatedGenome and a Coordinate
+    to the db. Also check for correct deletion behavior.
+    """
     sess = mk_session()
     ag = orm.AnnotatedGenome(species='Athaliana', version='1.2', acquired_from='Phytozome12')
     coord = orm.Coordinates(start=0, end=30, seqid='abc', annotated_genome=ag)
@@ -58,6 +84,7 @@ def test_annogenome2coordinate_relation():
 
 
 def test_coordinate_constraints():
+    """Check the coordinate constraints"""
     sess = mk_session()
     coors = orm.Coordinates(start=0, end=30, seqid='abc')
     coors2 = orm.Coordinates(start=0, end=1, seqid='abc')
@@ -68,90 +95,63 @@ def test_coordinate_constraints():
     sess.add_all([coors, coors2])
     sess.commit()
     # should cause trouble
-    with pytest.raises(sqlalchemy.exc.IntegrityError):
+    with pytest.raises(IntegrityError):
         sess.add(coors_bad1)  # start below 1
         sess.commit()
     sess.rollback()
-    with pytest.raises(sqlalchemy.exc.IntegrityError):
+    with pytest.raises(IntegrityError):
         sess.add(coors_bad2)  # end below start
         sess.commit()
     sess.rollback()
-    with pytest.raises(sqlalchemy.exc.IntegrityError):
+    with pytest.raises(IntegrityError):
         sess.add(coors_bad3)
         sess.commit()
 
 
 def test_coordinates_insert():
+    """Test what happens when we insert two coordinates"""
     sess = mk_session()
     ag = orm.AnnotatedGenome()
     coords = orm.Coordinates(start=1, end=30, seqid='abc', annotated_genome=ag)
     coords2 = orm.Coordinates(start=11, end=330, seqid='def', annotated_genome=ag)
     sl = orm.SuperLocus()
-    f0 = orm.Feature(super_locus=sl, coordinates=coords)
-    f1 = orm.Feature(super_locus=sl, coordinates=coords2)
+    f0 = orm.Feature(coordinates=coords)
+    f1 = orm.Feature(coordinates=coords2)
     # should be ok
-    sess.add_all([coords, coords2, sl, f0, f1])
+    sess.add_all([ag, sl, coords, coords2, f0, f1])
     assert f0.coordinates.start == 1
     assert f1.coordinates.end == 330
-    #assert seq_info is slic.seq_info
-
-
-def test_many2many_scribed2slated():
-    # test transcript to multi proteins
-    sl = orm.SuperLocus()
-    scribed0 = orm.Transcribed(super_locus=sl)
-    slated0 = orm.Translated(super_locus=sl, transcribeds=[scribed0])
-    slated1 = orm.Translated(super_locus=sl, transcribeds=[scribed0])
-    # test scribed 2 scribed_piece works
-    piece0 = orm.TranscribedPiece(transcribed=scribed0)
-    assert piece0 == slated0.transcribeds[0].transcribed_pieces[0]
-    # test protein to multi transcripts
-    assert set(scribed0.translateds) == {slated0, slated1}
-    slated2 = orm.Translated(super_locus=sl)
-    scribed1 = orm.Transcribed(super_locus=sl)
-    scribed2 = orm.Transcribed(super_locus=sl)
-    slated2.transcribeds = [scribed1, scribed2]
-    assert set(slated2.transcribeds) == {scribed1, scribed2}
-    scribed3 = orm.Transcribed(super_locus=sl)
-    slated2.transcribeds.append(scribed3)
-    assert set(slated2.transcribeds) == {scribed1, scribed2, scribed3}
 
 
 def test_many2many_with_features():
+    """Test the many2many tables association_transcribed_pieces_to_features and
+    association_translateds_to_features
+    """
     sl = orm.SuperLocus()
     # one transcript, multiple proteins
-    piece0 = orm.TranscribedPiece(super_locus=sl)
+    piece0 = orm.TranscribedPiece()
     scribed0 = orm.Transcribed(super_locus=sl, transcribed_pieces=[piece0])
-    slated0 = orm.Translated(super_locus=sl, transcribeds=[scribed0])
-    slated1 = orm.Translated(super_locus=sl, transcribeds=[scribed0])
+    slated0 = orm.Translated(super_locus=sl)
+    slated1 = orm.Translated(super_locus=sl)
     # features representing alternative start codon for proteins on one transcript
-    feat0_tss = orm.Feature(super_locus=sl, transcribed_pieces=[piece0])
-    feat1_tss = orm.Feature(super_locus=sl, transcribed_pieces=[piece0])
-    feat2_stop = orm.Feature(super_locus=sl, translateds=[slated0, slated1])
-    feat3_start = orm.Feature(super_locus=sl, translateds=[slated0])
-    feat4_start = orm.Feature(super_locus=sl, translateds=[slated1])
-    # test they all made it to super locus
-    assert len(sl.features) == 5
+    feat0_tss = orm.Feature(transcribed_pieces=[piece0])
+    feat1_tss = orm.Feature(transcribed_pieces=[piece0])
+    feat2_stop = orm.Feature(translateds=[slated0, slated1])
+    feat3_start = orm.Feature(translateds=[slated0])
+    feat4_start = orm.Feature(translateds=[slated1])
     # test multi features per translated worked
     assert len(slated0.features) == 2
     # test mutli translated per feature worked
     assert len(feat2_stop.translateds) == 2
     assert len(feat3_start.translateds) == 1
     assert len(feat0_tss.translateds) == 0
-    # test we can get to all of this from transcribed
-    indirect_features = set()
-    for slated in scribed0.translateds:
-        for f in slated.features:
-            indirect_features.add(f)
-    assert len(indirect_features) == 3
 
 
 def test_feature_has_its_things():
+    """Test if properties of Feature table are correct and constraints are enforced"""
     sess = mk_session()
-    # should be ok
-    sl = orm.SuperLocus()
     # test feature with nothing much set
-    f = orm.Feature(super_locus=sl)
+    f = orm.Feature()
     sess.add(f)
     sess.commit()
 
@@ -160,12 +160,12 @@ def test_feature_has_its_things():
     assert f.coordinates is None
     assert f.score is None
     # test feature with
-    f1 = orm.Feature(super_locus=sl, is_plus_strand=False, position=3)
+    f1 = orm.Feature(is_plus_strand=False, position=3)
     assert not f1.is_plus_strand
     assert f1.position == 3
-    # test bad input
+    # test wrong class as parameter
     with pytest.raises(KeyError):
-        f2 = orm.Feature(super_locus=f)
+        f2 = orm.Feature(coordinates=f)
 
     f2 = orm.Feature(is_plus_strand=-1)  # note that 0, and 1 are accepted
     sess.add(f2)
@@ -174,7 +174,10 @@ def test_feature_has_its_things():
     sess.rollback()
 
 
-def test_delinking_from_oneside():
+def test_partially_remove_coordinates():
+    """Add two coordinates to an annotated genome and test if everything ends
+    up valid.
+    """
     sess = mk_session()
     ag = orm.AnnotatedGenome()
     place_holder = orm.AnnotatedGenome()
@@ -192,187 +195,10 @@ def test_delinking_from_oneside():
     assert len(sess.query(orm.Coordinates).all()) == 2
 
 
-# section: annotations
-def test_copy_over_attr():
-    sess = mk_session()
-    data_ag, dummy_ag = setup_data_handler(api.AnnotatedGenomeHandler, orm.AnnotatedGenome,
-                                           species='mammoth', version='v1.0.3', acquired_from='nowhere')
-    odata_ag, other_ag = setup_data_handler(api.AnnotatedGenomeHandler, orm.AnnotatedGenome)
-
-    sess.add_all([data_ag, other_ag.data])
-    # make sure copy only copies what it says and nothing else
-    dummy_ag.copy_data_attr_to_other(other_ag, copy_only='species')
-    assert other_ag.get_data_attribute('species') == 'mammoth'
-    assert other_ag.get_data_attribute('version') is None
-    sess.add_all([odata_ag, data_ag])
-    # make sure do_not_copy excludes what is says and copies the rest
-    dummy_ag.copy_data_attr_to_other(other_ag, do_not_copy='acquired_from')
-    assert other_ag.get_data_attribute('version') == 'v1.0.3'
-    assert other_ag.get_data_attribute('acquired_from') is None
-    # make sure everything is copied
-    dummy_ag.copy_data_attr_to_other(other_ag)
-    assert other_ag.get_data_attribute('acquired_from') == 'nowhere'
-    # make sure commit/actual entry works
-    # sess.add_all([data_ag, other_ag.data])
-    sess.commit()
-    assert dummy_ag.get_data_attribute('species') == 'mammoth'
-    assert other_ag.get_data_attribute('species') == 'mammoth'
-    assert other_ag.get_data_attribute('acquired_from') == 'nowhere'
-    assert other_ag.data.id is not None
-
-
-def test_swap_link_annogenome2seqinfo():
-    sess = mk_session()
-
-    ag, agh = setup_data_handler(api.AnnotatedGenomeHandler, orm.AnnotatedGenome)
-    ag2, ag2h = setup_data_handler(api.AnnotatedGenomeHandler, orm.AnnotatedGenome)
-
-    ci, cih = setup_data_handler(api.CoordinatesHandler,
-                                 orm.Coordinates,
-                                 start=1,
-                                 end=30,
-                                 seqid='abc',
-                                 annotated_genome=ag)
-
-    sess.add_all([ag, ag2, ci])
-    sess.commit()
-    assert agh.data.coordinates == [cih.data]
-    agh.de_link(cih)
-    ag2h.link_to(cih)
-    sess.commit()
-    assert agh.data.coordinates == []
-    assert ag2h.data.coordinates == [cih.data]
-    # swap back from coordinates info interface
-    cih.de_link(ag2h)
-    cih.link_to(agh)
-    assert agh.data.coordinates == [cih.data]
-    assert ag2h.data.coordinates == []
-
-
-def test_swap_links_superlocus2ttfs():
-    sess = mk_session()
-
-    slc, slch = setup_data_handler(api.SuperLocusHandler, orm.SuperLocus)
-
-    slc2, slc2h = setup_data_handler(api.SuperLocusHandler, orm.SuperLocus)
-
-    scribed, scribedh = setup_data_handler(api.TranscribedHandler, orm.Transcribed,
-                                           super_locus=slc)
-    slated, slatedh = setup_data_handler(api.TranslatedHandler, orm.Translated,
-                                         super_locus=slc, transcribeds=[scribed])
-    feature, featureh = setup_data_handler(api.FeatureHandler, orm.Feature,
-                                           super_locus=slc)
-
-    sess.add_all([slc, slc2, scribed, slated])
-    sess.commit()
-    # swapping super locus
-    slch.de_link(slatedh)
-    slch.de_link(scribedh)
-    slch.de_link(featureh)
-    slc2h.link_to(slatedh)
-    slc2h.link_to(scribedh)
-    slc2h.link_to(featureh)
-    assert scribed.super_locus is slc2
-    assert slated.super_locus is slc2
-    assert feature.super_locus is slc2
-    assert slc.translateds == []
-    assert slc.transcribeds == []
-    assert slc.features == []
-    # swapping back from transcribed, translated, feature side
-    scribedh.de_link(slc2h)
-    slatedh.de_link(slc2h)
-    featureh.de_link(slc2h)
-    scribedh.link_to(slch)
-    slatedh.link_to(slch)
-    featureh.link_to(slch)
-    assert slated.super_locus is slc
-    assert scribed.super_locus is slc
-    assert feature.super_locus is slc
-    assert slc2.translateds == []
-    assert slc2.transcribeds == []
-    assert slc2.features == []
-    sess.commit()
-
-
-def test_swap_links_t2t2f():
-    sess = mk_session()
-
-    slc = orm.SuperLocus()
-
-    scribedpiece, scribedpieceh = setup_data_handler(api.TranscribedPieceHandler,
-                                                     orm.TranscribedPiece,
-                                                     super_locus=slc,
-                                                     position=0)
-    scribed, scribedh = setup_data_handler(api.TranscribedHandler, orm.Transcribed,
-                                           super_locus=slc, transcribed_pieces=[scribedpiece])
-    slated, slatedh = setup_data_handler(api.TranslatedHandler, orm.Translated, super_locus=slc,
-                                         transcribeds=[scribed])
-    feature, featureh = setup_data_handler(api.FeatureHandler, orm.Feature, super_locus=slc,
-                                           transcribed_pieces=[scribedpiece])
-
-    sess.add_all([slc, scribed, scribedpiece, slated, feature])
-    sess.commit()
-
-    assert scribed.translateds == [slated]
-    assert slated.transcribeds == [scribed]
-    assert scribedpiece.transcribed == scribed
-    assert feature.transcribed_pieces == [scribedpiece]
-    # de_link / link_to from scribed side
-    scribedh.de_link(slatedh)
-    scribedpieceh.de_link(featureh)
-    assert slated.transcribeds == []
-    assert scribed.translateds == []
-    assert feature.transcribed_pieces == []
-
-    scribedh.link_to(slatedh)
-    assert scribed.translateds == [slated]
-    assert slated.transcribeds == [scribed]
-    # de_link / link_to from slated side
-    slatedh.de_link(scribedh)
-    assert slated.transcribeds == []
-    assert scribed.translateds == []
-    slatedh.link_to(scribedh)
-    slatedh.link_to(featureh)
-    assert scribed.translateds == [slated]
-    assert slated.transcribeds == [scribed]
-    assert feature.translateds == [slated]
-    # mod links from feature side
-    featureh.de_link(slatedh)
-    featureh.link_to(scribedpieceh)
-    assert slated.features == []
-    assert scribed.transcribed_pieces[0].features == [feature]
-    sess.commit()
-
-
-def test_replacelinks():
-    sess = mk_session()
-    slc = orm.SuperLocus()
-
-    scribedpiece, scribedpieceh = setup_data_handler(api.TranscribedPieceHandler,
-                                                     orm.TranscribedPiece,
-                                                     super_locus=slc,
-                                                     position=0)
-    assert scribedpiece.super_locus is slc
-    slated, slatedh = setup_data_handler(api.TranslatedHandler, orm.Translated, super_locus=slc)
-    f0, f0h = setup_data_handler(api.FeatureHandler, orm.Feature, super_locus=slc,
-                                 translateds=[slated])
-
-    f1, f1h = setup_data_handler(api.FeatureHandler, orm.Feature, super_locus=slc,
-                                 translateds=[slated])
-
-    f2, f2h = setup_data_handler(api.FeatureHandler, orm.Feature, super_locus=slc,
-                                 translateds=[slated])
-
-    sess.add_all([slc, scribedpiece, slated, f0, f1, f2])
-    sess.commit()
-    assert len(slated.features) == 3
-    slatedh.replace_selflinks_w_replacementlinks(replacement=scribedpieceh, to_replace=['features'])
-
-    assert len(slated.features) == 0
-    assert len(scribedpiece.features) == 3
-
-
 def test_transcribed_pieces_unique_constraints():
+    """Add transcribed pieces in valid and invalid configurations and test for
+    valid outcomes.
+    """
     sess = mk_session()
     transcribed0 = orm.Transcribed()
     transcribed1 = orm.Transcribed()
@@ -396,14 +222,18 @@ def test_transcribed_pieces_unique_constraints():
 
 
 def test_order_pieces():
+    """Add transcribed pieces that consists of one or many features to the db and test
+    if the order for the transcribed pieces and the features is returned according to the
+    position property instead of db insertion order.
+    """
     sess = mk_session()
     ag = orm.AnnotatedGenome(species='Athaliana', version='1.2', acquired_from='Phytozome12')
     coor = orm.Coordinates(seqid='a', start=1, end=1000, annotated_genome=ag)
     sess.add_all([ag, coor])
     sess.commit()
     # setup one transcribed handler with pieces
-    sl, slh = setup_data_handler(api.SuperLocusHandler, orm.SuperLocus)
-    scribed, scribedh = setup_data_handler(api.TranscribedHandler, orm.Transcribed, super_locus=sl)
+    sl, slh = setup_data_handler(api.SuperLocusHandlerBase, orm.SuperLocus)
+    scribed, scribedh = setup_data_handler(api.TranscribedHandlerBase, orm.Transcribed, super_locus=sl)
     ti = api.TranscriptInterpBase(transcript=scribedh, super_locus=sl, session=sess)
     # wrong order
     piece1 = orm.TranscribedPiece(position=1)
@@ -447,86 +277,69 @@ def test_order_pieces():
 
 
 class TransspliceDemoData(object):
+    """Setup of a rather complex transplicing scenario."""
     def __init__(self, sess):
         # setup two transitions:
         # 1) scribed - [->[TSS(A),START(B),TDSS(C{->F}),TTS(D)], ->[TSS(E), <<slice>>> TASS(F),STOP(G),TTS(H)]]
         # 2) scribedflip - [->[TSS(A),START(B),TDSS(C{->F'}),TTS(D)], <-[TTS(H'), <<slice>> STOP(G'),TASS(F'),TSS(E')]]
         self.old_coor = orm.Coordinates(seqid='a', start=1, end=2000)
-        self.sl, self.slh = setup_data_handler(api.SuperLocusHandler, orm.SuperLocus)
-        self.scribed, self.scribedh = setup_data_handler(api.TranscribedHandler, orm.Transcribed,
+        self.sl, self.slh = setup_data_handler(api.SuperLocusHandlerBase, orm.SuperLocus)
+        self.scribed, self.scribedh = setup_data_handler(api.TranscribedHandlerBase, orm.Transcribed,
                                                          super_locus=self.sl)
-        self.scribedflip, self.scribedfliph = setup_data_handler(api.TranscribedHandler,
+        self.scribedflip, self.scribedfliph = setup_data_handler(api.TranscribedHandlerBase,
                                                                  orm.Transcribed,
                                                                  super_locus=self.sl)
 
         self.ti = api.TranscriptInterpBase(transcript=self.scribedh, super_locus=self.sl, session=sess)
         self.tiflip = api.TranscriptInterpBase(transcript=self.scribedfliph, super_locus=self.sl, session=sess)
 
-        self.pieceA2D = orm.TranscribedPiece(super_locus=self.sl, position=0)
-        self.pieceE2H = orm.TranscribedPiece(super_locus=self.sl, position=1)
-        self.pieceA2Dp = orm.TranscribedPiece(super_locus=self.sl, position=0)
-        self.pieceEp2Hp = orm.TranscribedPiece(super_locus=self.sl, position=1)
+        self.pieceA2D = orm.TranscribedPiece(position=0)
+        self.pieceE2H = orm.TranscribedPiece(position=1)
+        self.pieceA2Dp = orm.TranscribedPiece(position=0)
+        self.pieceEp2Hp = orm.TranscribedPiece(position=1)
         self.scribed.transcribed_pieces = [self.pieceA2D, self.pieceE2H]
         self.scribedflip.transcribed_pieces = [self.pieceA2Dp, self.pieceEp2Hp]
         # pieceA2D features
 
         self.fA = orm.Feature(coordinates=self.old_coor, position=10, given_id='A',
-                              is_plus_strand=True, super_locus=self.sl,
-                              type=types.TRANSCRIBED, bearing=types.START)
+                              is_plus_strand=True, type=types.TRANSCRIBED, bearing=types.START)
         self.fB = orm.Feature(coordinates=self.old_coor, position=20, given_id='B',
-                              is_plus_strand=True, super_locus=self.sl, type=types.CODING,
-                              bearing=types.START)
+                              is_plus_strand=True, type=types.CODING, bearing=types.START)
 
         self.fC = orm.Feature(coordinates=self.old_coor, position=30, given_id='C',
-                              is_plus_strand=True, super_locus=self.sl,
-                              type=types.TRANS_INTRON, bearing=types.START)
+                              is_plus_strand=True, type=types.TRANS_INTRON, bearing=types.START)
         self.fD = orm.Feature(coordinates=self.old_coor, position=40, given_id='D',
-                              is_plus_strand=True, super_locus=self.sl,
-                              type=types.TRANSCRIBED, bearing=types.END)
+                              is_plus_strand=True, type=types.TRANSCRIBED, bearing=types.END)
         self.fADs0 = orm.Feature(coordinates=self.old_coor, position=40, given_id='ADs0',
-                                 is_plus_strand=True, super_locus=self.sl,
-                                 type=types.TRANS_INTRON, bearing=types.CLOSE_STATUS)
+                                 is_plus_strand=True, type=types.TRANS_INTRON, bearing=types.CLOSE_STATUS)
         self.fADs1 = orm.Feature(coordinates=self.old_coor, position=40, given_id='ADs1',
-                                 is_plus_strand=True, super_locus=self.sl,
-                                 type=types.CODING, bearing=types.CLOSE_STATUS)
+                                 is_plus_strand=True, type=types.CODING, bearing=types.CLOSE_STATUS)
         # pieceE2H features
         self.fEHs0 = orm.Feature(coordinates=self.old_coor, position=910, given_id='EHs0',
-                                 is_plus_strand=True, super_locus=self.sl,
-                                 type=types.TRANS_INTRON, bearing=types.OPEN_STATUS)
+                                 is_plus_strand=True, type=types.TRANS_INTRON, bearing=types.OPEN_STATUS)
         self.fEHs1 = orm.Feature(coordinates=self.old_coor, position=910, given_id='EHs1',
-                                 is_plus_strand=True, super_locus=self.sl,
-                                 type=types.CODING, bearing=types.OPEN_STATUS)
+                                 is_plus_strand=True, type=types.CODING, bearing=types.OPEN_STATUS)
         self.fE = orm.Feature(coordinates=self.old_coor, position=910, given_id='E',
-                              is_plus_strand=True, super_locus=self.sl,
-                              type=types.TRANSCRIBED, bearing=types.START)
+                              is_plus_strand=True, type=types.TRANSCRIBED, bearing=types.START)
         self.fF = orm.Feature(coordinates=self.old_coor, position=920, given_id='F',
-                              super_locus=self.sl, is_plus_strand=True,
-                              type=types.TRANS_INTRON, bearing=types.END)
+                              is_plus_strand=True, type=types.TRANS_INTRON, bearing=types.END)
         self.fG = orm.Feature(coordinates=self.old_coor, position=930, given_id='G',
-                              is_plus_strand=True, super_locus=self.sl, type=types.CODING,
-                              bearing=types.END)
+                              is_plus_strand=True, type=types.CODING, bearing=types.END)
         self.fH = orm.Feature(coordinates=self.old_coor, position=940, given_id='H',
-                              is_plus_strand=True, super_locus=self.sl,
-                              type=types.TRANSCRIBED, bearing=types.END)
+                              is_plus_strand=True, type=types.TRANSCRIBED, bearing=types.END)
         # pieceEp2Hp features
         self.fEHps0 = orm.Feature(coordinates=self.old_coor, position=940, given_id='EHsp0',
-                                  is_plus_strand=False, super_locus=self.sl,
-                                  type=types.TRANS_INTRON, bearing=types.OPEN_STATUS)
+                                  is_plus_strand=False, type=types.TRANS_INTRON, bearing=types.OPEN_STATUS)
         self.fEHps1 = orm.Feature(coordinates=self.old_coor, position=940, given_id='EHsp1',
-                                  is_plus_strand=False, super_locus=self.sl,
-                                  type=types.CODING, bearing=types.OPEN_STATUS)
+                                  is_plus_strand=False, type=types.CODING, bearing=types.OPEN_STATUS)
         self.fEp = orm.Feature(coordinates=self.old_coor, position=940, given_id='Ep',
-                               is_plus_strand=False, super_locus=self.sl,
-                               type=types.TRANSCRIBED, bearing=types.START)
+                               is_plus_strand=False, type=types.TRANSCRIBED, bearing=types.START)
         self.fFp = orm.Feature(coordinates=self.old_coor, position=930, given_id='Fp',
-                               super_locus=self.sl, bearing=types.END,
-                               is_plus_strand=False, type=types.TRANS_INTRON)
+                               bearing=types.END, is_plus_strand=False, type=types.TRANS_INTRON)
         self.fGp = orm.Feature(coordinates=self.old_coor, position=920, given_id='Gp',
-                               is_plus_strand=False, super_locus=self.sl, type=types.CODING,
-                               bearing=types.END)
+                               is_plus_strand=False, type=types.CODING, bearing=types.END)
         self.fHp = orm.Feature(coordinates=self.old_coor, position=910, given_id='Hp',
-                               is_plus_strand=False, super_locus=self.sl,
-                               type=types.TRANSCRIBED, bearing=types.END)
+                               is_plus_strand=False, type=types.TRANSCRIBED, bearing=types.END)
 
         self.pieceA2D.features = [self.fA, self.fB, self.fC, self.fD, self.fADs0, self.fADs1]
         self.pieceA2Dp.features = [self.fA, self.fB, self.fC, self.fD, self.fADs0, self.fADs1]
@@ -540,6 +353,9 @@ class TransspliceDemoData(object):
 
 
 def test_transition_transsplice():
+    """Test if the transsplicing scenario of TransspliceDemoData is interpreted correctly by
+    transition_5p_to_3p() of TranscriptInterpBase.
+    """
     sess = mk_session()
     d = TransspliceDemoData(sess)  # setup _d_ata
     d.make_all_handlers()
@@ -564,12 +380,12 @@ def test_transition_transsplice():
 
 # section: gff_2_annotations
 def test_data_frm_gffentry():
-    #sess = mk_session()
+    """Test the interpretation and transformation of raw GFF entries."""
     controller = gffimporter.ImportControl(database_path='sqlite:///:memory:', err_path=None)
 
     sess = controller.session
     ag = orm.AnnotatedGenome()
-    ag, agh = setup_data_handler(api.AnnotatedGenomeHandler, orm.AnnotatedGenome)
+    ag, agh = setup_data_handler(gffimporter.AnnotatedGenomeHandler, orm.AnnotatedGenome)
     coords = orm.Coordinates(start=1, end=100000, seqid='NC_015438.2', annotated_genome=ag)
 
     sess.add_all([ag, coords])
@@ -620,18 +436,12 @@ def test_data_frm_gffentry():
     assert feature2translateds == []
 
 
-def setup_testable_super_loci(db_path='sqlite:///:memory:'):
-    controller = gffimporter.ImportControl(err_path='/dev/null', database_path=db_path)
-    controller.mk_session()
-    controller.add_sequences('testdata/dummyloci.fa')
-    controller.add_gff('testdata/dummyloci.gff3', clean=False)
-    return controller.super_loci[0], controller
-
-
 def test_organize_and_split_features():
     sl, controller = setup_testable_super_loci()
     transcript_full = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
-    transcript_interpreter = gffimporter.TranscriptInterpreter(transcript_full, super_locus=sl, controller=controller)
+    transcript_interpreter = gffimporter.TranscriptInterpreter(transcript_full,
+                                                               super_locus=sl,
+                                                               controller=controller)
 
     ordered_features = transcript_interpreter.organize_and_split_features()
     ordered_features = list(ordered_features)
@@ -643,7 +453,9 @@ def test_organize_and_split_features():
         assert types.CDS in [x.data.gffentry.type for x in ordered_features[i]]
 
     transcript_short = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'z'][0]
-    transcript_interpreter = gffimporter.TranscriptInterpreter(transcript_short, super_locus=sl, controller=controller)
+    transcript_interpreter = gffimporter.TranscriptInterpreter(transcript_short,
+                                                               super_locus=sl,
+                                                               controller=controller)
     ordered_features = transcript_interpreter.organize_and_split_features()
     ordered_features = list(ordered_features)
     assert len(ordered_features) == 1
@@ -657,7 +469,9 @@ def test_possible_types():
 
     sl, controller = setup_testable_super_loci()
     transcript_full = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
-    transcript_interpreter = gffimporter.TranscriptInterpreter(transcript_full, super_locus=sl, controller=controller)
+    transcript_interpreter = gffimporter.TranscriptInterpreter(transcript_full,
+                                                               super_locus=sl,
+                                                               controller=controller)
     ordered_features = transcript_interpreter.intervals_5to3(plus_strand=True)
     ordered_features = list(ordered_features)
     pt = transcript_interpreter.possible_types(ordered_features[0])
@@ -668,7 +482,8 @@ def test_possible_types():
     assert set(pt) == {five_prime, three_prime}
 
 
-def test_import_seqinfo():
+def test_import_coordinates():
+    """Import and test coordinate information from a dummy gff file."""
     controller = gffimporter.ImportControl(database_path='sqlite:///:memory:')
     controller.mk_session()
     seq_path = 'testdata/dummyloci.fa'
@@ -681,51 +496,13 @@ def test_import_seqinfo():
     assert coors[0].sha1 == 'dc6f3ba2b0c08f7d08053837b810f86cbaa06f38'  # sha1 for 'N' * 405
 
 
-def test_fullcopy():
-    sess = mk_session()
-    sl, slh = setup_data_handler(api.SuperLocusHandler, orm.SuperLocus)
-    scribed, scribedh = setup_data_handler(api.TranscribedHandler, orm.Transcribed, super_locus=sl)
-    scribedpiece, scribedpieceh = setup_data_handler(api.TranscribedPieceHandler,
-                                                     orm.TranscribedPiece,
-                                                     given_id='soup',
-                                                     transcribed=scribed,
-                                                     super_locus=sl,
-                                                     position=0)
-    f, fh = setup_data_handler(api.FeatureHandler, orm.Feature, super_locus=sl,
-                               transcribed_pieces=[scribedpiece], position=13)
-    sess.add_all([scribedpiece, f])
-    sess.commit()
-    tdict = orm.Transcribed.__dict__
-    print(tdict.keys())
-    for key in tdict.keys():
-        print('{} {}'.format(key, type(tdict[key])))
-
-    # try copying feature
-    new, newh = setup_data_handler(api.FeatureHandler, orm.Feature)
-    fh.fax_all_attrs_to_another(newh)
-    sess.commit()
-    assert new.position == 13
-    assert set(scribedpiece.features) == {f, new}
-    assert new.super_locus == sl
-    assert new is not f
-    assert new.id != f.id
-
-    # try copying most of transcribed things to translated
-    slated, slatedh = setup_data_handler(api.TranslatedHandler, orm.Translated)
-    print(scribedpiece.transcribed, 'piece.transcriebd')
-    scribedpieceh.fax_all_attrs_to_another(slatedh, skip_copying=None, skip_linking=None)
-    sess.commit()
-    assert slated.given_id == 'soup'
-    assert set(slated.features) == {f, new}
-    assert f.translateds == [slated]
-    assert new.transcribed_pieces == [scribedpiece]
-
-
 def test_transcript_interpreter():
     sl, controller = setup_testable_super_loci()
     transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
     # change so that there are implicit UTRs
-    t_interp = gffimporter.TranscriptInterpreter(transcript_handler, super_locus=sl, controller=controller)
+    t_interp = gffimporter.TranscriptInterpreter(transcript_handler,
+                                                 super_locus=sl,
+                                                 controller=controller)
     t_interp.decode_raw_features()
     # has all standard features
     controller.session.commit()
@@ -747,7 +524,9 @@ def test_transcript_get_first():
     # plus strand
     sl, controller = setup_testable_super_loci()
     transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
-    t_interp = gffimporter.TranscriptInterpreter(transcript_handler, super_locus=sl, controller=controller)
+    t_interp = gffimporter.TranscriptInterpreter(transcript_handler,
+                                                 super_locus=sl,
+                                                 controller=controller)
     sorted_intervals = t_interp.intervals_5to3(plus_strand=True)
     i0 = sorted_intervals[0]
     for intv in sorted_intervals:
@@ -775,7 +554,9 @@ def test_transcript_get_first_minus_strand():
 
     transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
 
-    t_interp = gffimporter.TranscriptInterpreter(transcript_handler, super_locus=sl, controller=controller)
+    t_interp = gffimporter.TranscriptInterpreter(transcript_handler,
+                                                 super_locus=sl,
+                                                 controller=controller)
     sorted_intervals = t_interp.intervals_5to3(plus_strand=False)
 
     i0 = sorted_intervals[0]
@@ -806,7 +587,9 @@ def test_transcript_get_first_without_UTR():
 
     transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'x'][0]
 
-    t_interp = gffimporter.TranscriptInterpreter(transcript_handler, super_locus=sl, controller=controller)
+    t_interp = gffimporter.TranscriptInterpreter(transcript_handler,
+                                                 super_locus=sl,
+                                                 controller=controller)
     # test without UTR (x doesn't have last exon, and therefore will end in CDS); remember, flipped it to minus strand
     prefeatures = transcript_handler.feature_handlers
     print('prefeatures', prefeatures)
@@ -818,10 +601,14 @@ def test_transcript_get_first_without_UTR():
     features = cleaned_commited_features(controller.session)
     status = t_interp.status
     assert len(features) == 4
-    f_err_open = [f for f in features if f.bearing.value == types.START and f.type.value == types.ERROR][0]
-    f_err_close = [f for f in features if f.bearing.value == types.END and f.type.value == types.ERROR][0]
-    f_status_coding = [f for f in features if f.bearing.value == types.OPEN_STATUS and f.type.value == types.CODING][0]
-    f_status_transcribed = [f for f in features if f.bearing.value == types.OPEN_STATUS and f.type.value == types.TRANSCRIBED][0]
+    f_err_open = [f for f in features
+                  if f.bearing.value == types.START and f.type.value == types.ERROR][0]
+    f_err_close = [f for f in features
+                   if f.bearing.value == types.END and f.type.value == types.ERROR][0]
+    f_status_coding = [f for f in features
+                       if f.bearing.value == types.OPEN_STATUS and f.type.value == types.CODING][0]
+    f_status_transcribed = [f for f in features
+                            if f.bearing.value == types.OPEN_STATUS and f.type.value == types.TRANSCRIBED][0]
     print(f_err_open)
     print(status)
     print(i0)
@@ -842,11 +629,15 @@ def test_transcript_get_first_without_UTR():
 def test_transcript_transition_from_5p_to_end():
     sl, controller = setup_testable_super_loci()
     transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
-    t_interp = gffimporter.TranscriptInterpreter(transcript_handler, super_locus=sl, controller=controller)
+    t_interp = gffimporter.TranscriptInterpreter(transcript_handler,
+                                                 super_locus=sl,
+                                                 controller=controller)
     ivals_sets = t_interp.intervals_5to3(plus_strand=True)
     t_interp.interpret_first_pos(ivals_sets[0])
     # hit start codon
-    t_interp.interpret_transition(ivals_before=ivals_sets[0], ivals_after=ivals_sets[1], plus_strand=True)
+    t_interp.interpret_transition(ivals_before=ivals_sets[0],
+                                  ivals_after=ivals_sets[1],
+                                  plus_strand=True)
     controller.session.commit()
     controller.execute_so_far()
     features = cleaned_commited_features(controller.session)
@@ -854,7 +645,9 @@ def test_transcript_transition_from_5p_to_end():
     assert features[-1].bearing.value == types.START
     assert features[-1].position == 10
     # hit splice site
-    t_interp.interpret_transition(ivals_before=ivals_sets[1], ivals_after=ivals_sets[2], plus_strand=True)
+    t_interp.interpret_transition(ivals_before=ivals_sets[1],
+                                  ivals_after=ivals_sets[2],
+                                  plus_strand=True)
     controller.session.commit()
     controller.execute_so_far()
     features = cleaned_commited_features(controller.session)
@@ -866,7 +659,9 @@ def test_transcript_transition_from_5p_to_end():
     assert features[-1].position == 110  # splice to
     assert t_interp.status.is_coding()
     # hit splice site
-    t_interp.interpret_transition(ivals_before=ivals_sets[2], ivals_after=ivals_sets[3], plus_strand=True)
+    t_interp.interpret_transition(ivals_before=ivals_sets[2],
+                                  ivals_after=ivals_sets[3],
+                                  plus_strand=True)
     controller.session.commit()
     controller.execute_so_far()
     features = cleaned_commited_features(controller.session)
@@ -877,7 +672,9 @@ def test_transcript_transition_from_5p_to_end():
     assert features[-2].position == 120  # splice from
     assert features[-1].position == 200  # splice to
     # hit stop codon
-    t_interp.interpret_transition(ivals_before=ivals_sets[3], ivals_after=ivals_sets[4], plus_strand=True)
+    t_interp.interpret_transition(ivals_before=ivals_sets[3],
+                                  ivals_after=ivals_sets[4],
+                                  plus_strand=True)
     controller.session.commit()
     controller.execute_so_far()
     features = cleaned_commited_features(controller.session)
@@ -898,7 +695,9 @@ def test_non_coding_transitions():
     sl, controller = setup_testable_super_loci()
     transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'z'][0]
     piece = transcript_handler.one_piece()
-    t_interp = gffimporter.TranscriptInterpreter(transcript_handler, super_locus=sl, controller=controller)
+    t_interp = gffimporter.TranscriptInterpreter(transcript_handler,
+                                                 super_locus=sl,
+                                                 controller=controller)
     # get single-exon no-CDS transcript
     # delete CDS feature
     features = transcript_handler.feature_handlers
@@ -951,8 +750,6 @@ def test_setup_proteins():
 
     transcript_orm = controller.session.query(orm.Transcribed).filter(orm.Transcribed.given_id == 'y').first()
     protein_orm = controller.session.query(orm.Translated).filter(orm.Translated.given_id == 'y.p').first()
-    assert transcript_orm in protein_orm.transcribeds
-    assert protein_orm in transcript_orm.translateds
     assert protein_orm.given_id == 'y.p'
 
 
@@ -977,7 +774,8 @@ def test_mv_features_to_prot():
 
 
 def test_check_and_fix_structure():
-    rel_path = 'testdata/dummyloci_annotations.sqlitedb'  # so we save a copy of the cleaned up loci once per test run
+    # so we save a copy of the cleaned up loci once per test run
+    rel_path = 'testdata/dummyloci_annotations.sqlitedb'
     db_path = 'sqlite:///{}'.format(rel_path)
     if os.path.exists(rel_path):
         os.remove(rel_path)
@@ -1031,13 +829,6 @@ def test_check_and_fix_structure():
     sl_datas = controller.session.query(orm.SuperLocus).all()
     assert len(sl_datas) == 1
     assert len(sl_datas[0].translateds) == 3
-
-
-def cleaned_commited_features(sess):
-    all_features = sess.query(orm.Feature).all()
-    clean_datas = [x for x in all_features if x.type.value in [types.TRANSCRIBED, types.CODING, types.INTRON,
-                                                               types.TRANS_INTRON, types.ERROR]]
-    return clean_datas
 
 
 def test_erroneous_splice():

@@ -31,7 +31,6 @@ class ImportControl(object):
         self.features_to_add = []
         self.feature2transcribed_pieces_to_add = []
         self.feature2translateds_to_add = []
-        self.translated2transcribeds_to_add = []
         self.translateds_to_add = []
         self.transcribeds_to_add = []
         self.transcribed_pieces_to_add = []
@@ -106,7 +105,7 @@ class ImportControl(object):
 
     def make_anno_genome(self, **kwargs):
         # todo, parse in meta data from kwargs?
-        self.anno_genome_handler = api.AnnotatedGenomeHandler()
+        self.anno_genome_handler = AnnotatedGenomeHandler()
         ag = orm.AnnotatedGenome()
         self.anno_genome_handler.add_data(ag)
         self.session.add(ag)
@@ -154,9 +153,8 @@ class ImportControl(object):
                         (orm.Transcribed.__table__.insert(), self.transcribeds_to_add),
                         (orm.TranscribedPiece.__table__.insert(), self.transcribed_pieces_to_add),
                         (orm.Translated.__table__.insert(), self.translateds_to_add),
-                        (orm.association_translateds_to_transcribeds.insert(), self.translated2transcribeds_to_add),
                         (orm.Feature.__table__.insert(), self.features_to_add),
-                        (orm.association_transcribeds_to_features.insert(), self.feature2transcribed_pieces_to_add),
+                        (orm.association_transcribed_pieces_to_features.insert(), self.feature2transcribed_pieces_to_add),
                         (orm.association_translateds_to_features.insert(), self.feature2translateds_to_add)
                         ]
         conn = self.engine.connect()
@@ -189,9 +187,70 @@ class GFFDerived(object):
         raise NotImplementedError
 
 
-class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
+class AnnotatedGenomeHandler(api.AnnotatedGenomeHandlerBase):
     def __init__(self, controller=None):
-        api.SuperLocusHandler.__init__(self)
+        super().__init__()
+        if controller is not None:
+            self.id = controller.coord_handler_import_counter()
+        self.mapper = None
+        self._coords_by_seqid = None
+        self._gffid_to_coords = None
+        self._gff_seq_ids = None
+
+    @staticmethod
+    def hashseq(seq):
+        m = hashlib.sha1()
+        m.update(seq.encode())
+        return m.hexdigest()
+
+    @property
+    def data_type(self):
+        return orm.AnnotatedGenome
+
+    @property
+    def gffid_to_coords(self):
+        if not self._gffid_to_coords:
+            self._gffid_to_coords = {}
+            for gffid in self._gff_seq_ids:
+                fa_id = self.mapper(gffid)
+                x = self.coords_by_seqid[fa_id]
+                self._gffid_to_coords[gffid] = x
+        return self._gffid_to_coords
+
+    @property
+    def coords_by_seqid(self):
+        if not self._coords_by_seqid:
+            self._coords_by_seqid = {c.seqid: c for c in self.data.coordinates}
+        return self._coords_by_seqid
+
+    def mk_mapper(self, gff_file=None):
+        fa_ids = [e.seqid for e in self.data.coordinates]
+        if gff_file is not None:  # allow setup without ado when we know IDs match exactly
+            self._gff_seq_ids = helpers.get_seqids_from_gff(gff_file)
+        else:
+            self._gff_seq_ids = fa_ids
+        mapper, is_forward = helpers.two_way_key_match(fa_ids, self._gff_seq_ids)
+        self.mapper = mapper
+
+        if not is_forward:
+            raise NotImplementedError("Still need to implement backward match if fasta IDs "
+                                      "are subset of gff IDs")
+
+    def add_sequences(self, seq_file):
+        self.add_fasta(seq_file)
+
+    def add_fasta(self, seq_file, id_delim=' '):
+        fp = fastahelper.FastaParser()
+        for fasta_header, seq in fp.read_fasta(seq_file):
+            seqid = fasta_header.split(id_delim)[0]
+            # todo, parallelize sequence & annotation format, then import directly from ~Slice
+            orm.Coordinates(start=0, end=len(seq), seqid=seqid, sha1=self.hashseq(seq),
+                            annotated_genome=self.data)
+
+
+class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
+    def __init__(self, controller=None):
+        super().__init__()
         GFFDerived.__init__(self)
         if controller is not None:
             self.id = controller.super_locus_counter()
@@ -208,7 +267,8 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
         exceptions = entry.attrib_filter(tag="exception")
         for exception in [x.value for x in exceptions]:
             if 'trans-splicing' in exception:
-                raise TransSplicingError('trans-splice in attribute {} {}'.format(entry.get_ID(), entry.attribute))
+                msg = 'trans-splice in attribute {} {}'.format(entry.get_ID(), entry.attribute)
+                raise TransSplicingError(msg)
         if in_values(entry.type, types.SuperLocusAll):
             self.gffentry = entry
             to_add = self.setup_insertion_ready()
@@ -219,7 +279,8 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
             transcribed = TranscribedHandler(controller)
             transcribed.gffentry = copy.deepcopy(entry)
 
-            transcribed_add, piece_add = transcribed.setup_insertion_ready(gffentry=entry, super_locus=self)
+            transcribed_add, piece_add = transcribed.setup_insertion_ready(gffentry=entry,
+                                                                           super_locus=self)
             controller.transcribeds_to_add.append(transcribed_add)
             controller.transcribed_pieces_to_add.append(piece_add)
             self.transcribed_handlers.append(transcribed)
@@ -228,7 +289,8 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
             feature = FeatureHandler(controller)
             feature.gffentry = copy.deepcopy(entry)
             assert len(self.transcribed_handlers) > 0, "no transcribeds found before feature"
-            # MOD_READIN, will need to set up features with temporary linkage, but without entering them into final db
+            # MOD_READIN, will need to set up features with temporary linkage,
+            # but without entering them into final db
             feature.add_shortcuts_from_gffentry()
             self.transcribed_handlers[-1].feature_handlers.append(feature)
         else:
@@ -328,10 +390,10 @@ class SuperLocusHandler(api.SuperLocusHandler, GFFDerived):
                 controller.execute_so_far()
 
 
-class FeatureHandler(api.FeatureHandler, GFFDerived):
+class FeatureHandler(api.FeatureHandlerBase, GFFDerived):
 
     def __init__(self, controller=None, processed=False):
-        api.FeatureHandler.__init__(self)
+        super().__init__()
         GFFDerived.__init__(self)
         if controller is not None:
             self.id = controller.feature_counter()
@@ -433,9 +495,9 @@ class FeatureHandler(api.FeatureHandler, GFFDerived):
         return helpers.as_py_end(self.gffentry.end)
 
 
-class TranscribedHandler(api.TranscribedHandler, GFFDerived):
+class TranscribedHandler(api.TranscribedHandlerBase, GFFDerived):
     def __init__(self, controller=None):
-        api.TranscribedHandler.__init__(self)
+        super().__init__()
         GFFDerived.__init__(self)
         if controller is not None:
             self.id = controller.transcribed_counter()
@@ -444,7 +506,7 @@ class TranscribedHandler(api.TranscribedHandler, GFFDerived):
         self.feature_handlers = []
         self.translated_handlers = []
 
-    def setup_insertion_ready(self, gffentry=None, super_locus=None, **kwargs):
+    def setup_insertion_ready(self, gffentry=None, super_locus=None):
         if gffentry is not None:
             parents = gffentry.get_Parent()
             # the simple case
@@ -480,9 +542,9 @@ class TranscribedHandler(api.TranscribedHandler, GFFDerived):
         return pieces[0]
 
 
-class TranscribedPieceHandler(api.TranscribedPieceHandler, GFFDerived):
+class TranscribedPieceHandler(api.TranscribedPieceHandlerBase, GFFDerived):
     def __init__(self, controller=None):
-        api.TranscribedPieceHandler.__init__(self)
+        super().__init__()
         GFFDerived.__init__(self)
         if controller is not None:
             self.id = controller.transcribed_piece_counter()
@@ -509,23 +571,19 @@ class TranscribedPieceHandler(api.TranscribedPieceHandler, GFFDerived):
         return transcribed_piece
 
 
-class TranslatedHandler(api.TranslatedHandler):
+class TranslatedHandler(api.TranslatedHandlerBase):
     def __init__(self, controller=None):  # todo, all handlers, controller=None
         super().__init__()
         if controller is not None:
             self.id = controller.translated_counter()
 
-    def setup_insertion_ready(self, transcribed_handler, super_locus_handler, given_id):
+    def setup_insertion_ready(self, super_locus_handler=None, given_id=''):
         translated = {
             'id': self.id,
             'super_locus_id': super_locus_handler.id,
-            'given_id': given_id
+            'given_id': given_id,
         }
-        translated_to_transcribed = {
-            'translated_id': self.id,
-            'transcribed_id': transcribed_handler.id
-        }
-        return translated, translated_to_transcribed
+        return translated
 
 
 class NoTranscriptError(Exception):
@@ -624,16 +682,11 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         for key in pids:
             # setup blank protein
             protein = TranslatedHandler(controller=self.controller)
-            # ready translated and link to transcribed for database entry
-            translated, translated_to_transcribed = protein.setup_insertion_ready(
-                transcribed_handler=self.transcript,
-                super_locus_handler=self.super_locus,
-                given_id=key
-            )
-            self.controller.translated2transcribeds_to_add.append(translated_to_transcribed)
+            # ready translated for database entry
+            translated = protein.setup_insertion_ready(super_locus_handler=self.super_locus,
+                                                       given_id=key)
             self.controller.translateds_to_add.append(translated)
             proteins[key] = protein
-
         return proteins
 
     def is_plus_strand(self):

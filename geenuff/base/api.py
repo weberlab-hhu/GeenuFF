@@ -34,233 +34,26 @@ class Handler(object):
         self.data = data
         data.handler = self  # terrible form, but I need some sort of efficient point back
 
-    def copy_data_attr_to_other(self, other, copy_only=None, do_not_copy=None):
-        if not isinstance(other, Handler):
-            raise ValueError('other must be an instance of Handler, "{}" found'.format(type(other)))
-        # everything that could be copied
-        if copy_only is None:
-            to_copy = list(type(self.data).__dict__.keys())
-            to_copy = [x for x in to_copy if not x.startswith('_')]
-            to_copy = set(copy.deepcopy(to_copy))
-        else:
-            copy_only = convert2list(copy_only)
-            to_copy = set(copy_only)
-
-        if do_not_copy is not None:
-            do_not_copy = convert2list(do_not_copy)
-            for item in do_not_copy:
-                to_copy.remove(item)
-        to_copy = copy.deepcopy(to_copy)
-        for never_copy in ['id', 'handler']:
-            try:
-                to_copy.remove(never_copy)  # todo, confirm this is the primary key
-            except KeyError:
-                pass
-        # actually copy
-        for item in to_copy:
-            val = self.get_data_attribute(item)
-            other.set_data_attribute(item, val)
-
-    def fax_all_attrs_to_another(self, another, skip_copying=None, skip_linking=None):
-        linkable = copy.deepcopy(self.linkable)
-        if skip_linking is not None:
-            skip_linking = convert2list(skip_linking)
-            for item in skip_linking:
-                linkable.pop(linkable.index(item))
-        copyable = copy.deepcopy(self.copyable)
-        if skip_copying is not None:
-            skip_copying = convert2list(skip_copying)
-            for item in skip_copying:
-                copyable.pop(copyable.index(item))
-        self.copy_data_attr_to_other(another, copy_only=copyable)
-        self.copy_selflinks_to_another(another, to_copy=linkable)
-
-    def set_data_attribute(self, attr, val):
-        self.data.__setattr__(attr, val)
-
-    def get_data_attribute(self, attr):
-        return self.data.__getattribute__(attr)
-
-    def replace_selflinks_w_replacementlinks(self, replacement, to_replace):
-        to_replace = copy.deepcopy(to_replace)
-        for item in ['id', 'handler']:
-            assert item not in to_replace
-        for attr in to_replace:
-            val = self.get_data_attribute(attr)
-            if isinstance(val, list):
-                n = len(val)
-                for i in reversed(list(range(n))):  # go through backwards to hit every item even though we're removing
-                    #for data in val:
-                    data = val[i]
-                    self.replace_selflink_with_replacementlink(replacement, data)
-            elif isinstance(val, orm.Base):
-                self.replace_selflink_with_replacementlink(replacement, val)
-            else:
-                raise ValueError("replace_selflinks_w_replacementlinks only implemented for {} types".format(
-                    [list, orm.Base]
-                ))
-
-    def replace_selflink_with_replacementlink(self, replacement, data):
-        other = data.handler
-        self.de_link(other)
-        replacement.link_to(other)
-
-    def copy_selflinks_to_another(self, another, to_copy):
-        to_copy = copy.deepcopy(to_copy)
-
-        for item in ['id', 'handler']:
-            assert item not in to_copy
-
-        for attr in to_copy:
-            val = self.get_data_attribute(attr)
-            if isinstance(val, list):
-                n = len(val)
-                for i in reversed(list(range(n))):  # go through backwards to hit every item even though we're removing
-                    #for data in val:
-                    data = val[i]
-                    self.copy_selflink_to_another(another, data)
-            elif isinstance(val, orm.Base):
-                self.copy_selflink_to_another(another, val)
-            else:
-                raise ValueError("copy_selflinks_to_another only implemented for {} types. {} found".format(
-                    [list, orm.Base], type(val)
-                ))
-
-    # "selflink" for naming/usage consistency with 'replace' methods
-    @staticmethod
-    def copy_selflink_to_another(another, data):
-        other = data.handler
-        another.link_to(other)
-
-    def link_to(self, other):
-        raise NotImplementedError
-
-    def de_link(self, other):
-        raise NotImplementedError
-
     @property
     def data_type(self):
         raise NotImplementedError
 
-    @property
-    def _valid_links(self):
-        raise NotImplementedError
 
-    def _link_value_error(self, other):
-        link_error = "from {} can only link / de_link to {}; found {}".format(type(self), self._valid_links,
-                                                                              type(other))
-        return ValueError(link_error)
-
-    def mark_for_deletion(self):
-        self.delete_me = True
-
-
-class AnnotatedGenomeHandler(Handler):
-    def __init__(self, controller=None):
-        super().__init__()
-        if controller is not None:
-            self.id = controller.coord_handler_import_counter()
-        self.mapper = None
-        self._coords_by_seqid = None
-        self._gffid_to_coords = None
-        self._gff_seq_ids = None
-
-    @staticmethod
-    def hashseq(seq):
-        m = hashlib.sha1()
-        m.update(seq.encode())
-        return m.hexdigest()
+class AnnotatedGenomeHandlerBase(Handler):
 
     @property
     def data_type(self):
         return orm.AnnotatedGenome
 
-    @property
-    def _valid_links(self):
-        return [CoordinatesHandler]
 
-    @property
-    def gffid_to_coords(self):
-        if not self._gffid_to_coords:
-            self._gffid_to_coords = {}
-            for gffid in self._gff_seq_ids:
-                fa_id = self.mapper(gffid)
-                x = self.coords_by_seqid[fa_id]
-                self._gffid_to_coords[gffid] = x
-        return self._gffid_to_coords
-
-    @property
-    def coords_by_seqid(self):
-        if not self._coords_by_seqid:
-            self._coords_by_seqid = {c.seqid: c for c in self.data.coordinates}
-        return self._coords_by_seqid
-
-    def link_to(self, other):
-        if isinstance(other, CoordinatesHandler):
-            other.data.annotated_genome = self.data
-            # switched as below maybe checks other.data integrity, and fails on NULL anno genome?
-            # self.data.coordinates.append(other.data)
-        else:
-            raise self._link_value_error(other)
-
-    def de_link(self, other):
-        if isinstance(other, CoordinatesHandler):
-            self.data.coordinates.remove(other.data)
-        else:
-            raise self._link_value_error(other)
-
-    def mk_mapper(self, gff_file=None):
-        fa_ids = [e.seqid for e in self.data.coordinates]
-        if gff_file is not None:  # allow setup without ado when we know IDs match exactly
-            self._gff_seq_ids = helpers.get_seqids_from_gff(gff_file)
-        else:
-            self._gff_seq_ids = fa_ids
-        mapper, is_forward = helpers.two_way_key_match(fa_ids, self._gff_seq_ids)
-        self.mapper = mapper
-
-        if not is_forward:
-            raise NotImplementedError("Still need to implement backward match if fasta IDs "
-                                      "are subset of gff IDs")
-
-    def add_sequences(self, seq_file):
-        self.add_fasta(seq_file)
-
-    def add_fasta(self, seq_file, id_delim=' '):
-        fp = fastahelper.FastaParser()
-        for fasta_header, seq in fp.read_fasta(seq_file):
-            seqid = fasta_header.split(id_delim)[0]
-            # todo, parallelize sequence & annotation format, then import directly from ~Slice
-            orm.Coordinates(start=0, end=len(seq), seqid=seqid, sha1=self.hashseq(seq),
-                            annotated_genome=self.data)
-
-
-class CoordinatesHandler(Handler):
+class CoordinatesHandlerBase(Handler):
 
     @property
     def data_type(self):
         return orm.Coordinates
 
-    @property
-    def _valid_links(self):
-        return [AnnotatedGenomeHandler]
 
-    def link_to(self, other):
-        if isinstance(other, AnnotatedGenomeHandler):
-            self.data.annotated_genome = other.data
-        else:
-            raise self._link_value_error(other)
-
-    def de_link(self, other):
-        if isinstance(other, AnnotatedGenomeHandler):
-            other.data.coordinates.remove(self.data)
-        else:
-            raise self._link_value_error(other)
-
-    def add_sequences(self, seq_file):
-        raise NotImplementedError
-
-
-class SuperLocusHandler(Handler):
+class SuperLocusHandlerBase(Handler):
 
     def __init__(self):
         super().__init__()
@@ -273,22 +66,7 @@ class SuperLocusHandler(Handler):
     def data_type(self):
         return orm.SuperLocus
 
-    @property
-    def _valid_links(self):
-        return [TranscribedHandler, TranslatedHandler, FeatureHandler]
-
-    def link_to(self, other):
-        if any([isinstance(other, x) for x in [TranscribedHandler, TranslatedHandler, FeatureHandler]]):
-            other.data.super_locus = self.data
-        else:
-            raise self._link_value_error(other)
-
-    def de_link(self, other):
-        if any([isinstance(other, x) for x in [TranscribedHandler, TranslatedHandler, FeatureHandler]]):
-            other.data.super_locus = None
-        else:
-            raise self._link_value_error(other)
-
+    # todo maybe to this with ondelete statements in the db
     def delete_marked_underlings(self, sess):
         for data in self.data.features + self.data.transcribeds + self.data.translateds:
             try:
@@ -299,122 +77,32 @@ class SuperLocusHandler(Handler):
         sess.commit()
 
 
-class TranscribedHandler(Handler):
-    def __init__(self):
-        super().__init__()
-        self.copyable += ['given_id', 'type']
-        self.linkable += ['super_locus', 'transcribed_pieces', 'translateds']
+class TranscribedHandlerBase(Handler):
 
     @property
     def data_type(self):
         return orm.Transcribed
 
-    @property
-    def _valid_links(self):
-        return [TranslatedHandler, SuperLocusHandler, TranscribedPieceHandler]
 
-    def link_to(self, other):
-        if isinstance(other, SuperLocusHandler):
-            self.data.super_locus = other.data
-        elif isinstance(other, TranscribedPieceHandler):
-            other.data.transcribed = self.data
-        elif isinstance(other, TranslatedHandler):
-            other.data.transcribeds.append(self.data)
-        else:
-            raise self._link_value_error(other)
-
-    def de_link(self, other):
-        if any([isinstance(other, x) for x in self._valid_links]):
-            other.data.transcribeds.remove(self.data)
-        else:
-            raise self._link_value_error(other)
-
-
-class TranscribedPieceHandler(Handler):
-    def __init__(self):
-        super().__init__()
-        self.copyable += ['given_id']
-        self.linkable += ['super_locus', 'features', 'transcribed']
+class TranscribedPieceHandlerBase(Handler):
 
     @property
     def data_type(self):
         return orm.TranscribedPiece
 
-    @property
-    def _valid_links(self):
-        return [TranscribedHandler, SuperLocusHandler, FeatureHandler]
 
-    def link_to(self, other):
-        if isinstance(other, SuperLocusHandler):
-            self.data.super_locus = other.data
-        elif any([isinstance(other, x) for x in [TranscribedHandler, FeatureHandler]]):
-            other.data.transcribed_pieces.append(self.data)
-        else:
-            raise self._link_value_error(other)
-
-    def de_link(self, other):
-        if any([isinstance(other, x) for x in self._valid_links]):
-            other.data.transcribed_pieces.remove(self.data)
-        else:
-            raise self._link_value_error(other)
-
-
-class TranslatedHandler(Handler):
-    def __init__(self):
-        super().__init__()
-        self.copyable += ['given_id']
-        self.linkable += ['super_locus', 'features', 'transcribeds']
+class TranslatedHandlerBase(Handler):
 
     @property
     def data_type(self):
         return orm.Translated
 
-    @property
-    def _valid_links(self):
-        return [TranscribedHandler, SuperLocusHandler, FeatureHandler]
 
-    def link_to(self, other):
-        if isinstance(other, SuperLocusHandler):
-            self.data.super_locus = other.data
-        elif any([isinstance(other, x) for x in [TranscribedHandler, FeatureHandler]]):
-            other.data.translateds.append(self.data)
-        else:
-            raise self._link_value_error(other)
-
-    def de_link(self, other):
-        if any([isinstance(other, x) for x in self._valid_links]):
-            other.data.translateds.remove(self.data)
-        else:
-            raise self._link_value_error(other)
-
-
-class FeatureHandler(Handler):
-    def __init__(self):
-        super().__init__()
-        self.copyable += ['given_id', 'type', 'position', 'coordinates', 'is_plus_strand', 'score', 'source', 'phase']
-        self.linkable += ['super_locus', 'transcribed_pieces', 'translateds']
+class FeatureHandlerBase(Handler):
 
     @property
     def data_type(self):
         return orm.Feature
-
-    @property
-    def _valid_links(self):
-        return [TranscribedPieceHandler, SuperLocusHandler, TranslatedHandler]
-
-    def link_to(self, other):
-        if isinstance(other, SuperLocusHandler):
-            self.data.super_locus = other.data
-        elif any([isinstance(other, x) for x in [TranslatedHandler, TranscribedPieceHandler]]):
-            other.data.features.append(self.data)
-        else:
-            raise self._link_value_error(other)
-
-    def de_link(self, other):
-        if any([isinstance(other, x) for x in self._valid_links]):
-            other.data.features.remove(self.data)
-        else:
-            raise self._link_value_error(other)
 
     def cmp_key(self):
         return self.data.cmp_key()
@@ -423,7 +111,7 @@ class FeatureHandler(Handler):
         return self.data.pos_cmp_key()
 
 
-#### section TranscriptInterpreter, might end up in a separate file later
+#### section TranscriptInterpreter, todo maybe put into a separate file later
 class TranscriptStatus(object):
     """can hold and manipulate all the info on current status of a transcript"""
 
@@ -560,7 +248,7 @@ def bearing_match(feature, previous):
 class TranscriptInterpBase(object):
     # todo, move this to generic location and/or skip entirely
     def __init__(self, transcript, super_locus, session=None):
-        assert isinstance(transcript, TranscribedHandler)
+        assert isinstance(transcript, TranscribedHandlerBase)
         self.status = TranscriptStatus()
         self.transcript = transcript
         self.session = session
@@ -667,12 +355,7 @@ class HandleMaker(object):
     def make_all_handlers(self):
         self.handles = []
         sl = self.super_locus_handler.data
-        datas = list()
-        datas += sl.transcribed_pieces
-        datas += sl.translateds
-        datas += sl.features
-        datas += sl.transcribeds
-
+        datas = sl.translateds + sl.transcribeds
         for item in datas:
             self.handles.append(self._get_or_make_one_handler(item))
 
@@ -683,7 +366,7 @@ class HandleMaker(object):
 
     def _get_or_make_one_handler(self, data):
         try:
-            handler = data.hanlder
+            handler = data.handler
         except AttributeError:
             handler_type = self._get_handler_type(data)
             handler = handler_type()
@@ -691,10 +374,8 @@ class HandleMaker(object):
         return handler
 
     def _get_handler_type(self, old_data):
-        key = [(SuperLocusHandler, orm.SuperLocus),
-               (TranscribedHandler, orm.Transcribed),
-               (TranslatedHandler, orm.Translated),
-               (TranscribedPieceHandler, orm.TranscribedPiece),
-               (FeatureHandler, orm.Feature)]
+        key = [(SuperLocusHandlerBase, orm.SuperLocus),
+               (TranscribedHandlerBase, orm.Transcribed),
+               (TranslatedHandlerBase, orm.Translated)]
 
         return self._get_paired_item(type(old_data), search_col=1, return_col=0, nested_list=key)
