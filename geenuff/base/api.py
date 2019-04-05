@@ -230,11 +230,11 @@ class TransitionStep(object):
             return self.features[0]
 
 
-class Range(object):
-    def __init__(self, coordinate_id, piece_position, start, end, is_plus_strand):
-        self.coordinate_id = coordinate_id
+class TranscriptCoordinate(object):
+
+    def __init__(self, coordinate_id, piece_position, is_plus_strand, start):
         self.start = start
-        self.end = end
+        self.coordinate_id = coordinate_id
         self.piece_position = piece_position
         self.is_plus_strand = is_plus_strand
 
@@ -248,10 +248,21 @@ class Range(object):
     def sequence_chunk_info(self):
         return self.coordinate_id, self.is_plus_strand, self.piece_position
 
+    def __repr__(self):
+        return "coordinate: {}, piece position {}, is_plus {}: {}".format(self.coordinate_id, self.piece_position,
+                                                                          self.is_plus_strand, self.start)
+
     def __eq__(self, other):
-        if isinstance(other, Range):
+        if isinstance(other, TranscriptCoordinate):
             return self.__dict__ == other.__dict__
         return False
+
+
+class Range(TranscriptCoordinate):
+    def __init__(self, coordinate_id, piece_position, start, end, is_plus_strand):
+        super().__init__(coordinate_id=coordinate_id, piece_position=piece_position, is_plus_strand=is_plus_strand,
+                         start=start)
+        self.end = end
 
     def __repr__(self):
         return "coordinate: {}, piece position {}, is_plus {}: {}-{}".format(self.coordinate_id, self.piece_position,
@@ -438,8 +449,6 @@ class TranscriptInterpBase(object):
         return sorted(subtracted_ranges, key=lambda x: x.sort_key())
 
     # common 'interpretations' or extractions of transcript-related data
-    # the following should always return in the format
-    # [{"coordinate_id": _, "begin": _, "end": _, "is_plus_strand: _}, ... ]
     def transcribed_ranges(self):
         return self._ranges_by_type(types.TRANSCRIBED)
 
@@ -476,17 +485,16 @@ class TranscriptInterpBase(object):
         return utrs
 
     # point transitions (sites)
-    # the following should always return in the format
-    # [{"coordinate_id": _, "position": _, "is_plus_strand: _}, ... ]
     def _get_by_type_and_bearing(self, target_type, target_bearing):
         out = []
         for piece in self.transcript.data.transcribed_pieces:
             for feature in piece.features:
-                if feature.bearing == target_bearing and \
-                        feature.type == target_type:
-                    out.append({"coordinate_id": feature.coordinate_id,
-                                "position": feature.position,
-                                "is_plus_strand": feature.is_plus_strand})
+                if feature.bearing.value == target_bearing and \
+                        feature.type.value == target_type:
+                    out.append(TranscriptCoordinate(coordinate_id=feature.coordinate_id,
+                                                    piece_position=piece.position,
+                                                    is_plus_strand=feature.is_plus_strand,
+                                                    start=feature.position))
         return out
 
     def transcription_start_sites(self):
