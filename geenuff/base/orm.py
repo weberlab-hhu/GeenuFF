@@ -28,7 +28,7 @@ class Coordinates(Base):
     end = Column(Integer, nullable=False)
     seqid = Column(String, nullable=False)
     sha1 = Column(String)
-    annotated_genome_id = Column(Integer, ForeignKey('annotated_genomes.id'))
+    annotated_genome_id = Column(Integer, ForeignKey('annotated_genomes.id'), nullable=False)
     annotated_genome = relationship('AnnotatedGenome', back_populates='coordinates')
 
     features = relationship('Feature', back_populates='coordinates')
@@ -47,7 +47,7 @@ class SuperLocusAliases(Base):
 
     id = Column(Integer, primary_key=True)
     alias = Column(String)
-    super_locus_id = Column(Integer, ForeignKey('super_loci.id'))
+    super_locus_id = Column(Integer, ForeignKey('super_loci.id'), nullable=False)
     super_locus = relationship('SuperLocus', back_populates='aliases')
 
 
@@ -68,14 +68,14 @@ class SuperLocus(Base):
 
 
 association_transcribed_pieces_to_features = Table('association_transcribed_pieces_to_features', Base.metadata,  # todo, rename
-    Column('transcribed_piece_id', Integer, ForeignKey('transcribed_pieces.id')),
-    Column('feature_id', Integer, ForeignKey('features.id'))
+    Column('transcribed_piece_id', Integer, ForeignKey('transcribed_pieces.id'), nullable=False),
+    Column('feature_id', Integer, ForeignKey('features.id'), nullable=False)
 )
 
 
 association_translateds_to_features = Table('association_translateds_to_features', Base.metadata,
-    Column('translated_id', Integer, ForeignKey('translateds.id')),
-    Column('feature_id', Integer, ForeignKey('features.id'))
+    Column('translated_id', Integer, ForeignKey('translateds.id'), nullable=False),
+    Column('feature_id', Integer, ForeignKey('features.id'), nullable=False)
 )
 
 
@@ -87,7 +87,7 @@ class Transcribed(Base):
 
     type = Column(Enum(types.TranscriptLevelAll))
 
-    super_locus_id = Column(Integer, ForeignKey('super_loci.id'))
+    super_locus_id = Column(Integer, ForeignKey('super_loci.id'), nullable=False)
     super_locus = relationship('SuperLocus', back_populates='transcribeds')
 
     transcribed_pieces = relationship('TranscribedPiece', back_populates='transcribed')
@@ -105,7 +105,7 @@ class TranscribedPiece(Base):
 
     position = Column(Integer, nullable=False)
 
-    transcribed_id = Column(Integer, ForeignKey('transcribeds.id'))
+    transcribed_id = Column(Integer, ForeignKey('transcribeds.id'), nullable=False)
     transcribed = relationship('Transcribed', back_populates='transcribed_pieces')
 
     features = relationship('Feature', secondary=association_transcribed_pieces_to_features,
@@ -124,7 +124,7 @@ class Translated(Base):
     id = Column(Integer, primary_key=True)
     given_id = Column(String)
     # type can only be 'protein' so far as I know..., so skipping
-    super_locus_id = Column(Integer, ForeignKey('super_loci.id'))
+    super_locus_id = Column(Integer, ForeignKey('super_loci.id'), nullable=False)
     super_locus = relationship('SuperLocus', back_populates='translateds')
 
     features = relationship('Feature', secondary=association_translateds_to_features,
@@ -137,12 +137,8 @@ class Feature(Base):
     # basic attributes
     id = Column(Integer, primary_key=True)
     given_id = Column(String)
-
     type = Column(Enum(types.OnSequence))
     bearing = Column(Enum(types.Bearings))
-    #seqid = Column(String)
-    coordinate_id = Column(Integer, ForeignKey('coordinates.id'))  # any piece of coordinates always has just one seqid
-    coordinates = relationship('Coordinates', back_populates='features')
     position = Column(Integer)
     is_plus_strand = Column(Boolean)
     score = Column(Float)
@@ -151,6 +147,11 @@ class Feature(Base):
 
     # for differentiating from subclass entries
     subtype = Column(String(20))
+
+    #seqid = Column(String)
+    # any piece of coordinates always has just one seqid
+    coordinate_id = Column(Integer, ForeignKey('coordinates.id'), nullable=False)
+    coordinates = relationship('Coordinates', back_populates='features')
 
     # relations
     transcribed_pieces = relationship('TranscribedPiece',
@@ -165,7 +166,7 @@ class Feature(Base):
         CheckConstraint(position >= -1, name='check_start_1plus'),
         CheckConstraint(phase >= 0, name='check_phase_not_negative'),
         CheckConstraint(phase < 3, name='check_phase_less_three'),
-        {})
+    )
 
     __mapper_args__ = {
         'polymorphic_on': subtype,

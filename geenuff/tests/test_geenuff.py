@@ -86,15 +86,18 @@ def test_annogenome2coordinate_relation():
 def test_coordinate_constraints():
     """Check the coordinate constraints"""
     sess = mk_session()
-    coors = orm.Coordinates(start=0, end=30, seqid='abc')
-    coors2 = orm.Coordinates(start=0, end=1, seqid='abc')
-    coors_bad1 = orm.Coordinates(start=-12, end=30, seqid='abc')
-    coors_bad2 = orm.Coordinates(start=100, end=30, seqid='abc')
-    coors_bad3 = orm.Coordinates(start=1, end=30)
+    ag = orm.AnnotatedGenome()
+
     # should be ok
+    coors = orm.Coordinates(start=0, end=30, seqid='abc', annotated_genome=ag)
+    coors2 = orm.Coordinates(start=0, end=1, seqid='abc', annotated_genome=ag)
     sess.add_all([coors, coors2])
     sess.commit()
+
     # should cause trouble
+    coors_bad1 = orm.Coordinates(start=-12, end=30, seqid='abc', annotated_genome=ag)
+    coors_bad2 = orm.Coordinates(start=100, end=30, seqid='abc', annotated_genome=ag)
+    coors_bad3 = orm.Coordinates(start=1, end=30, annotated_genome=ag)
     with pytest.raises(IntegrityError):
         sess.add(coors_bad1)  # start below 1
         sess.commit()
@@ -200,8 +203,9 @@ def test_transcribed_pieces_unique_constraints():
     valid outcomes.
     """
     sess = mk_session()
-    transcribed0 = orm.Transcribed()
-    transcribed1 = orm.Transcribed()
+    sl = orm.SuperLocus()
+    transcribed0 = orm.Transcribed(super_locus=sl)
+    transcribed1 = orm.Transcribed(super_locus=sl)
 
     # test if same position for different transcribed_id goes through
     piece_tr0_pos0 = orm.TranscribedPiece(transcribed=transcribed0, position=0)
@@ -282,21 +286,26 @@ class TransspliceDemoData(object):
         # setup two transitions:
         # 1) scribed - [->[TSS(A),START(B),TDSS(C{->F}),TTS(D)], ->[TSS(E), <<slice>>> TASS(F),STOP(G),TTS(H)]]
         # 2) scribedflip - [->[TSS(A),START(B),TDSS(C{->F'}),TTS(D)], <-[TTS(H'), <<slice>> STOP(G'),TASS(F'),TSS(E')]]
-        self.old_coor = orm.Coordinates(seqid='a', start=1, end=2000)
+        ag = orm.AnnotatedGenome()
+        self.old_coor = orm.Coordinates(seqid='a', start=1, end=2000, annotated_genome=ag)
         self.sl, self.slh = setup_data_handler(api.SuperLocusHandlerBase, orm.SuperLocus)
-        self.scribed, self.scribedh = setup_data_handler(api.TranscribedHandlerBase, orm.Transcribed,
+        self.scribed, self.scribedh = setup_data_handler(api.TranscribedHandlerBase,
+                                                         orm.Transcribed,
                                                          super_locus=self.sl)
         self.scribedflip, self.scribedfliph = setup_data_handler(api.TranscribedHandlerBase,
                                                                  orm.Transcribed,
                                                                  super_locus=self.sl)
+        self.ti = api.TranscriptInterpBase(transcript=self.scribedh,
+                                           super_locus=self.sl,
+                                           session=sess)
+        self.tiflip = api.TranscriptInterpBase(transcript=self.scribedfliph,
+                                               super_locus=self.sl,
+                                               session=sess)
 
-        self.ti = api.TranscriptInterpBase(transcript=self.scribedh, super_locus=self.sl, session=sess)
-        self.tiflip = api.TranscriptInterpBase(transcript=self.scribedfliph, super_locus=self.sl, session=sess)
-
-        self.pieceA2D = orm.TranscribedPiece(position=0)
-        self.pieceE2H = orm.TranscribedPiece(position=1)
-        self.pieceA2Dp = orm.TranscribedPiece(position=0)
-        self.pieceEp2Hp = orm.TranscribedPiece(position=1)
+        self.pieceA2D = orm.TranscribedPiece(position=0, transcribed=self.scribed)
+        self.pieceE2H = orm.TranscribedPiece(position=1, transcribed=self.scribed)
+        self.pieceA2Dp = orm.TranscribedPiece(position=0, transcribed=self.scribedflip)
+        self.pieceEp2Hp = orm.TranscribedPiece(position=1, transcribed=self.scribedflip)
         self.scribed.transcribed_pieces = [self.pieceA2D, self.pieceE2H]
         self.scribedflip.transcribed_pieces = [self.pieceA2Dp, self.pieceEp2Hp]
         # pieceA2D features
