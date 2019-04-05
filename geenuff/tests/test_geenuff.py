@@ -126,7 +126,6 @@ def test_coordinate_insert():
     assert f1.coordinate.end == 330
 
 
-
 def test_many2many_with_features():
     """Test the many2many tables association_transcribed_piece_to_feature and
     association_translated_to_feature
@@ -149,7 +148,6 @@ def test_many2many_with_features():
     assert len(feat2_stop.translateds) == 2
     assert len(feat3_start.translateds) == 1
     assert len(feat0_tss.translateds) == 0
-
 
 
 def test_feature_has_its_things():

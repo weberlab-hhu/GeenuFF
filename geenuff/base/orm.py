@@ -17,6 +17,7 @@ class Genome(Base):
     accession = Column(String)
     version = Column(String)
     acquired_from = Column(String)
+    aliases = Column(String)
     coordinates = relationship("Coordinate", back_populates="genome")
 
 
@@ -42,15 +43,6 @@ class Coordinate(Base):
         return '<Coordinate {}, {}:{}-{}>'.format(self.id, self.seqid, self.start, self.end)
 
 
-class SuperLocusAliases(Base):
-    __tablename__ = 'super_locus_aliases'
-
-    id = Column(Integer, primary_key=True)
-    alias = Column(String)
-    super_locus_id = Column(Integer, ForeignKey('super_locus.id'), nullable=False)
-    super_locus = relationship('SuperLocus', back_populates='aliases')
-
-
 class SuperLocus(Base):
     __tablename__ = 'super_locus'
     # normally a loci, some times a short list of loci for "trans splicing"
@@ -62,7 +54,6 @@ class SuperLocus(Base):
     given_id = Column(String)
     type = Column(Enum(types.SuperLocusAll))
     # things SuperLocus can have a lot of
-    aliases = relationship('SuperLocusAliases', back_populates='super_locus')
     transcribeds = relationship('Transcribed', back_populates='super_locus')
     translateds = relationship('Translated', back_populates='super_locus')
 
@@ -131,7 +122,6 @@ class Translated(Base):
                             back_populates='translateds')
 
 
-
 class Feature(Base):
     __tablename__ = 'feature'
     # basic attributes
@@ -187,5 +177,3 @@ class Feature(Base):
 
     def pos_cmp_key(self):
         return self.coordinate.seqid, self.is_plus_strand, self.position
-
-
