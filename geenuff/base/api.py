@@ -2,6 +2,7 @@ from dustdas import gffhelper, fastahelper
 import copy
 import hashlib
 from types import GeneratorType
+import intervaltree
 
 from . import orm
 from . import types
@@ -339,6 +340,165 @@ class TranscriptInterpBase(object):
         for piece in self.sort_pieces():
             out.append(self.sorted_features(piece))
         return out
+
+    # helpers for classic transitions below
+    def _ranges_by_type(self, target_type):
+        ranges = []
+        current = None
+        for aligned_features, status, piece in self.transition_5p_to_3p():
+            features_of_type = [f for f in aligned_features if f.type.value == target_type]
+            assert len(features_of_type) in [0, 1], "cannot interpret aligned features of the same type {}".format(
+                features_of_type
+            )
+            if len(features_of_type) == 1:  # and 0 is simply ignored...
+                feature = features_of_type[0]
+                if self._is_open_or_start(feature):
+                    current = {"coordinate_id": feature.coordinate_id,
+                               "start": feature.position,
+                               "is_plus_strand": feature.is_plus_strand,
+                               "piece_position": piece.position}
+                else:
+                    assert current is not None, "start/open must be seen before end/close for {}".format(feature)
+                    assert current["piece_position"] == piece.position, \
+                        "can't have start/end from different pieces ({} & {})".format(current["piece_position"],
+                                                                                      piece.position)
+                    current["end"] = feature.position
+                    ranges.append(current)
+                    current = None
+        return ranges
+
+    @staticmethod
+    def _is_open_or_start(feature):
+        if feature.bearing.value in [types.START, types.OPEN_STATUS]:
+            return True
+        elif feature.bearing.value in [types.END, types.CLOSE_STATUS]:
+            return False
+        else:
+            raise ValueError("failed to interpret bearing {}".format(feature.bearing))
+
+    @staticmethod
+    def _make_trees(ranges):
+        trees = {}
+        for r in ranges:
+            coord_isplus = (r["coordinate_id"], r["is_plus_strand"], r["piece_position"])
+            if coord_isplus not in trees:
+                trees[coord_isplus] = intervaltree.IntervalTree()
+            start, end = r["start"], r["end"]
+            start, end = min(start, end), max(start, end)
+            trees[coord_isplus][start:end] = r
+        return trees
+
+    @staticmethod
+    def _copy_ival_data(iv, islower):
+        print(iv, islower, "was called")
+        if islower:  # copy one of the two sides so that we don't change the same dictionary later
+            out = copy.deepcopy(iv.data)
+        else:
+            out = iv.data
+        return out
+
+    def _subtract_ranges(self, subtract_from, to_subtract):
+        keep_trees = self._make_trees(subtract_from)
+        subtract_trees = self._make_trees(to_subtract)
+        subtracted = []
+        for key in keep_trees:
+            for chop_out in subtract_trees[key]:
+                keep_trees[key].chop(chop_out.begin, chop_out.end, self._copy_ival_data)
+            for kept in keep_trees[key]:
+                start, end = kept.begin, kept.end
+                if not kept.data["is_plus_strand"]:
+                    start, end = end, start
+                kept.data["start"] = start
+                kept.data["end"] = end
+                subtracted.append(kept.data)
+        return self._resort_subtracted(subtracted)
+
+    def _resort_subtracted(self, subtracted_ranges):
+        return sorted(subtracted_ranges, key=self._resort_key)
+
+    @staticmethod
+    def _resort_key(x):
+        if x["is_plus_strand"]:
+            sort_pos = x["start"]
+        else:
+            sort_pos = -x["start"]  # flip sort order on the - strand
+        return x["piece_position"], sort_pos
+
+    # common 'interpretations' or extractions of transcript-related data
+    # the following should always return in the format
+    # [{"coordinate_id": _, "begin": _, "end": _, "is_plus_strand: _}, ... ]
+    def transcribed_ranges(self):
+        return self._ranges_by_type(types.TRANSCRIBED)
+
+    def translated_ranges(self):
+        return self._ranges_by_type(types.CODING)
+
+    def intronic_ranges(self):
+        return self._ranges_by_type(types.INTRON)
+
+    def trans_intronic_ranges(self):
+        return self._ranges_by_type(types.TRANS_INTRON)
+
+    def error_ranges(self):
+        return self._ranges_by_type(types.ERROR)
+
+    def cis_exonic_ranges(self):  # AKA exon
+        transcribeds = self._ranges_by_type(types.TRANSCRIBED)
+        introns = self._ranges_by_type(types.INTRON)
+        exons = self._subtract_ranges(subtract_from=transcribeds, to_subtract=introns)
+        return exons
+
+    def translated_exonic_ranges(self):  # AKA CDS
+        # todo, somewhere, maybe not here, consider further consistency checking
+        #  e.g. (that all CODING regions are within TRANSCRIBED regions)
+        translateds = self._ranges_by_type(types.CODING)
+        introns = self._ranges_by_type(types.INTRON)
+        coding_exons = self._subtract_ranges(subtract_from=translateds, to_subtract=introns)
+        return coding_exons
+
+    def untranslated_exonic_ranges(self):  # AKA UTR
+        exons = self.cis_exonic_ranges()
+        translateds = self._ranges_by_type(types.CODING)
+        utrs = self._subtract_ranges(subtract_from=exons, to_subtract=translateds)
+        return utrs
+
+    # point transitions (sites)
+    # the following should always return in the format
+    # [{"coordinate_id": _, "position": _, "is_plus_strand: _}, ... ]
+    def _get_by_type_and_bearing(self, target_type, target_bearing):
+        out = []
+        for piece in self.transcript.data.transcribed_pieces:
+            for feature in piece.features:
+                if feature.bearing == target_bearing and \
+                        feature.type == target_type:
+                    out.append({"coordinate_id": feature.coordinate_id,
+                                "position": feature.position,
+                                "is_plus_strand": feature.is_plus_strand})
+        return out
+
+    def transcription_start_sites(self):
+        return self._get_by_type_and_bearing(types.TRANSCRIBED, types.START)
+
+    def translation_start_sites(self):  # AKA start codon
+        return self._get_by_type_and_bearing(types.CODING, types.START)
+
+    def intron_start_sites(self):  # AKA Donor splice site
+        return self._get_by_type_and_bearing(types.INTRON, types.START)
+
+    def trans_intron_start_sites(self):
+        return self._get_by_type_and_bearing(types.TRANS_INTRON, types.START)
+
+    def transcription_end_sites(self):
+        return self._get_by_type_and_bearing(types.TRANSCRIBED, types.END)
+
+    def translation_end_sites(self):  # AKA follows stop codon
+        return self._get_by_type_and_bearing(types.CODING, types.END)
+
+    def intron_end_sites(self):  # AKA follows acceptor splice site
+        return self._get_by_type_and_bearing(types.INTRON, types.END)
+
+    def trans_intron_end_sites(self):
+        return self._get_by_type_and_bearing(types.TRANS_INTRON, types.END)
 
 
 class HandleMaker(object):

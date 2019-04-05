@@ -16,7 +16,7 @@ from .. import types
 from .. import helpers
 
 ### Helper functions ###
-# section: annotations_orm
+# section: orm
 def mk_session(db_path='sqlite:///:memory:'):
     engine = create_engine(db_path, echo=False)
     orm.Base.metadata.create_all(engine)
@@ -124,6 +124,7 @@ def test_coordinates_insert():
     sess.add_all([ag, sl, coords, coords2, f0, f1])
     assert f0.coordinates.start == 1
     assert f1.coordinates.end == 330
+ 
 
 
 def test_many2many_with_features():
@@ -150,17 +151,19 @@ def test_many2many_with_features():
     assert len(feat0_tss.translateds) == 0
 
 
+
 def test_feature_has_its_things():
     """Test if properties of Feature table are correct and constraints are enforced"""
     sess = mk_session()
     # test feature with nothing much set
-    f = orm.Feature()
+    ag = orm.AnnotatedGenome()
+    c = orm.Coordinates(start=1, end=30, seqid='abc', annotated_genome=ag)
+    f = orm.Feature(coordinates=c)
     sess.add(f)
     sess.commit()
 
     assert f.is_plus_strand is None
     assert f.source is None
-    assert f.coordinates is None
     assert f.score is None
     # test feature with
     f1 = orm.Feature(is_plus_strand=False, position=3)
@@ -197,7 +200,7 @@ def test_partially_remove_coordinates():
     # but still in table
     assert len(sess.query(orm.Coordinates).all()) == 2
 
-
+# section: api
 def test_transcribed_pieces_unique_constraints():
     """Add transcribed pieces in valid and invalid configurations and test for
     valid outcomes.
@@ -387,7 +390,133 @@ def test_transition_transsplice():
     assert [x[1].in_trans_intron for x in ti_transitions] == [bool(x) for x in [0, 0, 1, 1, 0, 1, 1, 0, 0, 0]]
 
 
-# section: gff_2_annotations
+class BiointerpDemoDataCoding(object):
+    def __init__(self, sess, is_plus_strand):
+        self.sl, self.sl_handler = setup_data_handler(api.SuperLocusHandlerBase, orm.SuperLocus)
+        self.scribed, self.scribed_handler = setup_data_handler(
+            api.TranscribedHandlerBase, orm.Transcribed, super_locus=self.sl)
+
+        self.piece = orm.TranscribedPiece(position=0, transcribed=self.scribed)
+
+        self.ti = api.TranscriptInterpBase(transcript=self.scribed_handler, super_locus=self.sl, session=sess)
+
+        self.ag = orm.AnnotatedGenome()
+        # setup ranges for a two-exon coding gene
+        self.coordinates = orm.Coordinates(seqid='a', start=1, end=2000, annotated_genome=self.ag)
+        transcribed_start, transcribed_end = 100, 900
+        coding_start, coding_end = 200, 800
+        intron_start, intron_end = 300, 700
+
+        if not is_plus_strand:  # swap if we're setting up data for "-" strand
+            transcribed_end, transcribed_start = transcribed_start, transcribed_end
+            coding_end, coding_start = coding_start, coding_end
+            intron_end, intron_start = intron_start, intron_end
+
+        # transcribed:
+        self.transcribed_start = orm.Feature(coordinates=self.coordinates,
+                                             is_plus_strand=is_plus_strand, position=transcribed_start,
+                                             type=types.TRANSCRIBED, bearing=types.START)
+        self.transcribed_end = orm.Feature(coordinates=self.coordinates,
+                                           is_plus_strand=is_plus_strand, position=transcribed_end,
+                                           type=types.TRANSCRIBED, bearing=types.END)
+        # coding:
+        self.coding_start = orm.Feature(coordinates=self.coordinates,
+                                        is_plus_strand=is_plus_strand, position=coding_start,
+                                        type=types.CODING, bearing=types.START)
+        self.coding_end = orm.Feature(coordinates=self.coordinates,
+                                      is_plus_strand=is_plus_strand, position=coding_end,
+                                      type=types.CODING, bearing=types.END)
+        # intron:
+        self.intron_start = orm.Feature(coordinates=self.coordinates,
+                                        is_plus_strand=is_plus_strand, position=intron_start,
+                                        type=types.INTRON, bearing=types.START)
+        self.intron_end = orm.Feature(coordinates=self.coordinates,
+                                      is_plus_strand=is_plus_strand, position=intron_end,
+                                      type=types.INTRON, bearing=types.END)
+
+        self.piece.features = [self.transcribed_start, self.transcribed_end,
+                               self.coding_start, self.coding_end,
+                               self.intron_start, self.intron_end]
+
+        sess.add(self.sl)
+        sess.commit()
+
+
+class BioInterpDemodataTranssplice(object):
+    def __init__(self, sess, is_plus_strand_piece0, is_plus_strand_piece1):
+        self.sl, self.sl_handler = setup_data_handler(api.SuperLocusHandlerBase, orm.SuperLocus)
+        self.scribed, self.scribed_handler = setup_data_handler(
+            api.TranscribedHandlerBase, orm.Transcribed, super_locus=self.sl)
+
+        self.piece = orm.TranscribedPiece(position=0, transcribed=self.scribed)
+        self.piece = orm.TranscribedPiece(position=1, transcribed=self.scribed)
+        self.ti = api.TranscriptInterpBase(transcript=self.scribed_handler, super_locus=self.sl, session=sess)
+
+        # setup ranges for a two-exon coding gene
+        self.coordinates = orm.Coordinates(seqid='a', start=1, end=2000)
+        # todo, setup 2x pieces on the same sequence/coord for sort testing fun
+
+
+def test_biointerp_features_as_ranges():
+    sess = mk_session()
+    fw = BiointerpDemoDataCoding(sess, is_plus_strand=True)
+    coord = "coordinate_id"
+    is_plus = "is_plus_strand"
+    start = "start"
+    end = "end"
+    pos = "piece_position"
+
+    assert fw.ti.transcribed_ranges() == [{coord: 1, is_plus: True, pos: 0,
+                                           start: 100, end: 900}]
+    assert fw.ti.translated_ranges() == [{coord: 1, is_plus: True, pos: 0,
+                                          start: 200, end: 800}]
+    assert fw.ti.intronic_ranges() == [{coord: 1, is_plus: True, pos: 0,
+                                       start: 300, end: 700}]
+    assert fw.ti.trans_intronic_ranges() == []
+
+    assert fw.ti.cis_exonic_ranges() == [{coord: 1, is_plus: True, pos: 0,
+                                         start: 100, end: 300},
+                                         {coord: 1, is_plus: True, pos: 0,
+                                         start: 700, end: 900}]
+    assert fw.ti.translated_exonic_ranges() == [{coord: 1, is_plus: True, pos: 0,
+                                                 start: 200, end: 300},
+                                                {coord: 1, is_plus: True, pos: 0,
+                                                 start: 700, end: 800}]
+
+    assert fw.ti.untranslated_exonic_ranges() == [{coord: 1, is_plus: True, pos: 0,
+                                                   start: 100, end: 200},
+                                                  {coord: 1, is_plus: True, pos: 0,
+                                                   start: 800, end: 900}]
+
+    rev = BiointerpDemoDataCoding(sess, is_plus_strand=False)
+    assert rev.ti.transcribed_ranges() == [{coord: 2, is_plus: False, pos: 0,
+                                            start: 900, end: 100}]
+    assert rev.ti.translated_ranges() == [{coord: 2, is_plus: False, pos: 0,
+                                          start: 800, end: 200}]
+    assert rev.ti.intronic_ranges() == [{coord: 2, is_plus: False, pos: 0,
+                                         start: 700, end: 300}]
+    assert rev.ti.trans_intronic_ranges() == []
+
+    assert rev.ti.cis_exonic_ranges() == [{coord: 2, is_plus: False, pos: 0,
+                                          start: 900, end: 700},
+                                          {coord: 2, is_plus: False, pos: 0,
+                                          start: 300, end: 100}]
+    assert rev.ti.translated_exonic_ranges() == [{coord: 2, is_plus: False, pos: 0,
+                                                  start: 800, end: 700},
+                                                 {coord: 2, is_plus: False, pos: 0,
+                                                  start: 300, end: 200}]
+
+    assert rev.ti.untranslated_exonic_ranges() == [{coord: 2, is_plus: False, pos: 0,
+                                                    start: 900, end: 800},
+                                                   {coord: 2, is_plus: False, pos: 0,
+                                                    start: 200, end: 100}]
+
+
+def test_biointerp_features_as_transitions():
+    pass
+
+
+# section: gffimporter
 def test_data_frm_gffentry():
     """Test the interpretation and transformation of raw GFF entries."""
     controller = gffimporter.ImportControl(database_path='sqlite:///:memory:', err_path=None)
