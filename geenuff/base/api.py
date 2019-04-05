@@ -658,23 +658,24 @@ class TranscriptInterpBase(object):
         ranges = []
         current = None
         for aligned_features, status, piece in self.transition_5p_to_3p():
-            print('aligned_features {}'.format(aligned_features))
             features_of_type = [f for f in aligned_features if f.type.value == target_type]
             assert len(features_of_type) in [0, 1], "cannot interpret aligned features of the same type {}".format(
                 features_of_type
             )
             if len(features_of_type) == 1:  # and 0 is simply ignored...
                 feature = features_of_type[0]
-                print('pre if else')
                 if self._is_open_or_start(feature):
                     current = {"coordinate_id": feature.coordinate_id,
-                               "begin": feature.position,
-                               "is_plus_strand": feature.is_plus_strand}
+                               "start": feature.position,
+                               "is_plus_strand": feature.is_plus_strand,
+                               "piece_position": piece.position}
                 else:
                     assert current is not None, "start/open must be seen before end/close for {}".format(feature)
+                    assert current["piece_position"] == piece.position, \
+                        "can't have start/end from different pieces ({} & {})".format(current["piece_position"],
+                                                                                      piece.position)
                     current["end"] = feature.position
                     ranges.append(current)
-                    print(ranges)
                     current = None
         return ranges
 
@@ -691,24 +692,49 @@ class TranscriptInterpBase(object):
     def _make_trees(ranges):
         trees = {}
         for r in ranges:
-            coord_isplus = (r["coordinate_id"], r["is_plus_strand"])
+            coord_isplus = (r["coordinate_id"], r["is_plus_strand"], r["piece_position"])
             if coord_isplus not in trees:
                 trees[coord_isplus] = intervaltree.IntervalTree()
-            trees[coord_isplus][r["begin"], r["end"]] = r
+            start, end = r["start"], r["end"]
+            start, end = min(start, end), max(start, end)
+            trees[coord_isplus][start:end] = r
         return trees
+
+    @staticmethod
+    def _copy_ival_data(iv, islower):
+        print(iv, islower, "was called")
+        if islower:  # copy one of the two sides so that we don't change the same dictionary later
+            out = copy.deepcopy(iv.data)
+        else:
+            out = iv.data
+        return out
 
     def _subtract_ranges(self, subtract_from, to_subtract):
         keep_trees = self._make_trees(subtract_from)
         subtract_trees = self._make_trees(to_subtract)
-        out = []
+        subtracted = []
         for key in keep_trees:
             for chop_out in subtract_trees[key]:
-                keep_trees[key].chop(chop_out.begin, chop_out.end)
+                keep_trees[key].chop(chop_out.begin, chop_out.end, self._copy_ival_data)
             for kept in keep_trees[key]:
-                kept.data["begin"] = kept.begin
-                kept.data["end"] = kept.end
-                out.append(kept.data)
-        return out
+                start, end = kept.begin, kept.end
+                if not kept.data["is_plus_strand"]:
+                    start, end = end, start
+                kept.data["start"] = start
+                kept.data["end"] = end
+                subtracted.append(kept.data)
+        return self._resort_subtracted(subtracted)
+
+    def _resort_subtracted(self, subtracted_ranges):
+        return sorted(subtracted_ranges, key=self._resort_key)
+
+    @staticmethod
+    def _resort_key(x):
+        if x["is_plus_strand"]:
+            sort_pos = x["start"]
+        else:
+            sort_pos = -x["start"]  # flip sort order on the - strand
+        return x["piece_position"], sort_pos
 
     # common 'interpretations' or extractions of transcript-related data
     # the following should always return in the format

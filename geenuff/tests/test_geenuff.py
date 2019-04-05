@@ -550,26 +550,35 @@ class BiointerpDemoDataCoding(object):
 
         # setup ranges for a two-exon coding gene
         self.coordinates = orm.Coordinates(seqid='a', start=1, end=2000)
-        # transcribed: [.......................................................................)
+        transcribed_start, transcribed_end = 100, 900
+        coding_start, coding_end = 200, 800
+        intron_start, intron_end = 300, 700
+
+        if not is_plus_strand:  # swap if we're setting up data for "-" strand
+            transcribed_end, transcribed_start = transcribed_start, transcribed_end
+            coding_end, coding_start = coding_start, coding_end
+            intron_end, intron_start = intron_start, intron_end
+
+        # transcribed:
         self.transcribed_start = orm.Feature(super_locus=self.sl, coordinates=self.coordinates,
-                                             is_plus_strand=is_plus_strand, position=100,
+                                             is_plus_strand=is_plus_strand, position=transcribed_start,
                                              type=types.TRANSCRIBED, bearing=types.START)
         self.transcribed_end = orm.Feature(super_locus=self.sl, coordinates=self.coordinates,
-                                           is_plus_strand=is_plus_strand, position=900,
+                                           is_plus_strand=is_plus_strand, position=transcribed_end,
                                            type=types.TRANSCRIBED, bearing=types.END)
-        # coding:              [...............................................)
+        # coding:
         self.coding_start = orm.Feature(super_locus=self.sl, coordinates=self.coordinates,
-                                        is_plus_strand=is_plus_strand, position=200,
+                                        is_plus_strand=is_plus_strand, position=coding_start,
                                         type=types.CODING, bearing=types.START)
         self.coding_end = orm.Feature(super_locus=self.sl, coordinates=self.coordinates,
-                                      is_plus_strand=is_plus_strand, position=800,
+                                      is_plus_strand=is_plus_strand, position=coding_end,
                                       type=types.CODING, bearing=types.END)
-        # intron:                       [...........................)
+        # intron:
         self.intron_start = orm.Feature(super_locus=self.sl, coordinates=self.coordinates,
-                                        is_plus_strand=is_plus_strand, position=300,
+                                        is_plus_strand=is_plus_strand, position=intron_start,
                                         type=types.INTRON, bearing=types.START)
         self.intron_end = orm.Feature(super_locus=self.sl, coordinates=self.coordinates,
-                                      is_plus_strand=is_plus_strand, position=700,
+                                      is_plus_strand=is_plus_strand, position=intron_end,
                                       type=types.INTRON, bearing=types.END)
 
         self.piece.features = [self.transcribed_start, self.transcribed_end,
@@ -581,16 +590,63 @@ class BiointerpDemoDataCoding(object):
 
 
 def test_biointerp_features_as_ranges():
-    # todo, features -> coding ranges, exonic ranges, coding & exonic ranges, intronic ranges, etc...
     sess = mk_session()
-    d = BiointerpDemoDataCoding(sess, is_plus_strand=True)  # setup
-    assert d.ti.translated_ranges() == [{"coordinate_id": 1, "is_plus_strand": True,
-                                         "start": 100, "end": 900}]
+    fw = BiointerpDemoDataCoding(sess, is_plus_strand=True)
+    coord = "coordinate_id"
+    is_plus = "is_plus_strand"
+    start = "start"
+    end = "end"
+    pos = "piece_position"
 
+    assert fw.ti.transcribed_ranges() == [{coord: 1, is_plus: True, pos: 0,
+                                           start: 100, end: 900}]
+    assert fw.ti.translated_ranges() == [{coord: 1, is_plus: True, pos: 0,
+                                          start: 200, end: 800}]
+    assert fw.ti.intronic_ranges() == [{coord: 1, is_plus: True, pos: 0,
+                                       start: 300, end: 700}]
+    assert fw.ti.trans_intronic_ranges() == []
+
+    assert fw.ti.cis_exonic_ranges() == [{coord: 1, is_plus: True, pos: 0,
+                                         start: 100, end: 300},
+                                         {coord: 1, is_plus: True, pos: 0,
+                                         start: 700, end: 900}]
+    assert fw.ti.translated_exonic_ranges() == [{coord: 1, is_plus: True, pos: 0,
+                                                 start: 200, end: 300},
+                                                {coord: 1, is_plus: True, pos: 0,
+                                                 start: 700, end: 800}]
+
+    assert fw.ti.untranslated_exonic_ranges() == [{coord: 1, is_plus: True, pos: 0,
+                                                   start: 100, end: 200},
+                                                  {coord: 1, is_plus: True, pos: 0,
+                                                   start: 800, end: 900}]
+
+    rev = BiointerpDemoDataCoding(sess, is_plus_strand=False)
+    assert rev.ti.transcribed_ranges() == [{coord: 2, is_plus: False, pos: 0,
+                                            start: 900, end: 100}]
+    assert rev.ti.translated_ranges() == [{coord: 2, is_plus: False, pos: 0,
+                                          start: 800, end: 200}]
+    assert rev.ti.intronic_ranges() == [{coord: 2, is_plus: False, pos: 0,
+                                         start: 700, end: 300}]
+    assert rev.ti.trans_intronic_ranges() == []
+
+    assert rev.ti.cis_exonic_ranges() == [{coord: 2, is_plus: False, pos: 0,
+                                          start: 900, end: 700},
+                                          {coord: 2, is_plus: False, pos: 0,
+                                          start: 300, end: 100}]
+    assert rev.ti.translated_exonic_ranges() == [{coord: 2, is_plus: False, pos: 0,
+                                                  start: 800, end: 700},
+                                                 {coord: 2, is_plus: False, pos: 0,
+                                                  start: 300, end: 200}]
+
+    assert rev.ti.untranslated_exonic_ranges() == [{coord: 2, is_plus: False, pos: 0,
+                                                    start: 900, end: 800},
+                                                   {coord: 2, is_plus: False, pos: 0,
+                                                    start: 200, end: 100}]
 
 
 def test_biointerp_features_as_transitions():
     pass
+
 
 # section: gffimporter
 def test_data_frm_gffentry():
