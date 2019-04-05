@@ -1214,6 +1214,92 @@ def test_gff_grouper():
     for group in x:
         assert group[0].type == 'gene'
 
+
+def test_import2biointerp():
+
+    class TCShortcut(api.TranscriptCoordinate):
+        """just fills in what's always the same for the TranscriptCoordinate to stop retyping"""
+        def __init__(self, start):
+            super().__init__(coordinate_id=1, piece_position=0, is_plus_strand=True, start=start)
+
+    class RShortcut(api.Range):
+        """just fills in what's always the same for the TranscriptCoordinate to stop retyping"""
+        def __init__(self, start, end):
+            super().__init__(coordinate_id=1, piece_position=0, is_plus_strand=True, start=start, end=end)
+
+    sequence_path = 'testdata/biointerp_loci.fa'
+    gff3 = 'testdata/biointerp_loci.gff3'
+    controller = gffimporter.ImportControl(database_path='sqlite:///:memory:', err_path='/dev/null')
+    controller.add_sequences(sequence_path)
+    controller.add_gff(gff3)
+    controller.session.commit()
+
+    super_loci = controller.session.query(orm.SuperLocus).all()
+    assert len(super_loci) == 2
+
+    ### coding ###
+    sl_coding = [sl for sl in super_loci if sl.given_id == "gene0"][0]
+    sl_coding_handler = api.SuperLocusHandlerBase()
+    sl_coding_handler.add_data(sl_coding)
+    assert len(sl_coding.transcribeds) == 1
+    scribed_coding = sl_coding.transcribeds[0]
+    scribed_coding_handler = api.TranscribedHandlerBase()
+    scribed_coding_handler.add_data(scribed_coding)
+
+    ti = api.TranscriptInterpBase(transcript=scribed_coding_handler, super_locus=sl_coding_handler,
+                                  session=controller.session)
+
+    # check transcribed sites and range
+    assert ti.transcription_start_sites() == [TCShortcut(start=100)]
+
+    assert ti.transcription_end_sites() == [TCShortcut(start=900)]
+    assert ti.transcribed_ranges() == [RShortcut(start=100, end=900)]
+    # check coding sites and ranges
+    assert ti.translation_start_sites() == [TCShortcut(start=200)]
+    assert ti.translation_end_sites() == [TCShortcut(start=800)]
+    assert ti.translated_ranges() == [RShortcut(start=200, end=800)]
+
+    # check intron sites and ranges
+    assert ti.intron_start_sites() == [TCShortcut(start=300)]
+    assert ti.intron_end_sites() == [TCShortcut(start=700)]
+    assert ti.intronic_ranges() == [RShortcut(start=300, end=700)]
+    # check exons and similar
+    assert ti.cis_exonic_ranges() == [RShortcut(start=100, end=300),
+                                      RShortcut(start=700, end=900)]
+    assert ti.translated_exonic_ranges() == [RShortcut(start=200, end=300),
+                                             RShortcut(start=700, end=800)]
+    assert ti.untranslated_exonic_ranges() == [RShortcut(start=100, end=200),
+                                               RShortcut(start=800, end=900)]
+
+    # check that a few interpretations that should be empty are
+    assert ti.trans_intron_end_sites() == []
+    assert ti.error_ranges() == []
+
+    ### partial ###
+    sl_partial = [sl for sl in super_loci if sl.given_id == "gene1"][0]
+    sl_partial_handler = api.SuperLocusHandlerBase()
+    sl_partial_handler.add_data(sl_coding)
+    assert len(sl_partial.transcribeds) == 1
+    scribed_partial = sl_partial.transcribeds[0]
+    scribed_partial_handler = api.TranscribedHandlerBase()
+    scribed_partial_handler.add_data(scribed_partial)
+
+    ti = api.TranscriptInterpBase(transcript=scribed_partial_handler, super_locus=sl_partial_handler,
+                                  session=controller.session)
+
+    assert ti.transcription_start_sites() == [TCShortcut(start=100)]
+    assert ti.transcription_end_sites() == []
+    assert ti.transcribed_ranges() == [RShortcut(start=100, end=500)]
+
+    assert ti.translation_start_sites() == [TCShortcut(start=200)]
+    assert ti.translation_end_sites() == []
+    assert ti.translated_ranges() == [RShortcut(start=200, end=500)]
+
+    err_ranges = ti.error_ranges()
+    assert len(err_ranges) == 1
+    assert err_ranges[0].start == 499
+
+
 # section: types
 def test_enum_non_inheritance():
     allknown = [x.name for x in list(types.AllKnown)]
