@@ -8,8 +8,8 @@ from sqlalchemy.orm import relationship
 Base = declarative_base()
 
 
-class AnnotatedGenome(Base):
-    __tablename__ = 'annotated_genomes'
+class Genome(Base):
+    __tablename__ = 'genome'
 
     # data
     id = Column(Integer, primary_key=True)
@@ -17,21 +17,22 @@ class AnnotatedGenome(Base):
     accession = Column(String)
     version = Column(String)
     acquired_from = Column(String)
-    coordinates = relationship("Coordinates", back_populates="annotated_genome")
+    aliases = Column(String)
+    coordinates = relationship("Coordinate", back_populates="genome")
 
 
-class Coordinates(Base):
-    __tablename__ = 'coordinates'
+class Coordinate(Base):
+    __tablename__ = 'coordinate'
 
     id = Column(Integer, primary_key=True)
     start = Column(Integer, nullable=False)
     end = Column(Integer, nullable=False)
     seqid = Column(String, nullable=False)
     sha1 = Column(String)
-    annotated_genome_id = Column(Integer, ForeignKey('annotated_genomes.id'), nullable=False)
-    annotated_genome = relationship('AnnotatedGenome', back_populates='coordinates')
+    genome_id = Column(Integer, ForeignKey('genome.id'), nullable=False)
+    genome = relationship('Genome', back_populates='coordinates')
 
-    features = relationship('Feature', back_populates='coordinates')
+    features = relationship('Feature', back_populates='coordinate')
 
     __table_args__ = (
         CheckConstraint(start >= 0, name='check_start_1plus'),
@@ -42,17 +43,8 @@ class Coordinates(Base):
         return '<Coordinate {}, {}:{}-{}>'.format(self.id, self.seqid, self.start, self.end)
 
 
-class SuperLocusAliases(Base):
-    __tablename__ = 'super_locus_aliases'
-
-    id = Column(Integer, primary_key=True)
-    alias = Column(String)
-    super_locus_id = Column(Integer, ForeignKey('super_loci.id'), nullable=False)
-    super_locus = relationship('SuperLocus', back_populates='aliases')
-
-
 class SuperLocus(Base):
-    __tablename__ = 'super_loci'
+    __tablename__ = 'super_locus'
     # normally a loci, some times a short list of loci for "trans splicing"
     # this will define a group of exons that can possibly be made into transcripts
     # AKA this if you have to go searching through a graph for parents/children, at least said graph will have
@@ -62,32 +54,31 @@ class SuperLocus(Base):
     given_id = Column(String)
     type = Column(Enum(types.SuperLocusAll))
     # things SuperLocus can have a lot of
-    aliases = relationship('SuperLocusAliases', back_populates='super_locus')
     transcribeds = relationship('Transcribed', back_populates='super_locus')
     translateds = relationship('Translated', back_populates='super_locus')
 
 
-association_transcribed_pieces_to_features = Table('association_transcribed_pieces_to_features', Base.metadata,  # todo, rename
-    Column('transcribed_piece_id', Integer, ForeignKey('transcribed_pieces.id'), nullable=False),
-    Column('feature_id', Integer, ForeignKey('features.id'), nullable=False)
+association_transcribed_piece_to_feature = Table('association_transcribed_piece_to_feature', Base.metadata,  # todo, rename
+    Column('transcribed_piece_id', Integer, ForeignKey('transcribed_piece.id'), nullable=False),
+    Column('feature_id', Integer, ForeignKey('feature.id'), nullable=False)
 )
 
 
-association_translateds_to_features = Table('association_translateds_to_features', Base.metadata,
-    Column('translated_id', Integer, ForeignKey('translateds.id'), nullable=False),
-    Column('feature_id', Integer, ForeignKey('features.id'), nullable=False)
+association_translated_to_feature = Table('association_translated_to_feature', Base.metadata,
+    Column('translated_id', Integer, ForeignKey('translated.id'), nullable=False),
+    Column('feature_id', Integer, ForeignKey('feature.id'), nullable=False)
 )
 
 
 class Transcribed(Base):
-    __tablename__ = 'transcribeds'
+    __tablename__ = 'transcribed'
 
     id = Column(Integer, primary_key=True)
     given_id = Column(String)
 
     type = Column(Enum(types.TranscriptLevelAll))
 
-    super_locus_id = Column(Integer, ForeignKey('super_loci.id'), nullable=False)
+    super_locus_id = Column(Integer, ForeignKey('super_locus.id'), nullable=False)
     super_locus = relationship('SuperLocus', back_populates='transcribeds')
 
     transcribed_pieces = relationship('TranscribedPiece', back_populates='transcribed')
@@ -98,17 +89,17 @@ class Transcribed(Base):
 
 
 class TranscribedPiece(Base):
-    __tablename__ = 'transcribed_pieces'
+    __tablename__ = 'transcribed_piece'
 
     id = Column(Integer, primary_key=True)
     given_id = Column(String)
 
     position = Column(Integer, nullable=False)
 
-    transcribed_id = Column(Integer, ForeignKey('transcribeds.id'), nullable=False)
+    transcribed_id = Column(Integer, ForeignKey('transcribed.id'), nullable=False)
     transcribed = relationship('Transcribed', back_populates='transcribed_pieces')
 
-    features = relationship('Feature', secondary=association_transcribed_pieces_to_features,
+    features = relationship('Feature', secondary=association_transcribed_piece_to_feature,
                             back_populates='transcribed_pieces')
 
     __table_args__ = (UniqueConstraint('transcribed_id', 'position'),)
@@ -119,21 +110,20 @@ class TranscribedPiece(Base):
 
 
 class Translated(Base):
-    __tablename__ = 'translateds'
+    __tablename__ = 'translated'
 
     id = Column(Integer, primary_key=True)
     given_id = Column(String)
     # type can only be 'protein' so far as I know..., so skipping
-    super_locus_id = Column(Integer, ForeignKey('super_loci.id'), nullable=False)
+    super_locus_id = Column(Integer, ForeignKey('super_locus.id'), nullable=False)
     super_locus = relationship('SuperLocus', back_populates='translateds')
 
-    features = relationship('Feature', secondary=association_translateds_to_features,
+    features = relationship('Feature', secondary=association_translated_to_feature,
                             back_populates='translateds')
 
 
-
 class Feature(Base):
-    __tablename__ = 'features'
+    __tablename__ = 'feature'
     # basic attributes
     id = Column(Integer, primary_key=True)
     given_id = Column(String)
@@ -149,17 +139,17 @@ class Feature(Base):
     subtype = Column(String(20))
 
     #seqid = Column(String)
-    # any piece of coordinates always has just one seqid
-    coordinate_id = Column(Integer, ForeignKey('coordinates.id'), nullable=False)
-    coordinates = relationship('Coordinates', back_populates='features')
+    # any piece of coordinate always has just one seqid
+    coordinate_id = Column(Integer, ForeignKey('coordinate.id'), nullable=False)
+    coordinate = relationship('Coordinate', back_populates='features')
 
     # relations
     transcribed_pieces = relationship('TranscribedPiece',
-                                      secondary=association_transcribed_pieces_to_features,
+                                      secondary=association_transcribed_piece_to_feature,
                                       back_populates='features')
 
     translateds = relationship('Translated',
-                               secondary=association_translateds_to_features,
+                               secondary=association_translated_to_feature,
                                back_populates='features')
 
     __table_args__ = (
@@ -177,15 +167,13 @@ class Feature(Base):
         s = '<{py_type}, {pk}: {givenid} of type: {type} ({bearing}) @{position} on {coor}, is_plus: {plus}, ' \
             'phase: {phase}>'.format(
                 pk=self.id, bearing=self.bearing,
-                type=self.type, position=self.position, coor=self.coordinates, plus=self.is_plus_strand,
+                type=self.type, position=self.position, coor=self.coordinate, plus=self.is_plus_strand,
                 phase=self.phase, givenid=self.given_id, py_type=type(self)
             )
         return s
 
     def cmp_key(self):  # todo, pos_cmp & full_cmp
-        return self.coordinates.seqid, self.is_plus_strand, self.position, self.type
+        return self.coordinate.seqid, self.is_plus_strand, self.position, self.type
 
     def pos_cmp_key(self):
-        return self.coordinates.seqid, self.is_plus_strand, self.position
-
-
+        return self.coordinate.seqid, self.is_plus_strand, self.position
