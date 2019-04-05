@@ -589,6 +589,21 @@ class BiointerpDemoDataCoding(object):
         sess.commit()
 
 
+class BioInterpDemodataTranssplice(object):
+    def __init__(self, sess, is_plus_strand_piece0, is_plus_strand_piece1):
+        self.sl, self.sl_handler = setup_data_handler(api.SuperLocusHandler, orm.SuperLocus)
+        self.scribed, self.scribed_handler = setup_data_handler(
+            api.TranscribedHandler, orm.Transcribed, super_locus=self.sl)
+
+        self.piece = orm.TranscribedPiece(super_locus=self.sl, position=0, transcribed=self.scribed)
+        self.piece = orm.TranscribedPiece(super_locus=self.sl, position=1, transcribed=self.scribed)
+        self.ti = api.TranscriptInterpBase(transcript=self.scribed_handler, super_locus=self.sl, session=sess)
+
+        # setup ranges for a two-exon coding gene
+        self.coordinates = orm.Coordinates(seqid='a', start=1, end=2000)
+        # todo, setup 2x pieces on the same sequence/coord for sort testing fun
+
+
 def test_biointerp_features_as_ranges():
     sess = mk_session()
     fw = BiointerpDemoDataCoding(sess, is_plus_strand=True)
