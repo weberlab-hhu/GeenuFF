@@ -231,11 +231,27 @@ class TransitionStep(object):
 
 
 class Range(object):
-    def __init__(self, seqid, start, end, status):
-        self.seqid = seqid
+    def __init__(self, coordinate_id, piece_position, start, end, is_plus_strand):
+        self.coordinate_id = coordinate_id
         self.start = start
         self.end = end
-        self.status = status
+        self.piece_position = piece_position
+        self.is_plus_strand = is_plus_strand
+
+    def sort_key(self):
+        if self.is_plus_strand:
+            sort_pos = self.start
+        else:
+            sort_pos = -self.start  # flip sort order on the - strand
+        return self.piece_position, sort_pos
+
+    def sequence_chunk_info(self):
+        return self.coordinate_id, self.is_plus_strand, self.piece_position
+
+    def __eq__(self, other):
+        if isinstance(other, Range):
+            return self.__dict__ == other.__dict__
+        return False
 
 
 def positional_match(feature, previous):
@@ -353,16 +369,17 @@ class TranscriptInterpBase(object):
             if len(features_of_type) == 1:  # and 0 is simply ignored...
                 feature = features_of_type[0]
                 if self._is_open_or_start(feature):
-                    current = {"coordinate_id": feature.coordinate_id,
-                               "start": feature.position,
-                               "is_plus_strand": feature.is_plus_strand,
-                               "piece_position": piece.position}
+                    current = Range(coordinate_id=feature.coordinate_id,
+                                    start=feature.position,
+                                    end=None,
+                                    is_plus_strand=feature.is_plus_strand,
+                                    piece_position=piece.position)
                 else:
                     assert current is not None, "start/open must be seen before end/close for {}".format(feature)
-                    assert current["piece_position"] == piece.position, \
-                        "can't have start/end from different pieces ({} & {})".format(current["piece_position"],
+                    assert current.piece_position == piece.position, \
+                        "can't have start/end from different pieces ({} & {})".format(current.piece_position,
                                                                                       piece.position)
-                    current["end"] = feature.position
+                    current.end = feature.position
                     ranges.append(current)
                     current = None
         return ranges
@@ -380,11 +397,10 @@ class TranscriptInterpBase(object):
     def _make_trees(ranges):
         trees = {}
         for r in ranges:
-            coord_isplus = (r["coordinate_id"], r["is_plus_strand"], r["piece_position"])
+            coord_isplus = r.sequence_chunk_info()
             if coord_isplus not in trees:
                 trees[coord_isplus] = intervaltree.IntervalTree()
-            start, end = r["start"], r["end"]
-            start, end = min(start, end), max(start, end)
+            start, end = min(r.start, r.end), max(r.start, r.end)
             trees[coord_isplus][start:end] = r
         return trees
 
@@ -406,23 +422,16 @@ class TranscriptInterpBase(object):
                 keep_trees[key].chop(chop_out.begin, chop_out.end, self._copy_ival_data)
             for kept in keep_trees[key]:
                 start, end = kept.begin, kept.end
-                if not kept.data["is_plus_strand"]:
+                if not kept.data.is_plus_strand:
                     start, end = end, start
-                kept.data["start"] = start
-                kept.data["end"] = end
+                kept.data.start = start
+                kept.data.end = end
                 subtracted.append(kept.data)
         return self._resort_subtracted(subtracted)
 
-    def _resort_subtracted(self, subtracted_ranges):
-        return sorted(subtracted_ranges, key=self._resort_key)
-
     @staticmethod
-    def _resort_key(x):
-        if x["is_plus_strand"]:
-            sort_pos = x["start"]
-        else:
-            sort_pos = -x["start"]  # flip sort order on the - strand
-        return x["piece_position"], sort_pos
+    def _resort_subtracted(subtracted_ranges):
+        return sorted(subtracted_ranges, key=lambda x: x.sort_key())
 
     # common 'interpretations' or extractions of transcript-related data
     # the following should always return in the format
