@@ -23,7 +23,7 @@ class ImportControl(object):
         self.session = None
         self.err_path = err_path
         self.engine = None
-        self.anno_genome_handler = None
+        self.genome_handler = None
         self.coordinates = {}
         self.super_loci = []
         self.mk_session()
@@ -103,41 +103,41 @@ class ImportControl(object):
                 gene_group.append(entry)
         yield gene_group
 
-    def make_anno_genome(self, **kwargs):
+    def make_genome(self, **kwargs):
         # todo, parse in meta data from kwargs?
-        self.anno_genome_handler = AnnotatedGenomeHandler()
-        ag = orm.AnnotatedGenome()
-        self.anno_genome_handler.add_data(ag)
+        self.genome_handler = GenomeHandler()
+        ag = orm.Genome()
+        self.genome_handler.add_data(ag)
         self.session.add(ag)
         self.session.commit()
 
     def add_sequences(self, seq_path):
-        if self.anno_genome_handler is None:
-            self.make_anno_genome()
-        self.anno_genome_handler.add_sequences(seq_path)
+        if self.genome_handler is None:
+            self.make_genome()
+        self.genome_handler.add_sequences(seq_path)
         self.session.commit()
 
     def add_gff(self, gff_file, clean=True):
         # final prepping of seqid match up
-        self.anno_genome_handler.mk_mapper(gff_file)
+        self.genome_handler.mk_mapper(gff_file)
 
         super_loci = []
         err_handle = open(self.err_path, 'w')
         i = 1
         for entry_group in self.group_gff_by_gene(gff_file):
             super_locus = SuperLocusHandler(controller=self)
-            if self.anno_genome_handler is None:
-                raise AttributeError('An AnnotatedGenomeHandler has to exist .add_gff '
-                                     'is called, use (self.make_anno_genome(...)')
+            if self.genome_handler is None:
+                raise AttributeError('An GenomeHandler has to exist .add_gff '
+                                     'is called, use (self.make_genome(...)')
             if clean:
                 super_locus.add_n_clean_gff_entry_group(entry_group,
                                                         err_handle,
-                                                        annotated_genome=self.anno_genome_handler.data,
+                                                        genome=self.genome_handler.data,
                                                         controller=self)
             else:
                 super_locus.add_gff_entry_group(entry_group,
                                                 err_handle,
-                                                annotated_genome=self.anno_genome_handler.data,
+                                                genome=self.genome_handler.data,
                                                 controller=self)
 
             super_loci.append(super_locus)  # just to keep some direct python link to this
@@ -154,8 +154,8 @@ class ImportControl(object):
                         (orm.TranscribedPiece.__table__.insert(), self.transcribed_pieces_to_add),
                         (orm.Translated.__table__.insert(), self.translateds_to_add),
                         (orm.Feature.__table__.insert(), self.features_to_add),
-                        (orm.association_transcribed_pieces_to_features.insert(), self.feature2transcribed_pieces_to_add),
-                        (orm.association_translateds_to_features.insert(), self.feature2translateds_to_add)
+                        (orm.association_transcribed_piece_to_feature.insert(), self.feature2transcribed_pieces_to_add),
+                        (orm.association_translated_to_feature.insert(), self.feature2translateds_to_add)
                         ]
         conn = self.engine.connect()
         for insert, a_list in insert_lists:
@@ -165,8 +165,8 @@ class ImportControl(object):
 
     def clean_super_loci(self):
         for sl in self.super_loci:
-            coordinates = self.anno_genome_handler.gffid_to_coords[sl.gffentry.seqid]
-            sl.check_and_fix_structure(coordinates, controller=self)
+            coordinate = self.genome_handler.gffid_to_coords[sl.gffentry.seqid]
+            sl.check_and_fix_structure(coordinate, controller=self)
 
 
 ##### gff parsing subclasses #####
@@ -187,7 +187,7 @@ class GFFDerived(object):
         raise NotImplementedError
 
 
-class AnnotatedGenomeHandler(api.AnnotatedGenomeHandlerBase):
+class GenomeHandler(api.GenomeHandlerBase):
     def __init__(self, controller=None):
         super().__init__()
         if controller is not None:
@@ -205,7 +205,7 @@ class AnnotatedGenomeHandler(api.AnnotatedGenomeHandlerBase):
 
     @property
     def data_type(self):
-        return orm.AnnotatedGenome
+        return orm.Genome
 
     @property
     def gffid_to_coords(self):
@@ -244,8 +244,8 @@ class AnnotatedGenomeHandler(api.AnnotatedGenomeHandlerBase):
         for fasta_header, seq in fp.read_fasta(seq_file):
             seqid = fasta_header.split(id_delim)[0]
             # todo, parallelize sequence & annotation format, then import directly from ~Slice
-            orm.Coordinates(start=0, end=len(seq), seqid=seqid, sha1=self.hashseq(seq),
-                            annotated_genome=self.data)
+            orm.Coordinate(start=0, end=len(seq), seqid=seqid, sha1=self.hashseq(seq),
+                            genome=self.data)
 
 
 class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
@@ -301,25 +301,25 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
         for entry in entries:
             self.add_gff_entry(entry, controller)
 
-    def add_gff_entry_group(self, entries, ts_err_handle, annotated_genome, controller):
+    def add_gff_entry_group(self, entries, ts_err_handle, genome, controller):
         try:
             self._add_gff_entry_group(entries, controller)
         except TransSplicingError as e:
-            coordinates = annotated_genome.handler.gffid_to_coords[entries[0].seqid]
-            self._mark_erroneous(entries[0], coordinates, controller, 'trans-splicing')
+            coordinate = genome.handler.gffid_to_coords[entries[0].seqid]
+            self._mark_erroneous(entries[0], coordinate, controller, 'trans-splicing')
             logging.warning('skipping but noting trans-splicing: {}'.format(str(e)))
             ts_err_handle.writelines([x.to_json() for x in entries])
         except AssertionError as e:
-            coordinates = annotated_genome.handler.gffid_to_coords[entries[0].seqid]
-            self._mark_erroneous(entries[0], coordinates, controller, str(e))
+            coordinate = genome.handler.gffid_to_coords[entries[0].seqid]
+            self._mark_erroneous(entries[0], coordinate, controller, str(e))
             logging.warning('marking errer bc {}'.format(e))
 
-    def add_n_clean_gff_entry_group(self, entries, ts_err_handle, annotated_genome, controller):
-        self.add_gff_entry_group(entries, ts_err_handle, annotated_genome, controller)
-        coordinates = annotated_genome.handler.gffid_to_coords[self.gffentry.seqid]
-        self.check_and_fix_structure(coordinates, controller=controller)
+    def add_n_clean_gff_entry_group(self, entries, ts_err_handle, genome, controller):
+        self.add_gff_entry_group(entries, ts_err_handle, genome, controller)
+        coordinate = genome.handler.gffid_to_coords[self.gffentry.seqid]
+        self.check_and_fix_structure(coordinate, controller=controller)
 
-    def _mark_erroneous(self, entry, coordinates, controller, msg=''):
+    def _mark_erroneous(self, entry, coordinate, controller, msg=''):
         assert entry.type in [x.value for x in types.SuperLocusAll]
         logging.warning(
             '{species}:{seqid}, {start}-{end}:{gene_id} by {src}, {msg} - marked erroneous'.format(
@@ -346,7 +346,7 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
         feature_err_open = FeatureHandler(controller, processed=True)
         feature_err_open.gffentry = copy.deepcopy(entry)
         packed = feature_err_open.setup_insertion_ready(super_locus=self, transcribed_pieces=[piece_handler],
-                                                        coordinates=coordinates)
+                                                        coordinate=coordinate)
         feature, feature2pieces, feature2translateds = packed
         for key, val in [('type', types.ERROR), ('bearing', types.START), ('position', err_start)]:
             feature[key] = val
@@ -358,7 +358,7 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
         feature_err_close = FeatureHandler(controller, processed=True)
         feature_err_close.gffentry = copy.deepcopy(entry)
         packed = feature_err_close.setup_insertion_ready(super_locus=self, transcribed_pieces=[piece_handler],
-                                                         coordinates=coordinates)
+                                                         coordinate=coordinate)
         feature, feature2pieces, feature2translateds = packed
         for key, val in [('type', types.ERROR), ('bearing', types.END), ('position', err_end)]:
             feature[key] = val
@@ -369,14 +369,14 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
         transcribed_e_handler.feature_handlers += [feature_err_open, feature_err_close]
         self.transcribed_handlers.append(transcribed_e_handler)
 
-    def check_and_fix_structure(self, coordinates, controller):
+    def check_and_fix_structure(self, coordinate, controller):
         # todo, add against sequence check to see if start/stop and splice sites are possible or not, e.g. is start ATG?
         # if it's empty (no bottom level features at all) mark as erroneous
         features = []
         for transcript in self.transcribed_handlers:
             features += transcript.feature_handlers
         if not features:
-            self._mark_erroneous(self.gffentry, coordinates=coordinates, controller=controller)
+            self._mark_erroneous(self.gffentry, coordinate=coordinate, controller=controller)
 
         for transcript in self.transcribed_handlers:
             t_interpreter = TranscriptInterpreter(transcript, super_locus=self, controller=controller)
@@ -430,7 +430,7 @@ class FeatureHandler(api.FeatureHandlerBase, GFFDerived):
             raise ValueError('cannot interpret strand "{}"'.format(self.gffentry.strand))
 
     def setup_insertion_ready(self, super_locus=None, transcribed_pieces=None, translateds=None,
-                              coordinates=None):
+                              coordinate=None):
 
         if transcribed_pieces is None:
             transcribed_pieces = []
@@ -448,7 +448,7 @@ class FeatureHandler(api.FeatureHandlerBase, GFFDerived):
         feature = {'id': self.id,
                    'subtype': 'general',
                    'given_id': self.given_id,
-                   'coordinate_id': coordinates.id,
+                   'coordinate_id': coordinate.id,
                    'is_plus_strand': self.is_plus_strand,
                    'score': self.gffentry.score,
                    'source': self.gffentry.source,
@@ -461,7 +461,7 @@ class FeatureHandler(api.FeatureHandlerBase, GFFDerived):
 
         return feature, feature2pieces, feature2translateds
 
-    # "+ strand" [upstream, downstream) or "- strand" (downstream, upstream] from 0 coordinates
+    # "+ strand" [upstream, downstream) or "- strand" (downstream, upstream] from 0 coordinate
     def upstream_from_interval(self, interval):
         if self.is_plus_strand:
             return interval.begin
@@ -611,7 +611,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             self.proteins = None  # this way we only run into an error if we actually wanted to use proteins
 
     def new_feature(self, template, translateds=None, **kwargs):
-        coordinates = self.controller.anno_genome_handler.gffid_to_coords[template.gffentry.seqid]
+        coordinate = self.controller.genome_handler.gffid_to_coords[template.gffentry.seqid]
         handler = FeatureHandler(controller=self.controller, processed=True)
         handler.gffentry = copy.deepcopy(template.gffentry)
 
@@ -619,7 +619,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             self.super_locus,
             self.transcript.transcribed_piece_handlers,  # todo, add flexibility for parsing trans-splicing...
             translateds,
-            coordinates)
+            coordinate)
         for key in kwargs:
             feature[key] = kwargs[key]
 
@@ -701,7 +701,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         else:
             raise TransSplicingError(
                 "Mixed strands at {} with {}".format(self.super_locus.id,
-                                                     [(x.coordinates.seqid, x.strand) for x in features]))
+                                                     [(x.coordinate.seqid, x.strand) for x in features]))
 
     def drop_invervals_with_duplicated_data(self, ivals_before, ivals_after):
         all_data = [x.data.data for x in ivals_before + ivals_after]
@@ -831,7 +831,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             gap_len = (after_upstream - before_downstream) * sign
             assert gap_len > 0, "inverse gap between {} and {} at putative control codon seq {}, gene {}, " \
                                 "features {} {}".format(before_downstream, after_upstream,
-                                                        after0.data.coordinates.seqid, self.super_locus.id,
+                                                        after0.data.coordinate.seqid, self.super_locus.id,
                                                         before0.data.id, after0.data.id)
         return is_gap
 
@@ -954,7 +954,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             self.status.saw_start(phase=cds_feature.gffentry.phase)
             self.status.saw_tss()  # coding implies the transcript
             # mask a dummy region up-stream as it's very unclear whether it should be intergenic/intronic/utr
-            gffid_to_coords = self.controller.anno_genome_handler.gffid_to_coords
+            gffid_to_coords = self.controller.genome_handler.gffid_to_coords
             if plus_strand:
                 # unless we're at the start of the sequence
                 start_of_sequence = gffid_to_coords[cds_feature.gffentry.seqid].start
@@ -969,7 +969,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                                      position=err_end, phase=None)
             else:
                 end_of_sequence = gffid_to_coords[cds_feature.gffentry.seqid].end - 1
-                #end_of_sequence = cds_feature.data.coordinates.end - 1   # bc we need last valid index for coordinates
+                #end_of_sequence = cds_feature.data.coordinate.end - 1   # bc we need last valid index for coordinate
                 if at != end_of_sequence:
                     err_start = min(end_of_sequence, at + error_buffer)
                     err_end = at - 1  # so that the error masks the coordinate with the close status
@@ -1003,11 +1003,11 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             self.status.saw_start(phase=cds_feature.gffentry.phase)
             self.status.saw_tss()  # coding implies the transcript
             # may or may not be stop codon, but will just mark as error (unless at edge of sequence)
-            gffid_to_coords = self.controller.anno_genome_handler.gffid_to_coords
+            gffid_to_coords = self.controller.genome_handler.gffid_to_coords
             start_of_sequence = gffid_to_coords[cds_feature.gffentry.seqid].start - 1
-            #start_of_sequence = i0.data.data.coordinates.start - 1  # because we need to be able to
+            #start_of_sequence = i0.data.data.coordinate.start - 1  # because we need to be able to
             end_of_sequence = gffid_to_coords[cds_feature.gffentry.seqid].end
-            #end_of_sequence = i0.data.data.coordinates.end
+            #end_of_sequence = i0.data.data.coordinate.end
             if plus_strand:
                 if at != end_of_sequence:
                     err_start = at - 1  # so that the error masks the coordinate with the open status

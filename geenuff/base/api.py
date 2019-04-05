@@ -40,18 +40,18 @@ class Handler(object):
         raise NotImplementedError
 
 
-class AnnotatedGenomeHandlerBase(Handler):
+class GenomeHandlerBase(Handler):
 
     @property
     def data_type(self):
-        return orm.AnnotatedGenome
+        return orm.Genome
 
 
-class CoordinatesHandlerBase(Handler):
+class CoordinateHandlerBase(Handler):
 
     @property
     def data_type(self):
-        return orm.Coordinates
+        return orm.Coordinate
 
 
 class SuperLocusHandlerBase(Handler):
@@ -271,8 +271,8 @@ class TranscriptInterpBase(object):
     def sorted_features(piece):
         features = piece.features
         # confirm strand & seqid
-        assert all([f.coordinates == features[0].coordinates for f in features]), \
-            'not all matching: {}'.format([(f.id, f.coordinates) for f in features])
+        assert all([f.coordinate == features[0].coordinate for f in features]), \
+            'not all matching: {}'.format([(f.id, f.coordinate) for f in features])
         assert all([f.is_plus_strand == features[0].is_plus_strand for f in features]), \
             'not all matching: {}'.format([(f.id, f.is_plus_strand) for f in features])
         features = sorted(features, key=lambda x: x.pos_cmp_key())
