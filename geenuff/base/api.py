@@ -253,6 +253,10 @@ class Range(object):
             return self.__dict__ == other.__dict__
         return False
 
+    def __repr__(self):
+        return "coordinate: {}, piece position {}, is_plus {}: {}-{}".format(self.coordinate_id, self.piece_position,
+                                                                             self.is_plus_strand, self.start, self.end)
+
 
 def positional_match(feature, previous):
     return feature.pos_cmp_key() == previous.pos_cmp_key()

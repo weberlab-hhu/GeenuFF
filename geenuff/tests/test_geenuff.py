@@ -448,8 +448,8 @@ class BioInterpDemodataTranssplice(object):
         self.scribed, self.scribed_handler = setup_data_handler(
             api.TranscribedHandlerBase, orm.Transcribed, super_locus=self.sl)
 
-        self.piece = orm.TranscribedPiece(position=0, transcribed=self.scribed)
-        self.piece = orm.TranscribedPiece(position=1, transcribed=self.scribed)
+        self.piece0 = orm.TranscribedPiece(position=0, transcribed=self.scribed)
+        self.piece1 = orm.TranscribedPiece(position=1, transcribed=self.scribed)
         self.ti = api.TranscriptInterpBase(transcript=self.scribed_handler, super_locus=self.sl, session=sess)
 
         # setup ranges for a two-exon coding gene
@@ -501,8 +501,17 @@ class BioInterpDemodataTranssplice(object):
                                              is_plus_strand=is_plus_strand_piece1, position=trans_intron_open,
                                              type=types.TRANS_INTRON, bearing=types.OPEN_STATUS)
 
+        self.piece0.features = [self.transcribed0_start, self.transcribed0_end,
+                                self.trans_intron0_start, self.trans_intron0_end]
+        self.piece1.features = [self.transcribed1_start, self.transcribed1_end,
+                                self.trans_intron1_start, self.trans_intron1_end]
+
+        sess.add_all([self.ag, self.sl])
+        sess.commit()
+
 
 def test_biointerp_features_as_ranges():
+    """checks biological interpretation for ranges from db for simple, spliced, coding gene"""
     sess = mk_session()
     fw = BiointerpDemoDataCoding(sess, is_plus_strand=True)
 
@@ -550,6 +559,32 @@ def test_biointerp_features_as_ranges():
                                                              start=900, end=800),
                                                    api.Range(coordinate_id=2, is_plus_strand=False, piece_position=0,
                                                              start=200, end=100)]
+
+
+def test_biointerp_features_as_ranges_transsplice():
+    """checks biological interpretation for ranges from db for non-coding, trans-spliced (from same chromosome) gene"""
+    sess = mk_session()
+    fw = BioInterpDemodataTranssplice(sess, is_plus_strand_piece0=True, is_plus_strand_piece1=True)
+
+    assert fw.ti.transcribed_ranges() == [api.Range(coordinate_id=1, is_plus_strand=True, piece_position=0,
+                                                    start=500, end=700),
+                                          api.Range(coordinate_id=1, is_plus_strand=True, piece_position=1,
+                                                    start=100, end=300)]
+
+    assert fw.ti.trans_intronic_ranges() == [api.Range(coordinate_id=1, is_plus_strand=True, piece_position=0,
+                                                       start=600, end=700),
+                                             api.Range(coordinate_id=1, is_plus_strand=True, piece_position=1,
+                                                       start=100, end=200)]
+
+    rev = BioInterpDemodataTranssplice(sess, is_plus_strand_piece0=False, is_plus_strand_piece1=True)
+    assert rev.ti.transcribed_ranges() == [api.Range(coordinate_id=2, is_plus_strand=False, piece_position=0,
+                                                     start=700, end=500),
+                                           api.Range(coordinate_id=2, is_plus_strand=True, piece_position=1,
+                                                     start=100, end=300)]
+    assert rev.ti.trans_intronic_ranges() == [api.Range(coordinate_id=2, is_plus_strand=False, piece_position=0,
+                                                        start=600, end=500),
+                                              api.Range(coordinate_id=2, is_plus_strand=True, piece_position=1,
+                                                        start=100, end=200)]
 
 
 def test_biointerp_features_as_transitions():
