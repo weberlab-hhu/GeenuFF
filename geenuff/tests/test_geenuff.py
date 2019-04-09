@@ -157,16 +157,31 @@ def test_feature_has_its_things():
     g = orm.Genome()
     c = orm.Coordinate(start=1, end=30, seqid='abc', genome=g)
     f = orm.Feature(coordinate=c)
-    sess.add(f)
+    sess.add_all([f, c])
     sess.commit()
 
     assert f.is_plus_strand is None
     assert f.source is None
     assert f.score is None
     # test feature with
-    f1 = orm.Feature(is_plus_strand=False, position=3)
+    f1 = orm.Feature(is_plus_strand=False, start=3, end=-1, coordinate=c)
     assert not f1.is_plus_strand
-    assert f1.position == 3
+    assert f1.start == 3
+    assert f1.end == -1
+    sess.add(f1)
+    sess.commit()
+    # test too low of start / end coordinates raise an error
+    f_should_fail = orm.Feature(is_plus_strand=True, start=-5, end=10, coordinate=c)
+    sess.add(f_should_fail)
+    with pytest.raises(sqlalchemy.exc.IntegrityError):
+        sess.commit()
+    sess.rollback()
+
+    f_should_fail = orm.Feature(is_plus_strand=False, start=5, end=-2, coordinate=c)
+    sess.add(f_should_fail)
+    with pytest.raises(sqlalchemy.exc.IntegrityError):
+        sess.commit()
+    sess.rollback()
     # test wrong class as parameter
     with pytest.raises(KeyError):
         f2 = orm.Feature(coordinate=f)
@@ -247,25 +262,29 @@ def test_order_pieces():
     scribed.transcribed_pieces = [piece0, piece1, piece2]
     sess.add_all([scribed, piece1, piece0, piece2])
     sess.commit()
-    # setup some paired features
+    # setup some features on different pieces
     feature0u = orm.Feature(transcribed_pieces=[piece0],
                             coordinate=coor,
-                            position=100,
+                            start=100,
+                            end=200,
                             given_id='0u',
                             is_plus_strand=True)
     feature1d = orm.Feature(transcribed_pieces=[piece1],
                             coordinate=coor,
-                            position=1,
+                            start=1,
+                            end=3,
                             given_id='1d',
                             is_plus_strand=True)
     feature1u = orm.Feature(transcribed_pieces=[piece1],
                             coordinate=coor,
-                            position=100,
+                            start=100,
+                            end=200,
                             given_id='1u',
                             is_plus_strand=True)
     feature2d = orm.Feature(transcribed_pieces=[piece2],
                             coordinate=coor,
-                            position=1,
+                            start=1,
+                            end=3,
                             given_id='2d',
                             is_plus_strand=True)
     # see if they can be ordered as expected overall
@@ -285,8 +304,16 @@ class TransspliceDemoData(object):
     """Setup of a rather complex transplicing scenario."""
     def __init__(self, sess):
         # setup two transitions:
-        # 1) scribed - [->[TSS(A),START(B),TDSS(C{->F}),TTS(D)], ->[TSS(E), <<slice>>> TASS(F),STOP(G),TTS(H)]]
-        # 2) scribedflip - [->[TSS(A),START(B),TDSS(C{->F'}),TTS(D)], <-[TTS(H'), <<slice>> STOP(G'),TASS(F'),TSS(E')]]
+        # 1) scribed [-> ABC][-> DEF]
+        #  transcribed A [  (               )  ]   D [  (                 ) ]
+        #       coding B [          (       )* ]   E [ *(             )     ]
+        # trans_intron C [               (  )* ]   F [ *(     )             ]
+
+        # 2) scribedflip [-> ABC][<- DEF]
+        #  transcribed A [  (               )  ]   Dp[ (                 )  ]
+        #       coding B [          (       )* ]   Ep[     (             )* ]
+        # trans_intron C [               (  )* ]   Fp[             (     )* ]
+
         g = orm.Genome()
         self.old_coor = orm.Coordinate(seqid='a', start=1, end=2000, genome=g)
         self.sl, self.slh = setup_data_handler(api.SuperLocusHandlerBase, orm.SuperLocus)
@@ -303,58 +330,53 @@ class TransspliceDemoData(object):
                                                super_locus=self.sl,
                                                session=sess)
 
-        self.pieceA2D = orm.TranscribedPiece(position=0, transcribed=self.scribed)
-        self.pieceE2H = orm.TranscribedPiece(position=1, transcribed=self.scribed)
-        self.pieceA2Dp = orm.TranscribedPiece(position=0, transcribed=self.scribedflip)
-        self.pieceEp2Hp = orm.TranscribedPiece(position=1, transcribed=self.scribedflip)
-        self.scribed.transcribed_pieces = [self.pieceA2D, self.pieceE2H]
-        self.scribedflip.transcribed_pieces = [self.pieceA2Dp, self.pieceEp2Hp]
-        # pieceA2D features
+        self.pieceA2C = orm.TranscribedPiece(position=0, transcribed=self.scribed)
+        self.pieceD2F = orm.TranscribedPiece(position=1, transcribed=self.scribed)
+        self.pieceA2C_prime = orm.TranscribedPiece(position=0, transcribed=self.scribedflip)
+        self.pieceD2F_prime = orm.TranscribedPiece(position=1, transcribed=self.scribedflip)
+        self.scribed.transcribed_pieces = [self.pieceA2C, self.pieceD2F]
+        self.scribedflip.transcribed_pieces = [self.pieceA2Cp, self.pieceDp2Fp]
+        # pieceA2C features
+        self.fA = orm.Feature(coordinate=self.old_coor, start=10, end=40, given_id='A',
+                              start_is_biological_start=True, end_is_biological_end=True,
+                              is_plus_strand=True, type=types.TRANSCRIBED)
 
-        self.fA = orm.Feature(coordinate=self.old_coor, position=10, given_id='A',
-                              is_plus_strand=True, type=types.TRANSCRIBED, bearing=types.START)
-        self.fB = orm.Feature(coordinate=self.old_coor, position=20, given_id='B',
-                              is_plus_strand=True, type=types.CODING, bearing=types.START)
+        self.fB = orm.Feature(coordinate=self.old_coor, start=20, end=40, given_id='B',
+                              start_is_biological_start=True, end_is_biological_end=False,
+                              is_plus_strand=True, type=types.CODING)
 
-        self.fC = orm.Feature(coordinate=self.old_coor, position=30, given_id='C',
-                              is_plus_strand=True, type=types.TRANS_INTRON, bearing=types.START)
-        self.fD = orm.Feature(coordinate=self.old_coor, position=40, given_id='D',
-                              is_plus_strand=True, type=types.TRANSCRIBED, bearing=types.END)
-        self.fADs0 = orm.Feature(coordinate=self.old_coor, position=40, given_id='ADs0',
-                                 is_plus_strand=True, type=types.TRANS_INTRON, bearing=types.CLOSE_STATUS)
-        self.fADs1 = orm.Feature(coordinate=self.old_coor, position=40, given_id='ADs1',
-                                 is_plus_strand=True, type=types.CODING, bearing=types.CLOSE_STATUS)
-        # pieceE2H features
-        self.fEHs0 = orm.Feature(coordinate=self.old_coor, position=910, given_id='EHs0',
-                                 is_plus_strand=True, type=types.TRANS_INTRON, bearing=types.OPEN_STATUS)
-        self.fEHs1 = orm.Feature(coordinate=self.old_coor, position=910, given_id='EHs1',
-                                 is_plus_strand=True, type=types.CODING, bearing=types.OPEN_STATUS)
-        self.fE = orm.Feature(coordinate=self.old_coor, position=910, given_id='E',
-                              is_plus_strand=True, type=types.TRANSCRIBED, bearing=types.START)
-        self.fF = orm.Feature(coordinate=self.old_coor, position=920, given_id='F',
-                              is_plus_strand=True, type=types.TRANS_INTRON, bearing=types.END)
-        self.fG = orm.Feature(coordinate=self.old_coor, position=930, given_id='G',
-                              is_plus_strand=True, type=types.CODING, bearing=types.END)
-        self.fH = orm.Feature(coordinate=self.old_coor, position=940, given_id='H',
-                              is_plus_strand=True, type=types.TRANSCRIBED, bearing=types.END)
-        # pieceEp2Hp features
-        self.fEHps0 = orm.Feature(coordinate=self.old_coor, position=940, given_id='EHsp0',
-                                  is_plus_strand=False, type=types.TRANS_INTRON, bearing=types.OPEN_STATUS)
-        self.fEHps1 = orm.Feature(coordinate=self.old_coor, position=940, given_id='EHsp1',
-                                  is_plus_strand=False, type=types.CODING, bearing=types.OPEN_STATUS)
-        self.fEp = orm.Feature(coordinate=self.old_coor, position=940, given_id='Ep',
-                               is_plus_strand=False, type=types.TRANSCRIBED, bearing=types.START)
-        self.fFp = orm.Feature(coordinate=self.old_coor, position=930, given_id='Fp',
-                               bearing=types.END, is_plus_strand=False, type=types.TRANS_INTRON)
-        self.fGp = orm.Feature(coordinate=self.old_coor, position=920, given_id='Gp',
-                               is_plus_strand=False, type=types.CODING, bearing=types.END)
-        self.fHp = orm.Feature(coordinate=self.old_coor, position=910, given_id='Hp',
-                               is_plus_strand=False, type=types.TRANSCRIBED, bearing=types.END)
+        self.fC = orm.Feature(coordinate=self.old_coor, start=30, end=40, given_id='C',
+                              start_is_biological_start=True, end_is_biological_end=False,
+                              is_plus_strand=True, type=types.TRANS_INTRON)
 
-        self.pieceA2D.features = [self.fA, self.fB, self.fC, self.fD, self.fADs0, self.fADs1]
-        self.pieceA2Dp.features = [self.fA, self.fB, self.fC, self.fD, self.fADs0, self.fADs1]
-        self.pieceE2H.features = [self.fE, self.fF, self.fG, self.fH, self.fEHs0, self.fEHs1]
-        self.pieceEp2Hp.features = [self.fEp, self.fFp, self.fGp, self.fHp, self.fEHps0, self.fEHps1]
+        # pieceD2F features
+        self.fD = orm.Feature(coordinate=self.old_coor, start=910, end=940, given_id='D',
+                              start_is_biological_start=True, end_is_biological_end=True,
+                              is_plus_strand=True, type=types.TRANSCRIBED)
+
+        self.fE = orm.Feature(coordinate=self.old_coor, start=910, end=930, given_id='E',
+                              start_is_biological_start=False, end_is_biological_end=True,
+                              is_plus_strand=True, type=types.CODING)
+
+        self.fF = orm.Feature(coordinate=self.old_coor, start=910, end=920, given_id='F',
+                              start_is_biological_start=False, end_is_biological_end=True,
+                              is_plus_strand=True, type=types.TRANS_INTRON)
+
+        # pieceD2F_prime features
+        self.fDp = orm.Feature(coordinate=self.old_coor, start=940, end=910, given_id='Dp',
+                               start_is_biological_start=True, end_is_biological_end=True,
+                               is_plus_strand=False, type=types.TRANSCRIBED)
+        self.fEp = orm.Feature(coordinate=self.old_coor, start=940, end=920, given_id='Ep',
+                               start_is_biological_start=False, end_is_biological_end=True,
+                               is_plus_strand=False, type=types.CODING)
+        self.fFp = orm.Feature(coordinate=self.old_coor, start=940, end=930, given_id='Fp',
+                               start_is_biological_start=False, end_is_biological_end=True,
+                               is_plus_strand=False, type=types.TRANS_INTRON)
+
+        self.pieceA2C.features = [self.fA, self.fB, self.fC]
+        self.pieceA2C_prime.features = [self.fA, self.fB, self.fC]
+        self.pieceD2F.features = [self.fD, self.fE, self.fF]
+        self.pieceD2F_prime.features = [self.fDp, self.fEp, self.fFp]
         sess.add(self.sl)
         sess.commit()
 

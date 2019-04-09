@@ -106,7 +106,7 @@ class TranscribedPiece(Base):
 
     def __repr__(self):
         return "<TranscribedPiece, {}: with features {}>".format(
-            self.id, [(x.id, x.position, x.given_id) for x in self.features])
+            self.id, [(x.id, x.start, x.end, x.given_id) for x in self.features])
 
 
 class Translated(Base):
