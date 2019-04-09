@@ -598,8 +598,15 @@ class NoGFFEntryError(Exception):
     pass
 
 
+class Position(object):
+    """organized data holder for passing start/end coordinates around"""
+    def __init__(self, position, is_biological):
+        self.position = position
+        self.is_biological = is_biological
+
+
 class TranscriptInterpreter(api.TranscriptInterpBase):
-    """takes raw/from-gff transcript, and makes totally explicit"""
+    """takes raw/from-gff transcript, and converts to geenuff explicit format"""
     HANDLED = 'handled'
 
     def __init__(self, transcript, super_locus, controller):
@@ -626,6 +633,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         self.controller.features_to_add.append(feature)
         self.controller.feature2transcribed_pieces_to_add += feature2pieces
         self.controller.feature2translateds_to_add += feature2translateds
+        return feature
 
     @staticmethod
     def pick_one_interval(interval_set, target_type=None):
@@ -840,6 +848,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         return self.proteins[pid]
 
     def handle_control_codon(self, ivals_before, ivals_after, sign, is_start=True, error_buffer=2000):
+        # todo, hard_pairing
         target_after_type = None
         target_before_type = None
         if is_start:
@@ -862,29 +871,30 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             at = template.upstream_from_interval(after0)
             if template.gffentry.phase == 0:  # "non-0 phase @ {} in {}".format(template.id, template.super_locus.id)
                 start = at
-                self.new_feature(template=template, position=start, type=types.CODING,
-                                 bearing=types.START, translateds=[translated])
+                coding_feature = self.new_feature(template=template, start=start, type=types.CODING,
+                                                  start_is_biological_start=True, translateds=[translated])
+                self.status.open_translated = coding_feature
                 self.status.saw_start(phase=0)
             else:
                 err_start = before0.data.upstream_from_interval(before0) - sign * error_buffer  # mask prev feat. too
                 err_end = at + sign  # so that the error masks the coordinate with the close status
 
-                self.new_feature(template=template, type=types.ERROR, position=err_start,
-                                 phase=None, bearing=types.START)
-                self.new_feature(template=template, type=types.ERROR, position=err_end,
-                                 phase=None, bearing=types.END)
-                self.new_feature(template=template, type=types.CODING, position=at,
-                                 bearing=types.OPEN_STATUS, translateds=[translated])
-                self.new_feature(template=template, type=types.TRANSCRIBED, position=at,
-                                 phase=None, bearing=types.OPEN_STATUS)
+                self.new_feature(template=template, type=types.ERROR, start=err_start, end=err_end,
+                                 start_is_biological_start=True, end_is_biological_end=True,
+                                 phase=None)
+
+                coding_feature = self.new_feature(template=template, type=types.CODING, start=at,
+                                                  start_is_biological_start=False, translateds=[translated])
+                self.status.open_translated = coding_feature
                 self.status.saw_start(template.phase)
+
         else:
             # todo, confirm phase for stop codon
             template = before0.data
-            translated = self.get_protein(template)
             at = template.downstream_from_interval(before0)
-            self.new_feature(template=template, position=at, type=types.CODING,
-                             bearing=types.END, translateds=[translated])
+            self.status.open_translated.update(
+                {'end': at, 'end_is_biological_end': True})
+            self.status.open_translated = None  # updates just once, better drop link after
             self.status.saw_stop()
             if is_gap:
                 self.handle_splice(ivals_before, ivals_after, sign)
@@ -909,10 +919,10 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         between_splice_sites = (acceptor_at - donor_at) * sign
         min_intron_len = 3  # todo, maybe get something small but not entirely impossible?
         if between_splice_sites > min_intron_len:
-            self.new_feature(template=donor_tmplt, position=donor_at, phase=None,
-                             type=types.INTRON, bearing=types.START)
-            self.new_feature(template=acceptor_tmplt, position=acceptor_at,
-                             type=types.INTRON, bearing=types.END)
+            self.new_feature(template=donor_tmplt, start=donor_at, end=acceptor_at, phase=None,
+                             start_is_biological_start=True, end_is_biological_end=True,
+                             type=types.INTRON)  # todo, hard_pairing, does rm the acceptor_tmplt from acceptor hurt?
+
         # do nothing if there is just no gap between exons for a technical / reporting error
         elif between_splice_sites == 0:
             pass
@@ -926,10 +936,9 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                 err_start = donor_tmplt.upstream() - 1  # to fr 0
                 err_end = acceptor_tmplt.downstream() - 2  # -1 to fr 0, -1 to excl = -2
 
-            self.new_feature(template=before0.data, position=err_start,
+            self.new_feature(template=before0.data, start=err_start, end=err_end,
+                             start_is_biological_start=True, end_is_biological_end=True,
                              type=types.ERROR, bearing=types.START)
-            self.new_feature(template=before0.data, position=err_end,
-                             type=types.ERROR, bearing=types.END)
 
     def interpret_first_pos(self, intervals, plus_strand=True, error_buffer=2000):
         # shortcuts
@@ -940,17 +949,21 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         possible_types = self.possible_types(intervals)
         if types.FIVE_PRIME_UTR in possible_types:
             # this should indicate we're good to go and have a transcription start site
-            self.new_feature(template=i0.data, type=types.TRANSCRIBED, position=at,
-                             phase=None, bearing=types.START)
+            transcribed_feature = self.new_feature(template=i0.data, type=types.TRANSCRIBED, start=at,
+                                                   phase=None, start_is_biological_start=True)
+            self.status.open_transcribed = transcribed_feature
             self.status.saw_tss()
         elif cds in possible_types:
             # this could be first exon detected or start codon, ultimately, indeterminate
             cds_feature = self.pick_one_interval(intervals, target_type=cds).data
             translated = self.get_protein(cds_feature)
-            self.new_feature(template=cds_feature, type=types.CODING, position=at,
-                             bearing=types.OPEN_STATUS, translateds=[translated])
-            self.new_feature(template=cds_feature, type=types.TRANSCRIBED, position=at,
-                             bearing=types.OPEN_STATUS)
+            # todo, hard_pairing
+            translated_feature = self.new_feature(template=cds_feature, type=types.CODING, start=at,
+                                                  start_is_biological_start=False, translateds=[translated])
+            self.status.open_translated = translated_feature
+            transcribed_feature = self.new_feature(template=cds_feature, type=types.TRANSCRIBED, start=at,
+                                                   start_is_biological_start=False)
+            self.status.open_transcribed = transcribed_feature
             self.status.saw_start(phase=cds_feature.gffentry.phase)
             self.status.saw_tss()  # coding implies the transcript
             # mask a dummy region up-stream as it's very unclear whether it should be intergenic/intronic/utr
@@ -962,11 +975,8 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                     err_start = max(start_of_sequence, at - error_buffer)
                     err_end = at + 1  # so that the error masks the coordinate with the close status
                     self.new_feature(template=cds_feature, type=types.ERROR,
-                                     bearing=types.START,
-                                     position=err_start, phase=None)
-                    self.new_feature(template=cds_feature, type=types.ERROR,
-                                     bearing=types.END,
-                                     position=err_end, phase=None)
+                                     start_is_biological_start=True, end_is_biological_end=True,
+                                     start=err_start, end=err_end, phase=None)
             else:
                 end_of_sequence = gffid_to_coords[cds_feature.gffentry.seqid].end - 1
                 #end_of_sequence = cds_feature.data.coordinate.end - 1   # bc we need last valid index for coordinate
@@ -974,11 +984,8 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                     err_start = min(end_of_sequence, at + error_buffer)
                     err_end = at - 1  # so that the error masks the coordinate with the close status
                     self.new_feature(template=cds_feature, type=types.ERROR,
-                                     bearing=types.START,
-                                     position=err_start, phase=None)
-                    self.new_feature(template=cds_feature, type=types.ERROR,
-                                     bearing=types.END,
-                                     position=err_end, phase=None)
+                                     start_is_biological_start=True, end_is_biological_end=True,
+                                     start=err_start, end=err_end, phase=None)
         else:
             raise ValueError("why's this gene not start with 5' utr nor cds? types: {}, interpretations: {}".format(
                 [x.data.gffentry.type for x in intervals], possible_types))
@@ -989,42 +996,42 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         possible_types = self.possible_types(intervals)
         if types.THREE_PRIME_UTR in possible_types:
             # this should be transcription termination site
-            self.new_feature(template=i0.data, type=types.TRANSCRIBED, bearing=types.END, position=at,
-                             phase=None)
+            self.status.open_transcribed.update(
+                {'end': at, 'end_is_biological_end': True})  # pointer to execute queue
+            self.status.open_transcribed = None
             self.status.saw_tts()
         elif types.CDS in possible_types:
             # may or may not be stop codon, but will just mark as error (unless at edge of sequence)
             cds_feature = self.pick_one_interval(intervals, target_type=types.CDS).data
-            translated = self.get_protein(cds_feature)
-            self.new_feature(template=cds_feature, type=types.CODING, position=at,
-                             bearing=types.CLOSE_STATUS, translateds=[translated])
-            self.new_feature(template=cds_feature, type=types.TRANSCRIBED, position=at,
-                             bearing=types.CLOSE_STATUS)
-            self.status.saw_start(phase=cds_feature.gffentry.phase)
-            self.status.saw_tss()  # coding implies the transcript
+
+            self.status.open_transcribed.update(
+                {'end': at, 'end_is_biological_end': False})
+            self.status.open_translated.update(
+                {'end': at, 'end_is_biological_end': False}
+            )
+            self.status.open_translated = None
+            self.status.open_transcribed = None
+            self.status.saw_stop()
+            self.status.saw_tts()
             # may or may not be stop codon, but will just mark as error (unless at edge of sequence)
             gffid_to_coords = self.controller.genome_handler.gffid_to_coords
+
             start_of_sequence = gffid_to_coords[cds_feature.gffentry.seqid].start - 1
-            #start_of_sequence = i0.data.data.coordinate.start - 1  # because we need to be able to
             end_of_sequence = gffid_to_coords[cds_feature.gffentry.seqid].end
-            #end_of_sequence = i0.data.data.coordinate.end
             if plus_strand:
                 if at != end_of_sequence:
                     err_start = at - 1  # so that the error masks the coordinate with the open status
                     err_end = min(at + error_buffer, end_of_sequence)
-                    self.new_feature(template=i0.data, type=types.ERROR, position=err_start,
-                                     phase=None, bearing=types.START)
-
-                    self.new_feature(template=i0.data, type=types.ERROR, position=err_end,
-                                     phase=None, bearing=types.END)
+                    self.new_feature(template=i0.data, type=types.ERROR, start=err_start, end=err_end,
+                                     start_is_biological_start=True, end_is_biological_end=True,
+                                     phase=None)
             else:
                 if at != start_of_sequence:
                     err_start = at + 1  # so that the error masks the coordinate with the open status
                     err_end = max(start_of_sequence, at - error_buffer)
                     self.new_feature(template=i0.data, type=types.ERROR,
-                                     phase=None, position=err_start, bearing=types.START)
-                    self.new_feature(template=i0.data, type=types.ERROR,
-                                     phase=None, position=err_end, bearing=types.END)
+                                     phase=None, start=err_start, start_is_biological_start=True,
+                                     end=err_end, end_is_biological_end=True)
         else:
             raise ValueError("why's this gene not end with 3' utr/exon nor cds? types: {}, interpretations: {}".format(
                 [x.data.type for x in intervals], possible_types)
@@ -1111,6 +1118,36 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             if not feature.processed:
                 out = False
         return out
+
+    @staticmethod
+    def _get_intervals_by_type(stacked_intervals, target_type):
+        out = []
+        for stack in stacked_intervals:
+            new_stack = []
+            for interval in stack:
+                if interval.data.gffentry.type == target_type:
+                    new_stack.append(interval)
+            if new_stack:
+                out.append(new_stack)
+        return out
+
+    def _by_pos_and_type(self, stacked_intervals, pos, target_type):
+        exons = self._get_intervals_by_type(stacked_intervals, target_type=target_type)
+        pos_exons = exons[pos]
+        assert len(pos_exons) == 1
+        return pos_exons[0]
+
+    def first_exon(self, stacked_intervals):
+        return self._by_pos_and_type(stacked_intervals, 0, target_type=types.EXON)
+
+    def last_exon(self, stacked_intervals):
+        return self._by_pos_and_type(stacked_intervals, -1, target_type=types.EXON)
+
+    def first_cds(self, stacked_intervals):
+        return self._by_pos_and_type(stacked_intervals, 0, target_type=types.CDS)
+
+    def last_cds(self, stacked_intervals):
+        return self._by_pos_and_type(stacked_intervals, -1, target_type=types.CDS)
 
 
 class IntervalCountError(Exception):

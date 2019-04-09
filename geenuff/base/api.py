@@ -127,6 +127,12 @@ class TranscriptStatus(object):
         self.erroneous = False
         self.phase = None  # todo, proper tracking / handling
 
+        self.open_transcribed = None
+        self.open_translated = None
+        self.open_trans_intron = None
+        self.open_intron = None  # open_intron and open_error may not be useful in practice...
+        self.open_error = None
+
     def __repr__(self):
         return "genic: {}, intronic: {}, translated_region: {}, trans_intronic: {}, phase: {}".format(
             self.genic, self.in_intron, self.in_translated_region, self.in_trans_intron, self.phase
@@ -136,11 +142,12 @@ class TranscriptStatus(object):
     def _decoder(self):
         # todo, parallelize status until this isn't necessary
         return {
-            types.TRANSCRIBED: ('genic', self.saw_tss, self.saw_tts),
-            types.CODING: ('in_translated_region', self.saw_start, self.exit_coding),
-            types.INTRON: ('in_intron', self.splice_open, self.splice_close),
-            types.TRANS_INTRON: ('in_trans_intron', self.trans_splice_open, self.trans_splice_close),
-            types.ERROR: ('erroneous', self.error_open, self.error_close)
+            types.TRANSCRIBED: ('genic', self.saw_tss, self.saw_tts, self.open_transcribed),
+            types.CODING: ('in_translated_region', self.saw_start, self.exit_coding, self.open_translated),
+            types.INTRON: ('in_intron', self.splice_open, self.splice_close, self.open_intron),
+            types.TRANS_INTRON: ('in_trans_intron', self.trans_splice_open, self.trans_splice_close,
+                                 self.open_trans_intron),
+            types.ERROR: ('erroneous', self.error_open, self.error_close, self.open_error)
         }
 
     def update_for_feature(self, feature, **kwargs):
@@ -375,7 +382,6 @@ class TranscriptInterpBase(object):
     # helpers for classic transitions below
     def _ranges_by_type(self, target_type):
         ranges = []
-        current = None
         for aligned_features, status, piece in self.transition_5p_to_3p():
             features_of_type = [f for f in aligned_features if f.type.value == target_type]
             assert len(features_of_type) in [0, 1], "cannot interpret aligned features of the same type {}".format(
@@ -383,30 +389,13 @@ class TranscriptInterpBase(object):
             )
             if len(features_of_type) == 1:  # and 0 is simply ignored...
                 feature = features_of_type[0]
-                if self._is_open_or_start(feature):
-                    current = Range(coordinate_id=feature.coordinate_id,
-                                    start=feature.position,
-                                    end=None,
+                ranges.append(Range(coordinate_id=feature.coordinate_id,
+                                    start=feature.start,
+                                    end=feature.end,
                                     is_plus_strand=feature.is_plus_strand,
-                                    piece_position=piece.position)
-                else:
-                    assert current is not None, "start/open must be seen before end/close for {}".format(feature)
-                    assert current.piece_position == piece.position, \
-                        "can't have start/end from different pieces ({} & {})".format(current.piece_position,
-                                                                                      piece.position)
-                    current.end = feature.position
-                    ranges.append(current)
-                    current = None
-        return ranges
+                                    piece_position=piece.position))
 
-    @staticmethod
-    def _is_open_or_start(feature):
-        if feature.bearing.value in [types.START, types.OPEN_STATUS]:
-            return True
-        elif feature.bearing.value in [types.END, types.CLOSE_STATUS]:
-            return False
-        else:
-            raise ValueError("failed to interpret bearing {}".format(feature.bearing))
+        return ranges
 
     @staticmethod
     def _make_trees(ranges):
@@ -484,42 +473,54 @@ class TranscriptInterpBase(object):
         utrs = self._subtract_ranges(subtract_from=exons, to_subtract=translateds)
         return utrs
 
+
     # point transitions (sites)
-    def _get_by_type_and_bearing(self, target_type, target_bearing):
+    @staticmethod
+    def _get_transition(feature, target_start_not_end):
+        if target_start_not_end:
+            at = feature.start
+            is_bio = feature.start_is_biological_start
+        else:
+            at = feature.end
+            is_bio = feature.end_is_biological_end
+        return at, is_bio
+
+    def _get_by_type_and_bearing(self, target_type, target_start_not_end, target_is_biological=True):
         out = []
         for piece in self.transcript.data.transcribed_pieces:
             for feature in piece.features:
-                if feature.bearing.value == target_bearing and \
-                        feature.type.value == target_type:
-                    out.append(TranscriptCoordinate(coordinate_id=feature.coordinate_id,
-                                                    piece_position=piece.position,
-                                                    is_plus_strand=feature.is_plus_strand,
-                                                    start=feature.position))
+                if feature.type.value == target_type:
+                    at, is_bio = self._get_transition(feature, target_start_not_end)
+                    if is_bio == target_is_biological:
+                        out.append(TranscriptCoordinate(coordinate_id=feature.coordinate_id,
+                                                        piece_position=piece.position,
+                                                        is_plus_strand=feature.is_plus_strand,
+                                                        start=at))
         return out
 
     def transcription_start_sites(self):
-        return self._get_by_type_and_bearing(types.TRANSCRIBED, types.START)
+        return self._get_by_type_and_bearing(types.TRANSCRIBED, target_start_not_end=True)
 
     def translation_start_sites(self):  # AKA start codon
-        return self._get_by_type_and_bearing(types.CODING, types.START)
+        return self._get_by_type_and_bearing(types.CODING, target_start_not_end=True)
 
     def intron_start_sites(self):  # AKA Donor splice site
-        return self._get_by_type_and_bearing(types.INTRON, types.START)
+        return self._get_by_type_and_bearing(types.INTRON, target_start_not_end=True)
 
     def trans_intron_start_sites(self):
-        return self._get_by_type_and_bearing(types.TRANS_INTRON, types.START)
+        return self._get_by_type_and_bearing(types.TRANS_INTRON, target_start_not_end=True)
 
     def transcription_end_sites(self):
-        return self._get_by_type_and_bearing(types.TRANSCRIBED, types.END)
+        return self._get_by_type_and_bearing(types.TRANSCRIBED, target_start_not_end=False)
 
     def translation_end_sites(self):  # AKA follows stop codon
-        return self._get_by_type_and_bearing(types.CODING, types.END)
+        return self._get_by_type_and_bearing(types.CODING, target_start_not_end=False)
 
     def intron_end_sites(self):  # AKA follows acceptor splice site
-        return self._get_by_type_and_bearing(types.INTRON, types.END)
+        return self._get_by_type_and_bearing(types.INTRON, target_start_not_end=False)
 
     def trans_intron_end_sites(self):
-        return self._get_by_type_and_bearing(types.TRANS_INTRON, types.END)
+        return self._get_by_type_and_bearing(types.TRANS_INTRON, target_start_not_end=False)
 
 
 class HandleMaker(object):

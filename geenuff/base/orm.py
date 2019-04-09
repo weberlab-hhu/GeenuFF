@@ -128,8 +128,12 @@ class Feature(Base):
     id = Column(Integer, primary_key=True)
     given_id = Column(String)
     type = Column(Enum(types.OnSequence))
-    bearing = Column(Enum(types.Bearings))
-    position = Column(Integer)
+
+    start = Column(Integer)
+    start_is_biological_start = Column(Boolean)
+    end = Column(Integer)
+    end_is_biological_end = Column(Boolean)
+
     is_plus_strand = Column(Boolean)
     score = Column(Float)
     source = Column(String)
@@ -153,7 +157,8 @@ class Feature(Base):
                                back_populates='features')
 
     __table_args__ = (
-        CheckConstraint(position >= -1, name='check_start_1plus'),
+        CheckConstraint(end >= -1, name='check_end_minus1plus'),
+        CheckConstraint(start >= 0, name="check_start_0plus"),
         CheckConstraint(phase >= 0, name='check_phase_not_negative'),
         CheckConstraint(phase < 3, name='check_phase_less_three'),
     )
