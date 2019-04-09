@@ -280,10 +280,6 @@ def positional_match(feature, previous):
     return feature.pos_cmp_key() == previous.pos_cmp_key()
 
 
-def bearing_match(feature, previous):
-    return feature.bearing.value == previous.bearing.value
-
-
 class TranscriptInterpBase(object):
     # todo, move this to generic location and/or skip entirely
     def __init__(self, transcript, super_locus, session=None):
@@ -294,16 +290,10 @@ class TranscriptInterpBase(object):
         self.super_locus = super_locus
 
     def transition_5p_to_3p(self):
-        status = TranscriptStatus()
         for piece in self.sort_pieces():
             piece_features = self.sorted_features(piece)
             for aligned_features in self.full_stack_matches(piece_features):
-                self.update_status(status, aligned_features)
-                yield aligned_features, copy.deepcopy(status), piece
-
-    def transition_with_ranges(self):
-        """organize [prev. range]-> feature pairs along transcript"""
-        pass  # todo
+                yield aligned_features, piece
 
     @staticmethod
     def sorted_features(piece):
@@ -357,21 +347,9 @@ class TranscriptInterpBase(object):
         yield current
         return
 
-    @staticmethod
-    def sort_by_bearing(matches):
-        key = {types.START: 3,
-               types.OPEN_STATUS: 2,
-               types.CLOSE_STATUS: 1,
-               types.END: 0,
-               types.POINT: 4}
-
-        return sorted(matches, key=lambda x: key[x.bearing.value])
-
     def full_stack_matches(self, features):
         for matches in self.stack_matches(features, match_fn=positional_match):
-            sorted_matches = self.sort_by_bearing(matches)
-            for by_bearing in self.stack_matches(sorted_matches, match_fn=bearing_match):
-                yield by_bearing
+            yield matches
 
     def sort_all(self):
         out = []
@@ -382,7 +360,7 @@ class TranscriptInterpBase(object):
     # helpers for classic transitions below
     def _ranges_by_type(self, target_type):
         ranges = []
-        for aligned_features, status, piece in self.transition_5p_to_3p():
+        for aligned_features, piece in self.transition_5p_to_3p():
             features_of_type = [f for f in aligned_features if f.type.value == target_type]
             assert len(features_of_type) in [0, 1], "cannot interpret aligned features of the same type {}".format(
                 features_of_type

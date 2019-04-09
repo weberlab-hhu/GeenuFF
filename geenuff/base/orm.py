@@ -169,16 +169,21 @@ class Feature(Base):
     }
 
     def __repr__(self):
-        s = '<{py_type}, {pk}: {givenid} of type: {type} ({bearing}) @{position} on {coor}, is_plus: {plus}, ' \
-            'phase: {phase}>'.format(
-                pk=self.id, bearing=self.bearing,
-                type=self.type, position=self.position, coor=self.coordinate, plus=self.is_plus_strand,
+        start_caveat = end_caveat = ''
+        if not self.start_is_biological_start:
+            start_caveat = '*'
+        if not self.end_is_biological_end:
+            end_caveat = '*'
+        s = '<{py_type}, {pk}: {givenid} of type: {type} @({start}{start_caveat} -> {end}{end_caveat}) on {coor}, ' \
+            'is_plus: {plus}, phase: {phase}>'.format(
+                pk=self.id, start_caveat=start_caveat, end_caveat=end_caveat,
+                type=self.type, start=self.start, end=self.end, coor=self.coordinate, plus=self.is_plus_strand,
                 phase=self.phase, givenid=self.given_id, py_type=type(self)
             )
         return s
 
     def cmp_key(self):  # todo, pos_cmp & full_cmp
-        return self.coordinate.seqid, self.is_plus_strand, self.position, self.type
+        return self.coordinate.seqid, self.is_plus_strand, self.start, self.end, self.type
 
     def pos_cmp_key(self):
-        return self.coordinate.seqid, self.is_plus_strand, self.position
+        return self.coordinate.seqid, self.is_plus_strand, self.start, self.end
