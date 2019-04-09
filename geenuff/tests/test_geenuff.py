@@ -760,6 +760,7 @@ def test_data_frm_gffentry():
 
 
 def test_organize_and_split_features():
+    """Tests 5'-3' ordering of features and slicing at overlaps"""
     sl, controller = setup_testable_super_locus()
     transcript_full = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
     transcript_interpreter = gffimporter.TranscriptInterpreter(transcript_full,
@@ -820,6 +821,7 @@ def test_import_coordinate():
 
 
 def test_transcript_interpreter():
+    """tests decoding of raw from-gff features via the TranscriptInterpreter class"""
     sl, controller = setup_testable_super_locus()
     transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
     # change so that there are implicit UTRs
@@ -1064,6 +1066,7 @@ def test_errors_not_lost():
 
 
 def test_setup_proteins():
+    """Tests explicit protein creation from mRNA & CDS gff features"""
     sl, controller = setup_testable_super_locus()
     transcript = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
     t_interp = gffimporter.TranscriptInterpreter(transcript, sl, controller)
@@ -1076,7 +1079,8 @@ def test_setup_proteins():
     assert protein_orm.given_id == 'y.p'
 
 
-def test_mv_features_to_prot():
+def test_cp_features_to_prot():
+    """Test linking of appropriate features to newly created protein (translated)"""
     sl, controller = setup_testable_super_locus()
     controller.session.commit()
     transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
@@ -1097,6 +1101,7 @@ def test_mv_features_to_prot():
 
 
 def test_check_and_fix_structure():
+    """checks expected 'geenuff' format can be produced from the initial pre-entries parsed from the gff file"""
     # so we save a copy of the cleaned up loci once per test run
     rel_path = 'testdata/dummyloci_annotations.sqlitedb'
     db_path = 'sqlite:///{}'.format(rel_path)
@@ -1223,7 +1228,7 @@ def test_import2biointerp():
             super().__init__(coordinate_id=1, piece_position=0, is_plus_strand=True, start=start)
 
     class RShortcut(api.Range):
-        """just fills in what's always the same for the TranscriptCoordinate to stop retyping"""
+        """just fills in what's always the same for the Range to stop retyping"""
         def __init__(self, start, end):
             super().__init__(coordinate_id=1, piece_position=0, is_plus_strand=True, start=start, end=end)
 
