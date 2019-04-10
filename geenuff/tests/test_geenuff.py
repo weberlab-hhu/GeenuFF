@@ -1052,7 +1052,9 @@ def test_errors_not_lost():
 
     sl.check_and_fix_structure(coordinate=coordinate, controller=controller)
     features = controller.session.query(orm.Feature).filter(orm.Feature.given_id == 'eg_missing_children').all()
-    assert len(features) == 2
+    assert len(features) == 1
+    assert features[0].start == 404
+    assert features[0].end == 18
 
 
 def test_setup_proteins():

@@ -60,6 +60,7 @@ class ImportControl(object):
                 self.clean_entry(entry)
                 yield entry
 
+    # todo, this is an awkward place for this
     @staticmethod
     def clean_entry(entry):
         # always present and integers
@@ -320,20 +321,14 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
         self.check_and_fix_structure(coordinate, controller=controller)
 
     def _mark_erroneous(self, entry, coordinate, controller, msg=''):
+        controller.clean_entry(entry)  # todo, why isn't this already called via gff_gen or so?
         assert entry.type in [x.value for x in types.SuperLocusAll]
         logging.warning(
             '{species}:{seqid}, {start}-{end}:{gene_id} by {src}, {msg} - marked erroneous'.format(
                 src=entry.source, species="todo", seqid=entry.seqid, start=entry.start,
                 end=entry.end, gene_id=self.given_id, msg=msg
             ))
-        # reset start and stop so
-        if entry.strand == '+':
-            err_start = entry.start
-            err_end = entry.end
-        else:
-            assert entry.strand == '-'
-            err_start = entry.end
-            err_end = entry.start
+
         # dummy transcript
         # todo, CLEAN UP / get in functions
         transcribed_e_handler = TranscribedHandler(controller)
@@ -342,31 +337,30 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
         piece_handler = transcribed_e_handler.transcribed_piece_handlers[0]
         controller.transcribeds_to_add.append(transcribed)
         controller.transcribed_pieces_to_add.append(piece)
-        # open error
-        feature_err_open = FeatureHandler(controller, processed=True)
-        feature_err_open.gffentry = copy.deepcopy(entry)
-        packed = feature_err_open.setup_insertion_ready(super_locus=self, transcribed_pieces=[piece_handler],
-                                                        coordinate=coordinate)
+        # setup error as only feature (defacto it's a mask)
+        feature_handler = FeatureHandler(controller, processed=True)
+        feature_handler.gffentry = copy.deepcopy(entry)
+        feature_handler.add_shortcuts_from_gffentry()
+        # gff start and end -> geenuff coordinates
+        if feature_handler.is_plus_strand:
+            err_start = entry.start - 1
+            err_end = entry.end
+        else:
+            err_start = entry.end - 1
+            err_end = entry.start - 2
+
+        packed = feature_handler.setup_insertion_ready(super_locus=self, transcribed_pieces=[piece_handler],
+                                                       coordinate=coordinate)
         feature, feature2pieces, feature2translateds = packed
-        for key, val in [('type', types.ERROR), ('bearing', types.START), ('position', err_start)]:
+        for key, val in [('type', types.ERROR), ('start', err_start), ('end', err_end),
+                         ('start_is_biological_start', True), ('end_is_biological_end', True)]:
             feature[key] = val
-        controller.features_to_add.append(feature)
-        controller.feature2transcribed_pieces_to_add += feature2pieces
-        controller.feature2translateds_to_add += feature2translateds
-        # todo, hard_pairing!
-        # close error
-        feature_err_close = FeatureHandler(controller, processed=True)
-        feature_err_close.gffentry = copy.deepcopy(entry)
-        packed = feature_err_close.setup_insertion_ready(super_locus=self, transcribed_pieces=[piece_handler],
-                                                         coordinate=coordinate)
-        feature, feature2pieces, feature2translateds = packed
-        for key, val in [('type', types.ERROR), ('bearing', types.END), ('position', err_end)]:
-            feature[key] = val
+
         controller.features_to_add.append(feature)
         controller.feature2transcribed_pieces_to_add += feature2pieces
         controller.feature2translateds_to_add += feature2translateds
 
-        transcribed_e_handler.feature_handlers += [feature_err_open, feature_err_close]
+        transcribed_e_handler.feature_handlers += [feature_handler]
         self.transcribed_handlers.append(transcribed_e_handler)
 
     def check_and_fix_structure(self, coordinate, controller):
@@ -852,7 +846,6 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         return self.proteins[pid]
 
     def handle_control_codon(self, ivals_before, ivals_after, sign, is_start=True, error_buffer=2000):
-        # todo, hard_pairing
         target_after_type = None
         target_before_type = None
         if is_start:
@@ -925,7 +918,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         if between_splice_sites > min_intron_len:
             self.new_feature(template=donor_tmplt, start=donor_at, end=acceptor_at, phase=None,
                              start_is_biological_start=True, end_is_biological_end=True,
-                             type=types.INTRON)  # todo, hard_pairing, does rm the acceptor_tmplt from acceptor hurt?
+                             type=types.INTRON)
 
         # do nothing if there is just no gap between exons for a technical / reporting error
         elif between_splice_sites == 0:
@@ -961,7 +954,6 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             # this could be first exon detected or start codon, ultimately, indeterminate
             cds_feature = self.pick_one_interval(intervals, target_type=cds).data
             translated = self.get_protein(cds_feature)
-            # todo, hard_pairing
             translated_feature = self.new_feature(template=cds_feature, type=types.CODING, start=at,
                                                   start_is_biological_start=False, translateds=[translated])
             self.status.open_translated = translated_feature
