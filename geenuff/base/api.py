@@ -1,12 +1,9 @@
-from dustdas import gffhelper, fastahelper
 import copy
-import hashlib
 from types import GeneratorType
 import intervaltree
 
 from . import orm
 from . import types
-from . import helpers
 
 
 def convert2list(obj):
@@ -112,110 +109,115 @@ class FeatureHandlerBase(Handler):
         return self.data.pos_cmp_key()
 
 
+class ChannelTracker(object):
+    def __init__(self):
+        self._in_region = False
+        self._open_feature = None
+
+    def set_channel_open(self, **kwargs):
+        self.in_region = True
+
+    def set_channel_closed(self):
+        self.in_region = False
+
+    @property
+    def in_region(self):
+        return self._in_region
+
+    @in_region.setter
+    def in_region(self, x):
+        if isinstance(x, bool):
+            self._in_region = x
+        else:
+            raise ValueError("in_region supports only boolean values {} of type {} found".format(x, type(x)))
+
+    @property
+    def open_feature(self):
+        return self._open_feature
+
+    @open_feature.setter
+    def open_feature(self, feature):
+        if isinstance(feature, dict) or feature is None:
+            self._open_feature = feature
+        else:
+            raise ValueError(
+                'expected instance of dict or None for open_feature, got {} of type {}'.format(feature, type(feature)))
+
+    def update_and_close_feature(self, update_dict):
+        self.open_feature.update(update_dict)
+        self.open_feature = None
+        self.set_channel_closed()
+
+    def set_channel_open_with_feature(self, feature, **kwargs):
+        self.set_channel_open(**kwargs)
+        self.open_feature = feature
+
+
+class CodingChannelTracker(ChannelTracker):
+    def __init__(self, phase=None):
+        super().__init__()
+        self.phase = phase  # todo, proper tracking / handling
+
+    def set_channel_open(self, phase):
+        super().set_channel_open()
+        self.phase = phase
+
+    def set_channel_closed(self):
+        super().set_channel_closed()
+        self.phase = None
+
+
 #### section TranscriptInterpreter, todo maybe put into a separate file later
-class TranscriptStatus(object):
+class TranscriptStatusBase(object):
     """can hold and manipulate all the info on current status of a transcript"""
 
     def __init__(self):
-        # initializes to intergenic
-        self.genic = False
-        self.in_intron = False
-        self.in_trans_intron = False
-        self.in_translated_region = False
-        self.seen_start = False  # todo, move EUK specific stuff to subclass?
-        self.seen_stop = False
-        self.erroneous = False
-        self.phase = None  # todo, proper tracking / handling
-
-        self.open_transcribed = None
-        self.open_translated = None
-        self.open_trans_intron = None
-        self.open_intron = None  # open_intron and open_error may not be useful in practice...
-        self.open_error = None
+        # initializes to intergenic (all channels / types set to False)
+        self.transcribed_tracker = ChannelTracker()
+        self.intron_tracker = ChannelTracker()
+        self.trans_intron_tracker = ChannelTracker()
+        self.coding_tracker = CodingChannelTracker()
+        self.error_tracker = ChannelTracker()
 
     def __repr__(self):
-        return "genic: {}, intronic: {}, translated_region: {}, trans_intronic: {}, phase: {}".format(
-            self.genic, self.in_intron, self.in_translated_region, self.in_trans_intron, self.phase
+        return "in_transcribed: {}, in_intron: {}, in_coding: {}, in_trans_intron: {}, phase: {}".format(
+            self.transcribed_tracker.in_region, self.intron_tracker.in_region, self.coding_tracker.in_region,
+            self.trans_intron_tracker.in_region, self.coding_tracker.phase
         )
 
-    @property
-    def _decoder(self):
-        # todo, parallelize status until this isn't necessary
-        return {
-            types.TRANSCRIBED: ('genic', self.saw_tss, self.saw_tts, self.open_transcribed),
-            types.CODING: ('in_translated_region', self.saw_start, self.exit_coding, self.open_translated),
-            types.INTRON: ('in_intron', self.splice_open, self.splice_close, self.open_intron),
-            types.TRANS_INTRON: ('in_trans_intron', self.trans_splice_open, self.trans_splice_close,
-                                 self.open_trans_intron),
-            types.ERROR: ('erroneous', self.error_open, self.error_close, self.open_error)
-        }
-
-    def update_for_feature(self, feature, **kwargs):
-        attr, fn_open, fn_close = self._decoder[feature.type.value]
-        if feature.bearing.value in [types.START, types.OPEN_STATUS]:
-            fn_open(**kwargs)
-        elif feature.bearing.value in [types.END, types.CLOSE_STATUS]:
-            fn_close(**kwargs)
-        else:
-            raise ValueError('unhandled bearing {}'.format(feature.bearing))
-
-    def saw_tss(self):
-        self.genic = True
-
-    def saw_start(self, phase):
-        self.seen_start = True  # todo, disentangle from annotations core -> Euk specific/parser only
-        self.in_translated_region = True
-        self.phase = phase
-
-    def exit_coding(self):
-        self.in_translated_region = False
-
-    def saw_stop(self):
-        self.seen_stop = True  # todo, disentangle
-        self.in_translated_region = False
-        self.phase = None
-
-    def saw_tts(self):
-        self.genic = False
-
-    def splice_open(self):
-        self.in_intron = True
-
-    def splice_close(self):
-        self.in_intron = False
-
-    def trans_splice_open(self):
-        self.in_trans_intron = True
-
-    def trans_splice_close(self):
-        self.in_trans_intron = False
-
-    def error_open(self):
-        self.erroneous = True
-
-    def error_close(self):
-        self.erroneous = False
-
-    def is_5p_utr(self):
-        return self.is_utr() and not any([self.seen_start, self.seen_stop])
-
-    def is_3p_utr(self):
-        return self.is_utr() and self.seen_stop and self.seen_start
+    #@property
+    #def _decoder(self):
+    #    # todo, parallelize status until this isn't necessary
+    #    return {
+    #        types.TRANSCRIBED: ('in_transcribed', self.saw_tss, self.saw_tts, self.open_transcribed),
+    #        types.CODING: ('in_coding', self.saw_start, self.exit_coding, self.open_translated),
+    #        types.INTRON: ('in_intron', self.splice_open, self.splice_close, self.open_intron),
+    #        types.TRANS_INTRON: ('in_trans_intron', self.trans_splice_open, self.trans_splice_close,
+    #                             self.open_trans_intron),
+    #        types.ERROR: ('in_error', self.error_open, self.error_close, self.open_error)
+    #    }
 
     def is_utr(self):
-        return self.genic and not any([self.in_intron, self.in_translated_region, self.in_trans_intron])
+        return self.transcribed_tracker.in_region and \
+               not any([self.intron_tracker.in_region,
+                        self.coding_tracker.in_region,
+                        self.trans_intron_tracker.in_region])
 
     def is_coding(self):
-        return self.genic and self.in_translated_region and not any([self.in_intron, self.in_trans_intron])
+        return self.transcribed_tracker.in_region and \
+               self.coding_tracker.in_region and \
+               not any([self.intron_tracker.in_region, self.trans_intron_tracker.in_region])
 
     def is_intronic(self):
-        return self.in_intron and self.genic
+        return self.intron_tracker.in_region and \
+               self.transcribed_tracker.in_region
 
     def is_trans_intronic(self):
-        return self.in_trans_intron and self.genic
+        return self.trans_intron_tracker and \
+               self.transcribed_tracker.in_region
 
     def is_intergenic(self):
-        return not self.genic
+        return not self.transcribed_tracker.in_region
 
 
 class TransitionStep(object):
@@ -281,10 +283,9 @@ def positional_match(feature, previous):
 
 
 class TranscriptInterpBase(object):
-    # todo, move this to generic location and/or skip entirely
     def __init__(self, transcript, super_locus, session=None):
         assert isinstance(transcript, TranscribedHandlerBase)
-        self.status = TranscriptStatus()
+        self.status = TranscriptStatusBase()
         self.transcript = transcript
         self.session = session
         self.super_locus = super_locus
@@ -310,22 +311,6 @@ class TranscriptInterpBase(object):
         pieces = self.transcript.data.transcribed_pieces
         ordered_pieces = sorted(pieces, key=lambda x: x.position)
         return ordered_pieces
-
-    @staticmethod
-    def update_status(status, aligned_features):
-        for feature in aligned_features:
-            ftype = feature.type.value
-            fbearing = feature.bearing.value
-            # standard features
-            if ftype == types.CODING and fbearing == types.START:
-                status.update_for_feature(feature, phase=0)
-            elif ftype == types.CODING and fbearing == types.OPEN_STATUS:
-                status.update_for_feature(feature, phase=feature.phase)
-            elif ftype == types.CODING and fbearing == types.END:
-                status.update_for_feature(feature)
-                status.saw_stop()  # todo, disentangle / to-parser not general section
-            else:
-                status.update_for_feature(feature)
 
     @staticmethod
     def stack_matches(features, match_fn=positional_match):
@@ -447,7 +432,6 @@ class TranscriptInterpBase(object):
         translateds = self._ranges_by_type(types.CODING)
         utrs = self._subtract_ranges(subtract_from=exons, to_subtract=translateds)
         return utrs
-
 
     # point transitions (sites)
     @staticmethod

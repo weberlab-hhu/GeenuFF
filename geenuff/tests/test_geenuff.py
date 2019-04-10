@@ -941,8 +941,8 @@ def test_transcript_get_first_without_UTR():
     assert f_err.start == 404
     assert f_err.end == 118  # so that err overlaps 1bp with the coding status checked above
     assert status.is_coding()
-    assert status.seen_start
-    assert status.genic
+    assert status.coding_tracker.seen_start
+    assert status.transcribed_tracker.in_region
 
 
 def test_transcript_transition_from_5p_to_end():
