@@ -353,7 +353,7 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
         controller.features_to_add.append(feature)
         controller.feature2transcribed_pieces_to_add += feature2pieces
         controller.feature2translateds_to_add += feature2translateds
-
+        # todo, hard_pairing!
         # close error
         feature_err_close = FeatureHandler(controller, processed=True)
         feature_err_close.gffentry = copy.deepcopy(entry)
@@ -454,6 +454,10 @@ class FeatureHandler(api.FeatureHandlerBase, GFFDerived):
                    'source': self.gffentry.source,
                    'phase': self.gffentry.phase,  # todo, do I need to handle '.'?
                    'super_locus_id': super_locus.id,
+                   'start': None,  # all currently set via kwargs in new_feature, but core needs _all_ dict keys
+                   'end': None,  # todo, clean up / make them arguments here
+                   'start_is_biological_start': None,
+                   'end_is_biological_end': None
                    }
 
         feature2pieces = [{'transcribed_piece_id': p.id, 'feature_id': self.id} for p in transcribed_pieces]

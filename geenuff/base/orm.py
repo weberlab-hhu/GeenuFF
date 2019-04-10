@@ -170,9 +170,13 @@ class Feature(Base):
 
     def __repr__(self):
         start_caveat = end_caveat = ''
-        if not self.start_is_biological_start:
+        if self.start_is_biological_start is None:
+            start_caveat = '?'
+        elif self.start_is_biological_start == False:
             start_caveat = '*'
-        if not self.end_is_biological_end:
+        if self.end_is_biological_end is None:
+            end_caveat = '?'
+        elif self.end_is_biological_end == False:
             end_caveat = '*'
         s = '<{py_type}, {pk}: {givenid} of type: {type} @({start}{start_caveat} -> {end}{end_caveat}) on {coor}, ' \
             'is_plus: {plus}, phase: {phase}>'.format(
@@ -182,8 +186,15 @@ class Feature(Base):
             )
         return s
 
-    def cmp_key(self):  # todo, pos_cmp & full_cmp
-        return self.coordinate.seqid, self.is_plus_strand, self.start, self.end, self.type
+    def cmp_key(self):
+        pos_cmp = list(self.pos_cmp_key())
+        pos_cmp.append(self.type)
+        return tuple(pos_cmp)
 
     def pos_cmp_key(self):
-        return self.coordinate.seqid, self.is_plus_strand, self.start, self.end
+        sortable_start = self.start
+        sortable_end = self.end
+        if not self.is_plus_strand:
+            sortable_start = sortable_start * -1
+            sortable_end = sortable_end * -1
+        return self.coordinate.seqid, self.is_plus_strand, sortable_start, sortable_end

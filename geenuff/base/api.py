@@ -304,8 +304,6 @@ class TranscriptInterpBase(object):
         assert all([f.is_plus_strand == features[0].is_plus_strand for f in features]), \
             'not all matching: {}'.format([(f.id, f.is_plus_strand) for f in features])
         features = sorted(features, key=lambda x: x.pos_cmp_key())
-        if not features[0].is_plus_strand:
-            features.reverse()
         return features
 
     def sort_pieces(self):
@@ -388,7 +386,6 @@ class TranscriptInterpBase(object):
 
     @staticmethod
     def _copy_ival_data(iv, islower):
-        print(iv, islower, "was called")
         if islower:  # copy one of the two sides so that we don't change the same dictionary later
             out = copy.deepcopy(iv.data)
         else:

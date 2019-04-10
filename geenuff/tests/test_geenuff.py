@@ -304,12 +304,12 @@ class TransspliceDemoData(object):
     """Setup of a rather complex transplicing scenario."""
     def __init__(self, sess):
         # setup two transitions:
-        # 1) scribed [-> ABC][-> DEF]
+        # 1) scribed [-> ABC][-> FED]
         #  transcribed A [  (               )  ]   D [  (                 ) ]
         #       coding B [          (       )* ]   E [ *(             )     ]
         # trans_intron C [               (  )* ]   F [ *(     )             ]
 
-        # 2) scribedflip [-> ABC][<- DEF]
+        # 2) scribedflip [-> ABC][<- FpEpDp]
         #  transcribed A [  (               )  ]   Dp[ (                 )  ]
         #       coding B [          (       )* ]   Ep[     (             )* ]
         # trans_intron C [               (  )* ]   Fp[             (     )* ]
@@ -335,7 +335,7 @@ class TransspliceDemoData(object):
         self.pieceA2C_prime = orm.TranscribedPiece(position=0, transcribed=self.scribedflip)
         self.pieceD2F_prime = orm.TranscribedPiece(position=1, transcribed=self.scribedflip)
         self.scribed.transcribed_pieces = [self.pieceA2C, self.pieceD2F]
-        self.scribedflip.transcribed_pieces = [self.pieceA2Cp, self.pieceDp2Fp]
+        self.scribedflip.transcribed_pieces = [self.pieceA2C_prime, self.pieceD2F_prime]
         # pieceA2C features
         self.fA = orm.Feature(coordinate=self.old_coor, start=10, end=40, given_id='A',
                               start_is_biological_start=True, end_is_biological_end=True,
@@ -393,21 +393,13 @@ def test_transition_transsplice():
     d.make_all_handlers()
     # forward pass, same sequence, two pieces
     ti_transitions = list(d.ti.transition_5p_to_3p())
-    # from transition gen: 0 -> aligned_Features, 1 -> status copy
-    assert [set(x[0]) for x in ti_transitions] == [{d.fA}, {d.fB}, {d.fC}, {d.fD}, {d.fADs1, d.fADs0},
-                                                   {d.fEHs0, d.fEHs1}, {d.fE}, {d.fF}, {d.fG}, {d.fH}]
-    print([x[1].genic for x in ti_transitions])
-    assert [x[1].genic for x in ti_transitions] == [bool(x) for x in [1, 1, 1, 0, 0, 0, 1, 1, 1, 0]]
-    assert [x[1].in_translated_region for x in ti_transitions] == [bool(x) for x in [0, 1, 1, 1, 0, 1, 1, 1, 0, 0]]
-    assert [x[1].in_trans_intron for x in ti_transitions] == [bool(x) for x in [0, 0, 1, 1, 0, 1, 1, 0, 0, 0]]
+    # expect (start, end) of features to be sorted 5'-3' within pieces
+    # from transition gen: 0 -> aligned_features, 1 -> piece
+    assert [set(x[0]) for x in ti_transitions] == [{d.fA}, {d.fB}, {d.fC}, {d.fF}, {d.fE}, {d.fD}]
+
     # forward, then backward pass, same sequence, two pieces
     ti_transitions = list(d.tiflip.transition_5p_to_3p())
-    assert [set(x[0]) for x in ti_transitions] == [{d.fA}, {d.fB}, {d.fC}, {d.fD}, {d.fADs1, d.fADs0},
-                                                   {d.fEHps0, d.fEHps1}, {d.fEp}, {d.fFp}, {d.fGp}, {d.fHp}]
-    print([x[1].genic for x in ti_transitions])
-    assert [x[1].genic for x in ti_transitions] == [bool(x) for x in [1, 1, 1, 0, 0, 0, 1, 1, 1, 0]]
-    assert [x[1].in_translated_region for x in ti_transitions] == [bool(x) for x in [0, 1, 1, 1, 0, 1, 1, 1, 0, 0]]
-    assert [x[1].in_trans_intron for x in ti_transitions] == [bool(x) for x in [0, 0, 1, 1, 0, 1, 1, 0, 0, 0]]
+    assert [set(x[0]) for x in ti_transitions] == [{d.fA}, {d.fB}, {d.fC}, {d.fFp}, {d.fEp}, {d.fDp}]
 
 
 class BiointerpDemoDataCoding(object):
@@ -433,30 +425,24 @@ class BiointerpDemoDataCoding(object):
             intron_end, intron_start = intron_start, intron_end
 
         # transcribed:
-        self.transcribed_start = orm.Feature(coordinate=self.coordinate,
-                                             is_plus_strand=is_plus_strand, position=transcribed_start,
-                                             type=types.TRANSCRIBED, bearing=types.START)
-        self.transcribed_end = orm.Feature(coordinate=self.coordinate,
-                                           is_plus_strand=is_plus_strand, position=transcribed_end,
-                                           type=types.TRANSCRIBED, bearing=types.END)
+        self.transcribed_feature = orm.Feature(coordinate=self.coordinate,
+                                               is_plus_strand=is_plus_strand, start=transcribed_start,
+                                               end=transcribed_end, start_is_biological_start=True,
+                                               end_is_biological_end=True, type=types.TRANSCRIBED)
         # coding:
-        self.coding_start = orm.Feature(coordinate=self.coordinate,
-                                        is_plus_strand=is_plus_strand, position=coding_start,
-                                        type=types.CODING, bearing=types.START)
-        self.coding_end = orm.Feature(coordinate=self.coordinate,
-                                      is_plus_strand=is_plus_strand, position=coding_end,
-                                      type=types.CODING, bearing=types.END)
+        self.coding_feature = orm.Feature(coordinate=self.coordinate,
+                                          is_plus_strand=is_plus_strand, start=coding_start,
+                                          end=coding_end, start_is_biological_start=True,
+                                          end_is_biological_end=True, type=types.CODING)
         # intron:
-        self.intron_start = orm.Feature(coordinate=self.coordinate,
-                                        is_plus_strand=is_plus_strand, position=intron_start,
-                                        type=types.INTRON, bearing=types.START)
-        self.intron_end = orm.Feature(coordinate=self.coordinate,
-                                      is_plus_strand=is_plus_strand, position=intron_end,
-                                      type=types.INTRON, bearing=types.END)
+        self.intron_feature = orm.Feature(coordinate=self.coordinate,
+                                          is_plus_strand=is_plus_strand, start=intron_start,
+                                          end=intron_end, start_is_biological_start=True,
+                                          end_is_biological_end=True, type=types.INTRON)
 
-        self.piece.features = [self.transcribed_start, self.transcribed_end,
-                               self.coding_start, self.coding_end,
-                               self.intron_start, self.intron_end]
+        self.piece.features = [self.transcribed_feature,
+                               self.coding_feature,
+                               self.intron_feature]
 
         sess.add(self.sl)
         sess.commit()
@@ -488,43 +474,31 @@ class BioInterpDemodataTranssplice(object):
         trans_acceptor_splice, trans_intron_open = 200, t1_start
 
         # piece 0
-        self.transcribed0_start = orm.Feature(coordinate=self.coordinates,
-                                              is_plus_strand=is_plus_strand_piece0, position=t0_start,
-                                              type=types.TRANSCRIBED, bearing=types.START)
+        self.transcribed0_feature = orm.Feature(coordinate=self.coordinates,
+                                                is_plus_strand=is_plus_strand_piece0, start=t0_start,
+                                                end=t0_end, start_is_biological_start=True,
+                                                end_is_biological_end=True, type=types.TRANSCRIBED)
 
-        self.transcribed0_end = orm.Feature(coordinate=self.coordinates,
-                                            is_plus_strand=is_plus_strand_piece0, position=t0_end,
-                                            type=types.TRANSCRIBED, bearing=types.END)
-
-        self.trans_intron0_start = orm.Feature(coordinate=self.coordinates,
-                                               is_plus_strand=is_plus_strand_piece0, position=trans_donor_splice,
-                                               type=types.TRANS_INTRON, bearing=types.START)
-
-        self.trans_intron0_end = orm.Feature(coordinate=self.coordinates,
-                                             is_plus_strand=is_plus_strand_piece0, position=trans_intron_close,
-                                             type=types.TRANS_INTRON, bearing=types.CLOSE_STATUS)
+        self.trans_intron0_feature = orm.Feature(coordinate=self.coordinates,
+                                                 is_plus_strand=is_plus_strand_piece0, start=trans_donor_splice,
+                                                 end=trans_intron_close, start_is_biological_start=True,
+                                                 end_is_biological_end=False, type=types.TRANS_INTRON)
 
         # piece 1
-        self.transcribed1_start = orm.Feature(coordinate=self.coordinates,
-                                              is_plus_strand=is_plus_strand_piece1, position=t1_start,
-                                              type=types.TRANSCRIBED, bearing=types.START)
+        self.transcribed1_feature = orm.Feature(coordinate=self.coordinates,
+                                                is_plus_strand=is_plus_strand_piece1, start=t1_start,
+                                                end=t1_end, start_is_biological_start=True,
+                                                end_is_biological_end=True, type=types.TRANSCRIBED)
 
-        self.transcribed1_end = orm.Feature(coordinate=self.coordinates,
-                                            is_plus_strand=is_plus_strand_piece1, position=t1_end,
-                                            type=types.TRANSCRIBED, bearing=types.END)
+        self.trans_intron1_feature = orm.Feature(coordinate=self.coordinates,
+                                                 is_plus_strand=is_plus_strand_piece1, start=trans_intron_open,
+                                                 end=trans_acceptor_splice, start_is_biological_start=False,
+                                                 end_is_biological_end=True, type=types.TRANS_INTRON)
 
-        self.trans_intron1_start = orm.Feature(coordinate=self.coordinates,
-                                               is_plus_strand=is_plus_strand_piece1, position=trans_acceptor_splice,
-                                               type=types.TRANS_INTRON, bearing=types.END)
-
-        self.trans_intron1_end = orm.Feature(coordinate=self.coordinates,
-                                             is_plus_strand=is_plus_strand_piece1, position=trans_intron_open,
-                                             type=types.TRANS_INTRON, bearing=types.OPEN_STATUS)
-
-        self.piece0.features = [self.transcribed0_start, self.transcribed0_end,
-                                self.trans_intron0_start, self.trans_intron0_end]
-        self.piece1.features = [self.transcribed1_start, self.transcribed1_end,
-                                self.trans_intron1_start, self.trans_intron1_end]
+        self.piece0.features = [self.transcribed0_feature,
+                                self.trans_intron0_feature]
+        self.piece1.features = [self.transcribed1_feature,
+                                self.trans_intron1_feature]
 
         sess.add_all([self.ag, self.sl])
         sess.commit()
@@ -545,27 +519,25 @@ class BiointerpDemoDataPartial(object):
         self.coordinates = orm.Coordinate(seqid='a', start=1, end=2000, genome=self.ag)
         transcribed_start, transcribed_end = 100, 500
         error_start, error_end = 499, 600
-        transcription_bearings = (types.START, types.CLOSE_STATUS)
+        transcription_bearings = (True, False)
 
         if not is_plus_strand:  # swap if we're setting up data for "-" strand
             transcribed_end, transcribed_start = transcribed_start, transcribed_end
             error_end, error_start = error_start, error_end
-            transcription_bearings = (types.OPEN_STATUS, types.END)
+            transcription_bearings = (False, True)
 
-        self.transcribed_start = orm.Feature(coordinate=self.coordinates,
-                                             is_plus_strand=is_plus_strand, position=transcribed_start,
-                                             type=types.TRANSCRIBED, bearing=transcription_bearings[0])
-        self.transcribed_end = orm.Feature(coordinate=self.coordinates,
-                                           is_plus_strand=is_plus_strand, position=transcribed_end,
-                                           type=types.TRANSCRIBED, bearing=transcription_bearings[1])
-        self.error_start = orm.Feature(coordinate=self.coordinates,
-                                       is_plus_strand=is_plus_strand, position=error_start,
-                                       type=types.ERROR, bearing=types.START)
-        self.error_end = orm.Feature(coordinate=self.coordinates,
-                                     is_plus_strand=is_plus_strand, position=error_end,
-                                     type=types.ERROR, bearing=types.END)
+        self.transcribed_feature = orm.Feature(coordinate=self.coordinates,
+                                               is_plus_strand=is_plus_strand, start=transcribed_start,
+                                               end=transcribed_end, start_is_biological_start=transcription_bearings[0],
+                                               end_is_biological_end=transcription_bearings[1],
+                                               type=types.TRANSCRIBED)
 
-        self.piece.features = [self.transcribed_end, self.transcribed_start, self.error_end, self.error_start]
+        self.error_feature = orm.Feature(coordinate=self.coordinates,
+                                         is_plus_strand=is_plus_strand, start=error_start,
+                                         end=error_end, start_is_biological_start=True,
+                                         end_is_biological_end=True, type=types.ERROR)
+
+        self.piece.features = [self.transcribed_feature, self.error_feature]
         sess.add_all([self.ag, self.sl])
         sess.commit()
 
@@ -859,12 +831,15 @@ def test_transcript_interpreter():
     assert types_out == {types.CODING,
                          types.TRANSCRIBED,
                          types.INTRON}
-    bearings_out = set([x.bearing.value for x in features])
-    assert bearings_out == {types.START, types.END}
+    bearings_out = set([x.start_is_biological_start for x in features] +
+                       [x.end_is_biological_end for x in features])
+
+    assert bearings_out == {True}
 
     transcribeds = [x for x in features if x.type.value == types.TRANSCRIBED]
-    assert max([x.position for x in transcribeds]) == 400
-    assert min([x.position for x in transcribeds]) == 0
+    assert len(transcribeds) == 1
+    assert transcribeds[0].end == 400
+    assert transcribeds[0].start == 0
 
 
 def test_transcript_get_first():
@@ -885,7 +860,7 @@ def test_transcript_get_first():
     status = t_interp.status
     assert len(features) == 1
     f0 = features[0]
-    assert f0.position == 0
+    assert f0.start == 0
     assert status.is_5p_utr()
     assert f0.phase is None
     assert f0.is_plus_strand
@@ -919,7 +894,7 @@ def test_transcript_get_first_minus_strand():
     print(f0)
     print(status)
     print(f0.type)
-    assert f0.position == 399
+    assert f0.start == 399
     assert status.is_5p_utr()
     assert f0.phase is None
 
@@ -945,29 +920,26 @@ def test_transcript_get_first_without_UTR():
     t_interp.interpret_first_pos(i0, plus_strand=False)
     controller.session.commit()
     controller.execute_so_far()
+    print('??=\n', controller.session.query(orm.Feature).all())
     features = cleaned_commited_features(controller.session)
+    print('features ====>\n', features)
     status = t_interp.status
-    assert len(features) == 4
-    f_err_open = [f for f in features
-                  if f.bearing.value == types.START and f.type.value == types.ERROR][0]
-    f_err_close = [f for f in features
-                   if f.bearing.value == types.END and f.type.value == types.ERROR][0]
-    f_status_coding = [f for f in features
-                       if f.bearing.value == types.OPEN_STATUS and f.type.value == types.CODING][0]
-    f_status_transcribed = [f for f in features
-                            if f.bearing.value == types.OPEN_STATUS and f.type.value == types.TRANSCRIBED][0]
-    print(f_err_open)
-    print(status)
-    print(i0)
-    print([f.is_plus_strand for f in features], 'plus strands')
+    assert len(features) == 3
+    f_err = [f for f in features if f.type.value == types.ERROR][0]
+    f_coding = [f for f in features if f.type.value == types.CODING][0]
+    f_transcribed = [f for f in features if f.type.value == types.TRANSCRIBED][0]
+
     # should get status instead of a start codon and tss
-    assert f_status_coding.position == 119
-    assert f_status_transcribed.position == 119
-    assert not f_status_coding.is_plus_strand
+    assert f_coding.start == 119
+    assert not f_coding.start_is_biological_start
+    assert f_transcribed.start == 119
+    assert not f_transcribed.start_is_biological_start
+
+    assert not f_coding.is_plus_strand
     # region beyond exon should be marked erroneous
-    assert not f_err_close.is_plus_strand and not f_err_open.is_plus_strand
-    assert f_err_close.position == 118  # so that err overlaps 1bp with the coding status checked above
-    assert f_err_open.position == 404
+    assert not f_err.is_plus_strand
+    assert f_err.start == 404
+    assert f_err.end == 118  # so that err overlaps 1bp with the coding status checked above
     assert status.is_coding()
     assert status.seen_start
     assert status.genic
@@ -985,57 +957,52 @@ def test_transcript_transition_from_5p_to_end():
     t_interp.interpret_transition(ivals_before=ivals_sets[0],
                                   ivals_after=ivals_sets[1],
                                   plus_strand=True)
-    controller.session.commit()
-    controller.execute_so_far()
-    features = cleaned_commited_features(controller.session)
-    assert features[-1].type.value == types.CODING
-    assert features[-1].bearing.value == types.START
-    assert features[-1].position == 10
+
+    features = controller.features_to_add
+    coding_feature = features[-1]
+    assert coding_feature["type"] == types.CODING
+    assert coding_feature["start_is_biological_start"]
+    assert coding_feature["start"] == 10
+    assert coding_feature["end"] is None
     # hit splice site
     t_interp.interpret_transition(ivals_before=ivals_sets[1],
                                   ivals_after=ivals_sets[2],
                                   plus_strand=True)
-    controller.session.commit()
-    controller.execute_so_far()
-    features = cleaned_commited_features(controller.session)
-    assert features[-1].type.value == types.INTRON
-    assert features[-1].bearing.value == types.END
-    assert features[-2].type.value == types.INTRON
-    assert features[-2].bearing.value == types.START
-    assert features[-2].position == 100  # splice from
-    assert features[-1].position == 110  # splice to
+
+    intron_feature0 = features[-1]
+    assert intron_feature0["type"] == types.INTRON
+    assert intron_feature0["end"] == 110
+    assert intron_feature0["start"] == 100  # splice from
     assert t_interp.status.is_coding()
     # hit splice site
     t_interp.interpret_transition(ivals_before=ivals_sets[2],
                                   ivals_after=ivals_sets[3],
                                   plus_strand=True)
-    controller.session.commit()
-    controller.execute_so_far()
-    features = cleaned_commited_features(controller.session)
-    assert features[-1].type.value == types.INTRON
-    assert features[-1].bearing.value == types.END
-    assert features[-2].type.value == types.INTRON
-    assert features[-2].bearing.value == types.START
-    assert features[-2].position == 120  # splice from
-    assert features[-1].position == 200  # splice to
+
+    intron_feature1 = features[-1]
+    assert intron_feature1["type"] == types.INTRON
+    assert intron_feature1["start"] == 120  # splice from
+    assert intron_feature1["end"] == 200  # splice to
     # hit stop codon
     t_interp.interpret_transition(ivals_before=ivals_sets[3],
                                   ivals_after=ivals_sets[4],
                                   plus_strand=True)
-    controller.session.commit()
-    controller.execute_so_far()
-    features = cleaned_commited_features(controller.session)
-    assert features[-1].type.value == types.CODING
-    assert features[-1].bearing.value == types.END
-    assert features[-1].position == 300
+
+    # end should be added now
+    assert coding_feature["end"] == 300
+    assert coding_feature["end_is_biological_end"]
     # hit transcription termination site
     t_interp.interpret_last_pos(ivals_sets[4], plus_strand=True)
     controller.session.commit()
     controller.execute_so_far()
-    features = cleaned_commited_features(controller.session)
-    assert features[-1].type.value == types.TRANSCRIBED
-    assert features[-1].bearing.value == types.END
-    assert features[-1].position == 400
+    # spot check transcribed_feature after database entry
+    fin_features = cleaned_commited_features(controller.session)
+    transcribed_features = [x for x in fin_features if x.type.value == types.TRANSCRIBED]
+    assert len(transcribed_features) == 1
+    assert transcribed_features[0].start == 0
+    assert transcribed_features[0].end == 400
+    assert transcribed_features[0].start_is_biological_start
+    assert transcribed_features[0].end_is_biological_end
 
 
 def test_non_coding_transitions():
@@ -1056,20 +1023,21 @@ def test_non_coding_transitions():
     ivals_sets = t_interp.intervals_5to3(plus_strand=True)
     assert len(ivals_sets) == 1
     t_interp.interpret_first_pos(ivals_sets[0])
-    controller.session.commit()
-    controller.execute_so_far()
-    features = cleaned_commited_features(controller.session)
-    assert features[-1].type.value == types.TRANSCRIBED
-    assert features[-1].bearing.value == types.START
-    assert features[-1].position == 110
+
+    features = controller.features_to_add
+    transcribed_feature = features[-1]
+    assert transcribed_feature["type"] == types.TRANSCRIBED
+    assert transcribed_feature["start_is_biological_start"]
+    assert transcribed_feature["start"] == 110
+    assert transcribed_feature["end"] is None
+    assert transcribed_feature["end_is_biological_end"] is None
+
     t_interp.interpret_last_pos(ivals_sets[0], plus_strand=True)
-    controller.session.commit()
-    controller.execute_so_far()
-    features = cleaned_commited_features(controller.session)
-    assert features[-1].type.value == types.TRANSCRIBED
-    assert features[-1].bearing.value == types.END
-    assert features[-1].position == 120
-    assert len(features) == 2
+
+    assert transcribed_feature["start"] == 110  # no change expected
+    assert transcribed_feature["end"] == 120
+    assert transcribed_feature["end_is_biological_end"]
+    assert len(features) == 1
 
 
 def test_errors_not_lost():
@@ -1117,9 +1085,10 @@ def test_cp_features_to_prot():
     protein = protein[0]
     print(protein.id)
     print(controller.session.query(orm.association_translated_to_feature).all())
-    assert len(protein.features) == 2  # start and stop codon
-    assert set([x.type.value for x in protein.features]) == {types.CODING}
-    assert set([x.bearing.value for x in protein.features]) == {types.START, types.END}
+    assert len(protein.features) == 1
+    p_feature = protein.features[0]
+    assert p_feature.type.value == types.CODING
+    assert p_feature.start_is_biological_start == p_feature.end_is_biological_end == True
 
 
 def test_check_and_fix_structure():
@@ -1141,40 +1110,50 @@ def test_check_and_fix_structure():
     protein = protein[0]
     print(protein.id)
     print(controller.session.query(orm.association_translated_to_feature).all())
-    # check we get a protein with start and stop codon for the nice transcript
-    assert len(protein.features) == 2  # start and stop codon
-    assert set([x.type.value for x in protein.features]) == {types.CODING}
-    assert set([x.position for x in protein.features]) == {10, 300}
-    assert set([x.bearing.value for x in protein.features]) == {types.START, types.END}
-    # check we get a transcript with tss, 2x(dss, ass), and tts (+ start & stop codons)
+    # check we get a coding region/feature for the nice transcript
+    assert len(protein.features) == 1
+    p_feature = protein.features[0]
+    assert p_feature.type.value == types.CODING
+    assert p_feature.start == 10
+    assert p_feature.end == 300
+    assert p_feature.start_is_biological_start
+    assert p_feature.end_is_biological_end
+
+    # check we get a transcript with transcribed, coding and two intronic regions
     piece = controller.session.query(orm.TranscribedPiece).filter(orm.TranscribedPiece.given_id == 'y').first()
     print(piece)
-    assert len(piece.features) == 8
+    assert len(piece.features) == 4
     assert set([x.type.value for x in piece.features]) == {types.TRANSCRIBED,
                                                            types.INTRON,
                                                            types.CODING,
                                                            }
-    assert set([x.bearing.value for x in piece.features]) == {types.START, types.END}
+    assert set([(x.start_is_biological_start, x.end_is_biological_end) for x in piece.features]) == {(True, True)}
     # check handling of truncated transcript
     piece = controller.session.query(orm.TranscribedPiece).filter(orm.TranscribedPiece.given_id == 'x').first()
     protein = controller.session.query(orm.Translated).filter(orm.Translated.given_id == 'x.p').first()
     print(protein.features)
-    assert len(protein.features) == 2
-    assert set([x.type.value for x in protein.features]) == {types.CODING}
-    assert set([x.position for x in protein.features]) == {10, 120}
-    assert set([x.bearing.value for x in protein.features]) == {types.START, types.CLOSE_STATUS}
+    assert len(protein.features) == 1
+    p_feature = protein.features[0]
+    assert p_feature.type.value == types.CODING
+    assert p_feature.start == 10
+    assert p_feature.end == 120
+    assert p_feature.start_is_biological_start
+    assert not p_feature.end_is_biological_end
 
-    assert len(piece.features) == 8
+    assert len(piece.features) == 4
     assert set([x.type.value for x in piece.features]) == {types.TRANSCRIBED, types.INTRON,
                                                            types.ERROR, types.CODING}
     coding_fs = [x for x in piece.features if x.type.value == types.CODING]
-    assert len(coding_fs) == 2
-    assert set([x.bearing.value for x in coding_fs]) == {types.START, types.CLOSE_STATUS}
+    assert len(coding_fs) == 1
+    assert coding_fs[0].start_is_biological_start
+    assert not coding_fs[0].end_is_biological_end
 
     transcribed_fs = [x for x in piece.features if x.type.value == types.TRANSCRIBED]
-    assert len(transcribed_fs) == 2
-    assert set([x.bearing.value for x in transcribed_fs]) == {types.START, types.CLOSE_STATUS}
-    assert set([x.position for x in transcribed_fs]) == {0, 120}
+    assert len(transcribed_fs) == 1
+    assert transcribed_fs[0].start_is_biological_start
+    assert not transcribed_fs[0].end_is_biological_end
+    assert transcribed_fs[0].start == 0
+    assert transcribed_fs[0].end == 120
 
     sl_datas = controller.session.query(orm.SuperLocus).all()
     assert len(sl_datas) == 1
@@ -1205,16 +1184,17 @@ def test_erroneous_splice():
     clean_datas = cleaned_commited_features(sess)
     # TSS, start codon, 2x error splice, 2x error splice, 2x error no stop
     print('---\n'.join([str(x) for x in clean_datas]))
-    assert len(clean_datas) == 10
+    assert len(clean_datas) == 5
 
-    assert len([x for x in clean_datas if x.type.value == types.ERROR]) == 6
+    assert len([x for x in clean_datas if x.type.value == types.ERROR]) == 3
     # make sure splice error covers whole exon-intron-exon region
+    print('clean datas here::::')
+    print('\n\n'.join([str(x) for x in clean_datas]))
     assert clean_datas[2].type.value == types.ERROR
-    assert clean_datas[2].bearing.value == types.START
-    assert clean_datas[2].position == 10
-    assert clean_datas[3].type.value == types.ERROR
-    assert clean_datas[3].bearing.value == types.END
-    assert clean_datas[3].position == 120
+    assert clean_datas[2].start_is_biological_start
+    assert clean_datas[2].start == 10
+    assert clean_datas[2].end_is_biological_end
+    assert clean_datas[2].end == 120
     sess.commit()
 
 
