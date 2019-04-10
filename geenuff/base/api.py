@@ -20,9 +20,6 @@ class Handler(object):
 
     def __init__(self):
         self.data = None
-        self.delete_me = False
-        self.copyable = []
-        self.linkable = []
         self.id = None
 
     def add_data(self, data):
@@ -64,16 +61,6 @@ class SuperLocusHandlerBase(Handler):
     def data_type(self):
         return orm.SuperLocus
 
-    # todo maybe to this with ondelete statements in the db
-    def delete_marked_underlings(self, sess):
-        for data in self.data.features + self.data.transcribeds + self.data.translateds:
-            try:
-                if data.handler.delete_me:
-                    sess.delete(data)
-            except AttributeError as e:
-                'Warning, swallowing: {}\ndata: {}'.format(e, str(data))
-        sess.commit()
-
 
 class TranscribedHandlerBase(Handler):
 
@@ -110,6 +97,7 @@ class FeatureHandlerBase(Handler):
 
 
 class ChannelTracker(object):
+    """Tracks status of 'type' while stepping through the transitions of a transcript"""
     def __init__(self):
         self._in_region = False
         self._open_feature = None
@@ -154,6 +142,7 @@ class ChannelTracker(object):
 
 
 class CodingChannelTracker(ChannelTracker):
+    """tracks coding status (+ extras) while stepping through transitions of a transcript"""
     def __init__(self, phase=None):
         super().__init__()
         self.phase = phase  # todo, proper tracking / handling
@@ -169,7 +158,7 @@ class CodingChannelTracker(ChannelTracker):
 
 #### section TranscriptInterpreter, todo maybe put into a separate file later
 class TranscriptStatusBase(object):
-    """can hold and manipulate all the info on current status of a transcript"""
+    """can hold and manipulate all the info on current status (later: feature types) of a transcript"""
 
     def __init__(self):
         # initializes to intergenic (all channels / types set to False)
@@ -184,18 +173,6 @@ class TranscriptStatusBase(object):
             self.transcribed_tracker.in_region, self.intron_tracker.in_region, self.coding_tracker.in_region,
             self.trans_intron_tracker.in_region, self.coding_tracker.phase
         )
-
-    #@property
-    #def _decoder(self):
-    #    # todo, parallelize status until this isn't necessary
-    #    return {
-    #        types.TRANSCRIBED: ('in_transcribed', self.saw_tss, self.saw_tts, self.open_transcribed),
-    #        types.CODING: ('in_coding', self.saw_start, self.exit_coding, self.open_translated),
-    #        types.INTRON: ('in_intron', self.splice_open, self.splice_close, self.open_intron),
-    #        types.TRANS_INTRON: ('in_trans_intron', self.trans_splice_open, self.trans_splice_close,
-    #                             self.open_trans_intron),
-    #        types.ERROR: ('in_error', self.error_open, self.error_close, self.open_error)
-    #    }
 
     def is_utr(self):
         return self.transcribed_tracker.in_region and \
@@ -220,27 +197,8 @@ class TranscriptStatusBase(object):
         return not self.transcribed_tracker.in_region
 
 
-class TransitionStep(object):
-    def __init__(self, features=None, status=None, piece=None):
-        self.features = features
-        self.status = status
-        self.piece = piece
-        self.previous_range = None
-
-    def make_range(self, previous_step):
-        # todo, and this is where I realize exclusive closing elements really really are needed...
-        pass
-
-    @property
-    def a_feature(self):
-        if self.features is None:
-            return None
-        else:
-            return self.features[0]
-
-
 class TranscriptCoordinate(object):
-
+    """holds (and helps sort) either start or end, with the sequence, piece position, and direction"""
     def __init__(self, coordinate_id, piece_position, is_plus_strand, start):
         self.start = start
         self.coordinate_id = coordinate_id
@@ -268,6 +226,7 @@ class TranscriptCoordinate(object):
 
 
 class Range(TranscriptCoordinate):
+    """holds (and helps sort) a start-end range with the sequence, piece position, and direction"""
     def __init__(self, coordinate_id, piece_position, start, end, is_plus_strand):
         super().__init__(coordinate_id=coordinate_id, piece_position=piece_position, is_plus_strand=is_plus_strand,
                          start=start)
@@ -283,6 +242,7 @@ def positional_match(feature, previous):
 
 
 class TranscriptInterpBase(object):
+    """handles basics from transitioning (piece & feature sorting) through biological interpretation of a transcript"""
     def __init__(self, transcript, super_locus, session=None):
         assert isinstance(transcript, TranscribedHandlerBase)
         self.status = TranscriptStatusBase()
