@@ -337,30 +337,23 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
         piece_handler = transcribed_e_handler.transcribed_piece_handlers[0]
         controller.transcribeds_to_add.append(transcribed)
         controller.transcribed_pieces_to_add.append(piece)
+        transcript_interpreter = TranscriptInterpreter(transcript=transcribed_e_handler,
+                                                       super_locus=self,
+                                                       controller=controller)
         # setup error as only feature (defacto it's a mask)
-        feature_handler = FeatureHandler(controller, processed=True)
-        feature_handler.gffentry = copy.deepcopy(entry)
-        feature_handler.add_shortcuts_from_gffentry()
+        feature = transcript_interpreter.new_feature(gffentry=entry, type=types.ERROR, start_is_biological_start=True,
+                                                     end_is_biological_end=True)
         # gff start and end -> geenuff coordinates
-        if feature_handler.is_plus_strand:
+        if feature["is_plus_strand"]:
             err_start = entry.start - 1
             err_end = entry.end
         else:
             err_start = entry.end - 1
             err_end = entry.start - 2
 
-        packed = feature_handler.setup_insertion_ready(super_locus=self, transcribed_pieces=[piece_handler],
-                                                       coordinate=coordinate)
-        feature, feature2pieces, feature2translateds = packed
-        for key, val in [('type', types.ERROR), ('start', err_start), ('end', err_end),
-                         ('start_is_biological_start', True), ('end_is_biological_end', True)]:
+        for key, val in [('start', err_start), ('end', err_end)]:
             feature[key] = val
 
-        controller.features_to_add.append(feature)
-        controller.feature2transcribed_pieces_to_add += feature2pieces
-        controller.feature2translateds_to_add += feature2translateds
-
-        transcribed_e_handler.feature_handlers += [feature_handler]
         self.transcribed_handlers.append(transcribed_e_handler)
 
     def check_and_fix_structure(self, coordinate, controller):
@@ -645,10 +638,10 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         except NoGFFEntryError:
             self.proteins = None  # this way we only run into an error if we actually wanted to use proteins
 
-    def new_feature(self, template, translateds=None, **kwargs):
-        coordinate = self.controller.genome_handler.gffid_to_coords[template.gffentry.seqid]
+    def new_feature(self, gffentry, translateds=None, **kwargs):
+        coordinate = self.controller.genome_handler.gffid_to_coords[gffentry.seqid]
         handler = FeatureHandler(controller=self.controller, processed=True)
-        handler.gffentry = copy.deepcopy(template.gffentry)
+        handler.gffentry = copy.deepcopy(gffentry)
 
         feature, feature2pieces, feature2translateds = handler.setup_insertion_ready(
             self.super_locus,
@@ -898,18 +891,18 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             at = template.upstream_from_interval(after0)
             if template.gffentry.phase == 0:  # "non-0 phase @ {} in {}".format(template.id, template.super_locus.id)
                 start = at
-                coding_feature = self.new_feature(template=template, start=start, type=types.CODING,
+                coding_feature = self.new_feature(gffentry=template.gffentry, start=start, type=types.CODING,
                                                   start_is_biological_start=True, translateds=[translated])
                 self.status.coding_tracker.set_channel_open_with_feature(feature=coding_feature, phase=0)
             else:
                 err_start = before0.data.upstream_from_interval(before0) - sign * error_buffer  # mask prev feat. too
                 err_end = at + sign  # so that the error masks the coordinate with the close status
 
-                self.new_feature(template=template, type=types.ERROR, start=err_start, end=err_end,
+                self.new_feature(gffentry=template.gffentry, type=types.ERROR, start=err_start, end=err_end,
                                  start_is_biological_start=True, end_is_biological_end=True,
                                  phase=None)
 
-                coding_feature = self.new_feature(template=template, type=types.CODING, start=at,
+                coding_feature = self.new_feature(gffentry=template.gffentry, type=types.CODING, start=at,
                                                   start_is_biological_start=False, translateds=[translated])
                 self.status.coding_tracker.set_channel_open_with_feature(feature=coding_feature, phase=template.phase)
 
@@ -941,7 +934,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         between_splice_sites = (acceptor_at - donor_at) * sign
         min_intron_len = 3  # todo, maybe get something small but not entirely impossible?
         if between_splice_sites > min_intron_len:
-            self.new_feature(template=donor_tmplt, start=donor_at, end=acceptor_at, phase=None,
+            self.new_feature(gffentry=donor_tmplt.gffentry, start=donor_at, end=acceptor_at, phase=None,
                              start_is_biological_start=True, end_is_biological_end=True,
                              type=types.INTRON)
 
@@ -958,7 +951,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                 err_start = donor_tmplt.upstream() - 1  # to fr 0
                 err_end = acceptor_tmplt.downstream() - 2  # -1 to fr 0, -1 to excl = -2
 
-            self.new_feature(template=before0.data, start=err_start, end=err_end,
+            self.new_feature(gffentry=before0.data.gffentry, start=err_start, end=err_end,
                              start_is_biological_start=True, end_is_biological_end=True,
                              type=types.ERROR, bearing=types.START)
 
@@ -971,7 +964,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         possible_types = self.possible_types(intervals)
         if types.FIVE_PRIME_UTR in possible_types:
             # this should indicate we're good to go and have a transcription start site
-            transcribed_feature = self.new_feature(template=i0.data, type=types.TRANSCRIBED, start=at,
+            transcribed_feature = self.new_feature(gffentry=i0.data.gffentry, type=types.TRANSCRIBED, start=at,
                                                    phase=None, start_is_biological_start=True)
             self.status.transcribed_tracker.set_channel_open_with_feature(feature=transcribed_feature)
         elif cds in possible_types:
@@ -979,12 +972,12 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             cds_feature = self.pick_one_interval(intervals, target_type=cds).data
             translated = self.get_protein(cds_feature)
             # setup translated / coding feature
-            translated_feature = self.new_feature(template=cds_feature, type=types.CODING, start=at,
+            translated_feature = self.new_feature(gffentry=cds_feature.gffentry, type=types.CODING, start=at,
                                                   start_is_biological_start=False, translateds=[translated])
             self.status.coding_tracker.set_channel_open_with_feature(feature=translated_feature,
                                                                      phase=cds_feature.gffentry.phase)
             # setup transcribed feature (bc coding implies transcript)
-            transcribed_feature = self.new_feature(template=cds_feature, type=types.TRANSCRIBED, start=at,
+            transcribed_feature = self.new_feature(gffentry=cds_feature.gffentry, type=types.TRANSCRIBED, start=at,
                                                    start_is_biological_start=False)
             self.status.transcribed_tracker.set_channel_open_with_feature(transcribed_feature)
 
@@ -996,7 +989,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                 if at != start_of_sequence:
                     err_start = max(start_of_sequence, at - error_buffer)
                     err_end = at + 1  # so that the error masks the coordinate with the close status
-                    self.new_feature(template=cds_feature, type=types.ERROR,
+                    self.new_feature(gffentry=cds_feature.gffentry, type=types.ERROR,
                                      start_is_biological_start=True, end_is_biological_end=True,
                                      start=err_start, end=err_end, phase=None)
             else:
@@ -1004,7 +997,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                 if at != end_of_sequence:
                     err_start = min(end_of_sequence, at + error_buffer)
                     err_end = at - 1  # so that the error masks the coordinate with the close status
-                    self.new_feature(template=cds_feature, type=types.ERROR,
+                    self.new_feature(gffentry=cds_feature.gffentry, type=types.ERROR,
                                      start_is_biological_start=True, end_is_biological_end=True,
                                      start=err_start, end=err_end, phase=None)
         else:
@@ -1037,14 +1030,14 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                 if at != end_of_sequence:
                     err_start = at - 1  # so that the error masks the coordinate with the open status
                     err_end = min(at + error_buffer, end_of_sequence)
-                    self.new_feature(template=i0.data, type=types.ERROR, start=err_start, end=err_end,
+                    self.new_feature(gffentry=i0.data.gffentry, type=types.ERROR, start=err_start, end=err_end,
                                      start_is_biological_start=True, end_is_biological_end=True,
                                      phase=None)
             else:
                 if at != start_of_sequence:
                     err_start = at + 1  # so that the error masks the coordinate with the open status
                     err_end = max(start_of_sequence, at - error_buffer)
-                    self.new_feature(template=i0.data, type=types.ERROR,
+                    self.new_feature(gffentry=i0.data.gffentry, type=types.ERROR,
                                      phase=None, start=err_start, start_is_biological_start=True,
                                      end=err_end, end_is_biological_end=True)
         else:
