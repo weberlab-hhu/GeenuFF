@@ -196,6 +196,9 @@ class GFFDerived(object):
     #        data = self.gen_data_from_gffentry(gffentry, **kwargs)
     #    return data
 
+    def add_to_queue(self, insertion_queue, *args, **kwargs):
+        raise NotImplementedError
+
     def setup_insertion_ready(self, **kwargs):
         # should create 'data' object (annotations_orm.Base subclass) and then call self.add_data(data)
         raise NotImplementedError
@@ -292,11 +295,7 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
         elif in_values(entry.type, types.TranscriptLevelAll):
             transcribed = TranscribedHandler(controller)
             transcribed.gffentry = copy.deepcopy(entry)
-
-            transcribed_add, piece_add = transcribed.setup_insertion_ready(gffentry=entry,
-                                                                           super_locus=self)
-            controller.insertion_queues.transcribed.queue.append(transcribed_add)
-            controller.insertion_queues.transcribed_piece.queue.append(piece_add)
+            transcribed.add_to_queue(controller.insertion_queues, super_locus=self)
             self.transcribed_handlers.append(transcribed)
 
         elif in_values(entry.type, types.OnSequence):
@@ -344,6 +343,7 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
         # todo, CLEAN UP / get in functions
         transcribed_e_handler = TranscribedHandler(controller)
         transcribed_e_handler.gffentry = copy.deepcopy(entry)
+        # transcribed_e_handler.add_to_queue(controller.insertion_queues, super_locus=self)  # todo, solve "parent" from gffentry check... then use this
         transcribed, piece = transcribed_e_handler.setup_insertion_ready(super_locus=self)
         controller.insertion_queues.transcribed.queue.append(transcribed)
         controller.insertion_queues.transcribed_piece.queue.append(piece)
@@ -352,7 +352,7 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
                                                        controller=controller)
         # setup error as only feature (defacto it's a mask)
         feature = transcript_interpreter.new_feature(gffentry=entry, type=types.ERROR, start_is_biological_start=True,
-                                                     end_is_biological_end=True)
+                                                     end_is_biological_end=True, coordinate_id=coordinate.id)
         # gff start and end -> geenuff coordinates
         if feature["is_plus_strand"]:
             err_start = entry.start - 1
@@ -536,6 +536,12 @@ class TranscribedHandler(api.TranscribedHandlerBase, GFFDerived):
                                                   position=0)
         self.transcribed_piece_handlers.append(piece)
         return transcribed_2_add, piece_2_add
+
+    def add_to_queue(self, insertion_queues, super_locus, *args, **kwargs):  # I thought this worked with kwargs...?
+        transcribed_add, piece_add = self.setup_insertion_ready(gffentry=self.gffentry,
+                                                                super_locus=super_locus)
+        insertion_queues.transcribed.queue.append(transcribed_add)
+        insertion_queues.transcribed_piece.queue.append(piece_add)
 
     def one_piece(self):
         pieces = self.transcribed_piece_handlers
