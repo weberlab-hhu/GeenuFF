@@ -38,6 +38,18 @@ class InsertionQueue(helpers.QueueController):
         ]
 
 
+class InsertCounterHolder(object):
+    """provides incrementing unique integers to be used as primary keys for bulk inserts"""
+    # todo, think about whether using class attributes for the counters would work? When should they reset?
+    def __init__(self):
+        self.feature = helpers.Counter()
+        self.translated = helpers.Counter()
+        self.transcribed = helpers.Counter()
+        self.super_locus = helpers.Counter()
+        self.transcribed_piece = helpers.Counter()
+        self.genome = helpers.Counter()
+
+
 ##### main flow control #####
 class ImportControl(object):
 
@@ -55,12 +67,7 @@ class ImportControl(object):
         self.insertion_queues = None
 
         # counting everything that goes in
-        self.feature_counter = helpers.Counter()
-        self.translated_counter = helpers.Counter()
-        self.transcribed_counter = helpers.Counter()
-        self.super_locus_counter = helpers.Counter()
-        self.transcribed_piece_counter = helpers.Counter()
-        self.coord_handler_import_counter = helpers.Counter()
+        self.counters = InsertCounterHolder()
 
         self._mk_session()  # initializes session, engine, and insertion_queues
 
@@ -198,7 +205,7 @@ class GenomeHandler(api.GenomeHandlerBase):
     def __init__(self, controller=None):
         super().__init__()
         if controller is not None:
-            self.id = controller.coord_handler_import_counter()
+            self.id = controller.counters.genome()
         self.mapper = None
         self._coords_by_seqid = None
         self._gffid_to_coords = None
@@ -260,7 +267,7 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
         super().__init__()
         GFFDerived.__init__(self)
         if controller is not None:
-            self.id = controller.super_locus_counter()
+            self.id = controller.counters.super_locus()
         self.transcribed_handlers = []
 
     def setup_insertion_ready(self):
@@ -386,7 +393,7 @@ class FeatureHandler(api.FeatureHandlerBase, GFFDerived):
         super().__init__()
         GFFDerived.__init__(self)
         if controller is not None:
-            self.id = controller.feature_counter()
+            self.id = controller.counters.feature()
         self.processed = processed
         self._is_plus_strand = None
         self._given_id = None
@@ -494,7 +501,7 @@ class TranscribedHandler(api.TranscribedHandlerBase, GFFDerived):
         super().__init__()
         GFFDerived.__init__(self)
         if controller is not None:
-            self.id = controller.transcribed_counter()
+            self.id = controller.counters.transcribed()
         self.controlller = controller
         self.transcribed_piece_handlers = []
         self.feature_handlers = []
@@ -541,7 +548,7 @@ class TranscribedPieceHandler(api.TranscribedPieceHandlerBase, GFFDerived):
         super().__init__()
         GFFDerived.__init__(self)
         if controller is not None:
-            self.id = controller.transcribed_piece_counter()
+            self.id = controller.counters.transcribed_piece()
 
     def setup_insertion_ready(self, gffentry=None, super_locus=None, transcribed=None, position=0):
         if gffentry is not None:
@@ -569,7 +576,7 @@ class TranslatedHandler(api.TranslatedHandlerBase):
     def __init__(self, controller=None):  # todo, all handlers, controller=None
         super().__init__()
         if controller is not None:
-            self.id = controller.translated_counter()
+            self.id = controller.counters.translated()
 
     def setup_insertion_ready(self, super_locus_handler=None, given_id=''):
         translated = {

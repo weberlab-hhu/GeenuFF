@@ -826,17 +826,6 @@ def test_transcript_interpreter():
     controller.insertion_queues.execute_so_far()
     controller.session.commit()
     features = cleaned_commited_features(controller.session)
-    print(len(features))
-    wat = controller.session.query(orm.association_transcribed_piece_to_feature).all()
-    print(len(wat))
-
-    conn = controller.engine.connect()
-    res = conn.execute(orm.Feature.__table__.select())
-    print(orm.Feature.__table__.select())
-    print(res.fetchone())
-    for r in res:
-        print(r)
-    assert controller.session is controller.insertion_queues.session
 
     types_out = set([x.type.value for x in features])
     assert types_out == {types.CODING,

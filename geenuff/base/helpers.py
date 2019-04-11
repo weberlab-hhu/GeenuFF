@@ -120,11 +120,8 @@ class QueueController(object):
         conn = self.engine.connect()
         for queue in self.ordered_queues:
             if queue.queue:
-                print(queue.action, queue.queue[0])
-                print(len(queue.queue), type(queue.queue))
                 conn.execute(queue.action, queue.queue)
                 del queue.queue[:]
-                print('after', len(queue.queue), type(queue.queue))
         self.session.commit()
 
 
