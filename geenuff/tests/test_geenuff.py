@@ -33,7 +33,6 @@ def setup_data_handler(handler_type, data_type, **kwargs):
 
 def setup_testable_super_locus(db_path='sqlite:///:memory:'):
     controller = gffimporter.ImportControl(err_path='/dev/null', database_path=db_path)
-    controller.mk_session()
     controller.add_sequences('testdata/dummyloci.fa')
     controller.add_gff('testdata/dummyloci.gff3', clean=False)
     return controller.super_loci[0], controller
@@ -803,7 +802,6 @@ def test_possible_types():
 def test_import_coordinate():
     """Import and test coordinate information from a dummy gff file."""
     controller = gffimporter.ImportControl(database_path='sqlite:///:memory:')
-    controller.mk_session()
     seq_path = 'testdata/dummyloci.fa'
     controller.add_sequences(seq_path)
     coors = controller.genome_handler.data.coordinates
@@ -825,8 +823,21 @@ def test_transcript_interpreter():
     t_interp.decode_raw_features()
     # has all standard features
     controller.session.commit()
-    controller.execute_so_far()
+    controller.insertion_queues.execute_so_far()
+    controller.session.commit()
     features = cleaned_commited_features(controller.session)
+    print(len(features))
+    wat = controller.session.query(orm.association_transcribed_piece_to_feature).all()
+    print(len(wat))
+
+    conn = controller.engine.connect()
+    res = conn.execute(orm.Feature.__table__.select())
+    print(orm.Feature.__table__.select())
+    print(res.fetchone())
+    for r in res:
+        print(r)
+    assert controller.session is controller.insertion_queues.session
+
     types_out = set([x.type.value for x in features])
     assert types_out == {types.CODING,
                          types.TRANSCRIBED,
@@ -855,7 +866,7 @@ def test_transcript_get_first():
         print(intv)
     t_interp.interpret_first_pos(i0)
     controller.session.commit()
-    controller.execute_so_far()
+    controller.insertion_queues.execute_so_far()
     features = cleaned_commited_features(controller.session)
     status = t_interp.status
     assert len(features) == 1
@@ -884,7 +895,7 @@ def test_transcript_get_first_minus_strand():
     i0 = sorted_intervals[0]
     t_interp.interpret_first_pos(i0, plus_strand=False)
     controller.session.commit()
-    controller.execute_so_far()
+    controller.insertion_queues.execute_so_far()
     features = cleaned_commited_features(controller.session)
     print(features)
     features = [f for f in features if not f.is_plus_strand]
@@ -919,7 +930,7 @@ def test_transcript_get_first_without_UTR():
     i0 = t_interp.intervals_5to3(plus_strand=False)[0]
     t_interp.interpret_first_pos(i0, plus_strand=False)
     controller.session.commit()
-    controller.execute_so_far()
+    controller.insertion_queues.execute_so_far()
     print('??=\n', controller.session.query(orm.Feature).all())
     features = cleaned_commited_features(controller.session)
     print('features ====>\n', features)
@@ -958,7 +969,7 @@ def test_transcript_transition_from_5p_to_end():
                                   ivals_after=ivals_sets[1],
                                   plus_strand=True)
 
-    features = controller.features_to_add
+    features = controller.insertion_queues.feature.queue
     coding_feature = features[-1]
     assert coding_feature["type"] == types.CODING
     assert coding_feature["start_is_biological_start"]
@@ -994,7 +1005,7 @@ def test_transcript_transition_from_5p_to_end():
     # hit transcription termination site
     t_interp.interpret_last_pos(ivals_sets[4], plus_strand=True)
     controller.session.commit()
-    controller.execute_so_far()
+    controller.insertion_queues.execute_so_far()
     # spot check transcribed_feature after database entry
     fin_features = cleaned_commited_features(controller.session)
     transcribed_features = [x for x in fin_features if x.type.value == types.TRANSCRIBED]
@@ -1024,7 +1035,7 @@ def test_non_coding_transitions():
     assert len(ivals_sets) == 1
     t_interp.interpret_first_pos(ivals_sets[0])
 
-    features = controller.features_to_add
+    features = controller.insertion_queues.feature.queue
     transcribed_feature = features[-1]
     assert transcribed_feature["type"] == types.TRANSCRIBED
     assert transcribed_feature["start_is_biological_start"]
@@ -1062,7 +1073,7 @@ def test_setup_proteins():
     sl, controller = setup_testable_super_locus()
     transcript = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
     t_interp = gffimporter.TranscriptInterpreter(transcript, sl, controller)
-    controller.execute_so_far()
+    controller.insertion_queues.execute_so_far()
     print(t_interp.proteins)
     assert len(t_interp.proteins.keys()) == 1
 
@@ -1080,7 +1091,7 @@ def test_cp_features_to_prot():
 
     t_interp.decode_raw_features()
     controller.session.commit()
-    controller.execute_so_far()
+    controller.insertion_queues.execute_so_far()
     # grab protein again jic
     protein = controller.session.query(orm.Translated).filter(orm.Translated.given_id == 'y.p').all()
     assert len(protein) == 1
@@ -1104,7 +1115,7 @@ def test_check_and_fix_structure():
     coordinate = controller.genome_handler.data.coordinates[0]
 
     sl.check_and_fix_structure(coordinate=coordinate, controller=controller)
-    controller.execute_so_far()
+    controller.insertion_queues.execute_so_far()
     # check handling of nice transcript
     protein = controller.session.query(orm.Translated).filter(orm.Translated.given_id == 'y.p').all()
     print(controller.session.query(orm.association_translated_to_feature).all())
@@ -1182,7 +1193,7 @@ def test_erroneous_splice():
     ti = gffimporter.TranscriptInterpreter(transcript, controller=controller, super_locus=sl)
     ti.decode_raw_features()
     sess.commit()
-    controller.execute_so_far()
+    controller.insertion_queues.execute_so_far()
     clean_datas = cleaned_commited_features(sess)
     # TSS, start codon, 2x error splice, 2x error splice, 2x error no stop
     print('---\n'.join([str(x) for x in clean_datas]))

@@ -13,6 +13,31 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 
+# core queue prep
+class InsertionQueue(helpers.QueueController):
+    def __init__(self, session, engine):
+        super().__init__(session, engine)
+        self.super_locus = helpers.CoreQueue(orm.SuperLocus.__table__.insert())
+        self.transcribed = helpers.CoreQueue(orm.Transcribed.__table__.insert())
+        self.transcribed_piece = helpers.CoreQueue(orm.TranscribedPiece.__table__.insert())
+        self.translated = helpers.CoreQueue(orm.Translated.__table__.insert())
+        self.feature = helpers.CoreQueue(orm.Feature.__table__.insert())
+        self.association_transcribed_piece_to_feature = helpers.CoreQueue(
+            orm.association_transcribed_piece_to_feature.insert())
+        self.association_translated_to_feature = helpers.CoreQueue(
+            orm.association_translated_to_feature.insert())
+
+        self.ordered_queues = [
+            self.super_locus,
+            self.transcribed,
+            self.transcribed_piece,
+            self.translated,
+            self.feature,
+            self.association_transcribed_piece_to_feature,
+            self.association_translated_to_feature
+        ]
+
+
 ##### main flow control #####
 class ImportControl(object):
 
@@ -26,15 +51,8 @@ class ImportControl(object):
         self.genome_handler = None
         self.coordinates = {}
         self.super_loci = []
-        self.mk_session()
         # queues for adding to db
-        self.features_to_add = []
-        self.feature2transcribed_pieces_to_add = []
-        self.feature2translateds_to_add = []
-        self.translateds_to_add = []
-        self.transcribeds_to_add = []
-        self.transcribed_pieces_to_add = []
-        self.super_loci_to_add = []
+        self.insertion_queues = None
 
         # counting everything that goes in
         self.feature_counter = helpers.Counter()
@@ -44,11 +62,14 @@ class ImportControl(object):
         self.transcribed_piece_counter = helpers.Counter()
         self.coord_handler_import_counter = helpers.Counter()
 
-    def mk_session(self):
+        self._mk_session()  # initializes session, engine, and insertion_queues
+
+    def _mk_session(self):
         self.engine = create_engine(self.database_path, echo=False)  # todo, dynamic / real path
         orm.Base.metadata.create_all(self.engine)
         Session = sessionmaker(bind=self.engine)
         self.session = Session()
+        self.insertion_queues = InsertionQueue(session=self.session, engine=self.engine)
 
     def gff_gen(self, gff_file):
         known = [x.value for x in types.AllKnown]
@@ -143,26 +164,11 @@ class ImportControl(object):
 
             super_loci.append(super_locus)  # just to keep some direct python link to this
             if not i % 500:
-                self.execute_so_far()
+                self.insertion_queues.execute_so_far()
             i += 1
         self.super_loci = super_loci
-        self.execute_so_far()
+        self.insertion_queues.execute_so_far()
         err_handle.close()
-
-    def execute_so_far(self):
-        insert_lists = [(orm.SuperLocus.__table__.insert(), self.super_loci_to_add),
-                        (orm.Transcribed.__table__.insert(), self.transcribeds_to_add),
-                        (orm.TranscribedPiece.__table__.insert(), self.transcribed_pieces_to_add),
-                        (orm.Translated.__table__.insert(), self.translateds_to_add),
-                        (orm.Feature.__table__.insert(), self.features_to_add),
-                        (orm.association_transcribed_piece_to_feature.insert(), self.feature2transcribed_pieces_to_add),
-                        (orm.association_translated_to_feature.insert(), self.feature2translateds_to_add)
-                        ]
-        conn = self.engine.connect()
-        for insert, a_list in insert_lists:
-            if a_list:
-                conn.execute(insert, a_list)
-            del a_list[:]
 
     def clean_super_loci(self):
         for sl in self.super_loci:
@@ -273,7 +279,7 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
         if in_values(entry.type, types.SuperLocusAll):
             self.gffentry = entry
             to_add = self.setup_insertion_ready()
-            controller.super_loci_to_add.append(to_add)
+            controller.insertion_queues.super_locus.queue.append(to_add)
             #self.process_gffentry(gffentry=entry)
 
         elif in_values(entry.type, types.TranscriptLevelAll):
@@ -282,16 +288,14 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
 
             transcribed_add, piece_add = transcribed.setup_insertion_ready(gffentry=entry,
                                                                            super_locus=self)
-            controller.transcribeds_to_add.append(transcribed_add)
-            controller.transcribed_pieces_to_add.append(piece_add)
+            controller.insertion_queues.transcribed.queue.append(transcribed_add)
+            controller.insertion_queues.transcribed_piece.queue.append(piece_add)
             self.transcribed_handlers.append(transcribed)
 
         elif in_values(entry.type, types.OnSequence):
             feature = FeatureHandler(controller)
             feature.gffentry = copy.deepcopy(entry)
             assert len(self.transcribed_handlers) > 0, "no transcribeds found before feature"
-            # MOD_READIN, will need to set up features with temporary linkage,
-            # but without entering them into final db
             feature.add_shortcuts_from_gffentry()
             self.transcribed_handlers[-1].feature_handlers.append(feature)
         else:
@@ -334,9 +338,8 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
         transcribed_e_handler = TranscribedHandler(controller)
         transcribed_e_handler.gffentry = copy.deepcopy(entry)
         transcribed, piece = transcribed_e_handler.setup_insertion_ready(super_locus=self)
-        piece_handler = transcribed_e_handler.transcribed_piece_handlers[0]
-        controller.transcribeds_to_add.append(transcribed)
-        controller.transcribed_pieces_to_add.append(piece)
+        controller.insertion_queues.transcribed.queue.append(transcribed)
+        controller.insertion_queues.transcribed_piece.queue.append(piece)
         transcript_interpreter = TranscriptInterpreter(transcript=transcribed_e_handler,
                                                        super_locus=self,
                                                        controller=controller)
@@ -374,7 +377,7 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
                 # make new features
                 t_interpreter.decode_raw_features()
                 # make sure the new features link to protein if appropriate
-                controller.execute_so_far()
+                controller.insertion_queues.execute_so_far()
 
 
 class FeatureHandler(api.FeatureHandlerBase, GFFDerived):
@@ -632,6 +635,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
     def __init__(self, transcript, super_locus, controller):
         super().__init__(transcript, super_locus, session=controller.session)
         self.status = EukTranscriptStatus()
+        assert isinstance(controller, ImportControl)
         self.controller = controller
         try:
             self.proteins = self._setup_proteins()
@@ -651,9 +655,9 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         for key in kwargs:
             feature[key] = kwargs[key]
 
-        self.controller.features_to_add.append(feature)
-        self.controller.feature2transcribed_pieces_to_add += feature2pieces
-        self.controller.feature2translateds_to_add += feature2translateds
+        self.controller.insertion_queues.feature.queue.append(feature)
+        self.controller.insertion_queues.association_transcribed_piece_to_feature.queue += feature2pieces
+        self.controller.insertion_queues.association_translated_to_feature.queue += feature2translateds
         return feature
 
     @staticmethod
@@ -714,7 +718,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             # ready translated for database entry
             translated = protein.setup_insertion_ready(super_locus_handler=self.super_locus,
                                                        given_id=key)
-            self.controller.translateds_to_add.append(translated)
+            self.controller.insertion_queues.translated.queue.append(translated)
             proteins[key] = protein
         return proteins
 

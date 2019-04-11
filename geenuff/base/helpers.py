@@ -97,6 +97,7 @@ def as_py_end(end):
     return end
 
 
+##### SQL alchemy core queue control #####
 class Counter(object):
     def __init__(self, at=0):
         self._at = at
@@ -104,3 +105,30 @@ class Counter(object):
     def __call__(self, *args, **kwargs):
         self._at += 1
         return self._at
+
+
+class QueueController(object):
+    def __init__(self, session, engine):
+        self.session = session
+        self.engine = engine
+        print('setting up QC x_x')
+        print(self.session)
+        print(self.engine)
+        self.ordered_queues = []
+
+    def execute_so_far(self):
+        conn = self.engine.connect()
+        for queue in self.ordered_queues:
+            if queue.queue:
+                print(queue.action, queue.queue[0])
+                print(len(queue.queue), type(queue.queue))
+                conn.execute(queue.action, queue.queue)
+                del queue.queue[:]
+                print('after', len(queue.queue), type(queue.queue))
+        self.session.commit()
+
+
+class CoreQueue(object):
+    def __init__(self, action):
+        self.queue = []
+        self.action = action
