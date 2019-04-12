@@ -188,15 +188,7 @@ class GFFDerived(object):
     def __init__(self):
         self.gffentry = None
 
-    # todo, consider reviving but wrapping setup_insertion_ready
-    #def process_gffentry(self, gffentry, gen_data=True, **kwargs):
-    #    self.gffentry = gffentry
-    #    data = None
-    #    if gen_data:
-    #        data = self.gen_data_from_gffentry(gffentry, **kwargs)
-    #    return data
-
-    def add_to_queue(self, insertion_queue, *args, **kwargs):
+    def add_to_queue(self, insertion_queues, **kwargs):
         raise NotImplementedError
 
     def setup_insertion_ready(self, **kwargs):
@@ -262,7 +254,7 @@ class GenomeHandler(api.GenomeHandlerBase):
             seqid = fasta_header.split(id_delim)[0]
             # todo, parallelize sequence & annotation format, then import directly from ~Slice
             orm.Coordinate(start=0, end=len(seq), seqid=seqid, sha1=self.hashseq(seq),
-                            genome=self.data)
+                           genome=self.data)
 
 
 class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
@@ -276,6 +268,14 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
     def setup_insertion_ready(self):
         # todo, grab more aliases from gff attribute?
         return {'type': self.gffentry.type, 'given_id': self.gffentry.get_ID(), 'id': self.id}
+
+    def add_to_queue(self, insertion_queues, **kwargs):
+        to_add = self.setup_insertion_ready()
+        for key in kwargs:
+            to_add[key] = kwargs[key]
+
+        insertion_queues.super_locus.queue.append(to_add)
+
     @property
     def given_id(self):
         return self.gffentry.get_ID()
@@ -288,14 +288,12 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
                 raise TransSplicingError(msg)
         if in_values(entry.type, types.SuperLocusAll):
             self.gffentry = entry
-            to_add = self.setup_insertion_ready()
-            controller.insertion_queues.super_locus.queue.append(to_add)
-            #self.process_gffentry(gffentry=entry)
+            self.add_to_queue(controller.insertion_queues)
 
         elif in_values(entry.type, types.TranscriptLevelAll):
             transcribed = TranscribedHandler(controller)
             transcribed.gffentry = copy.deepcopy(entry)
-            transcribed.add_to_queue(controller.insertion_queues, super_locus=self)
+            transcribed.add_to_queue(controller.insertion_queues, super_locus=self, gffentry=entry)
             self.transcribed_handlers.append(transcribed)
 
         elif in_values(entry.type, types.OnSequence):
@@ -340,16 +338,14 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
             ))
 
         # dummy transcript
-        # todo, CLEAN UP / get in functions
         transcribed_e_handler = TranscribedHandler(controller)
         transcribed_e_handler.gffentry = copy.deepcopy(entry)
-        # transcribed_e_handler.add_to_queue(controller.insertion_queues, super_locus=self)  # todo, solve "parent" from gffentry check... then use this
-        transcribed, piece = transcribed_e_handler.setup_insertion_ready(super_locus=self)
-        controller.insertion_queues.transcribed.queue.append(transcribed)
-        controller.insertion_queues.transcribed_piece.queue.append(piece)
+        transcribed_e_handler.add_to_queue(controller.insertion_queues, super_locus=self)
+
         transcript_interpreter = TranscriptInterpreter(transcript=transcribed_e_handler,
                                                        super_locus=self,
                                                        controller=controller)
+
         # setup error as only feature (defacto it's a mask)
         feature = transcript_interpreter.new_feature(gffentry=entry, type=types.ERROR, start_is_biological_start=True,
                                                      end_is_biological_end=True, coordinate_id=coordinate.id)
@@ -451,8 +447,8 @@ class FeatureHandler(api.FeatureHandlerBase, GFFDerived):
                    'source': self.gffentry.source,
                    'phase': self.gffentry.phase,  # todo, do I need to handle '.'?
                    'super_locus_id': super_locus.id,
-                   'start': None,  # all currently set via kwargs in new_feature, but core needs _all_ dict keys
-                   'end': None,  # todo, clean up / make them arguments here
+                   'start': None,  # all currently set via kwargs in add_to_queue, as they aren't clear from  gffentry
+                   'end': None,  # note the dict must always have all keys for core
                    'start_is_biological_start': None,
                    'end_is_biological_end': None
                    }
@@ -460,6 +456,23 @@ class FeatureHandler(api.FeatureHandlerBase, GFFDerived):
         feature2pieces = [{'transcribed_piece_id': p.id, 'feature_id': self.id} for p in transcribed_pieces]
         feature2translateds = [{'translated_id': p.id, 'feature_id': self.id} for p in translateds]
 
+        return feature, feature2pieces, feature2translateds
+
+    def add_to_queue(self, insertion_queues, super_locus=None, transcribed_pieces=None, translateds=None,
+                     coordinate=None, **kwargs):
+
+        feature, feature2pieces, feature2translateds = self.setup_insertion_ready(
+            super_locus,
+            transcribed_pieces,  # todo, add flexibility for parsing trans-splicing...
+            translateds,
+            coordinate)
+
+        for key in kwargs:
+            feature[key] = kwargs[key]
+
+        insertion_queues.feature.queue.append(feature)
+        insertion_queues.association_transcribed_piece_to_feature.queue += feature2pieces
+        insertion_queues.association_translated_to_feature.queue += feature2translateds
         return feature, feature2pieces, feature2translateds
 
     # "+ strand" [upstream, downstream) or "- strand" (downstream, upstream] from 0 coordinate
@@ -537,11 +550,15 @@ class TranscribedHandler(api.TranscribedHandlerBase, GFFDerived):
         self.transcribed_piece_handlers.append(piece)
         return transcribed_2_add, piece_2_add
 
-    def add_to_queue(self, insertion_queues, super_locus, *args, **kwargs):  # I thought this worked with kwargs...?
-        transcribed_add, piece_add = self.setup_insertion_ready(gffentry=self.gffentry,
+    def add_to_queue(self, insertion_queues, gffentry=None, super_locus=None, **kwargs):
+        transcribed_add, piece_add = self.setup_insertion_ready(gffentry=gffentry,
                                                                 super_locus=super_locus)
+        for key in kwargs:
+            transcribed_add[key] = kwargs[key]
+
         insertion_queues.transcribed.queue.append(transcribed_add)
         insertion_queues.transcribed_piece.queue.append(piece_add)
+        return transcribed_add, piece_add
 
     def one_piece(self):
         pieces = self.transcribed_piece_handlers
@@ -659,18 +676,13 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         coordinate = self.controller.genome_handler.gffid_to_coords[gffentry.seqid]
         handler = FeatureHandler(controller=self.controller, processed=True)
         handler.gffentry = copy.deepcopy(gffentry)
+        feature, _, _ = handler.add_to_queue(insertion_queues=self.controller.insertion_queues,
+                                             super_locus=self.super_locus,
+                                             transcribed_pieces=self.transcript.transcribed_piece_handlers,
+                                             translateds=translateds,
+                                             coordinate=coordinate,
+                                             **kwargs)
 
-        feature, feature2pieces, feature2translateds = handler.setup_insertion_ready(
-            self.super_locus,
-            self.transcript.transcribed_piece_handlers,  # todo, add flexibility for parsing trans-splicing...
-            translateds,
-            coordinate)
-        for key in kwargs:
-            feature[key] = kwargs[key]
-
-        self.controller.insertion_queues.feature.queue.append(feature)
-        self.controller.insertion_queues.association_transcribed_piece_to_feature.queue += feature2pieces
-        self.controller.insertion_queues.association_translated_to_feature.queue += feature2translateds
         return feature
 
     @staticmethod
