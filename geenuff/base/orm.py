@@ -58,7 +58,7 @@ class SuperLocus(Base):
     translateds = relationship('Translated', back_populates='super_locus')
 
 
-association_transcribed_piece_to_feature = Table('association_transcribed_piece_to_feature', Base.metadata,  # todo, rename
+association_transcribed_piece_to_feature = Table('association_transcribed_piece_to_feature', Base.metadata,
     Column('transcribed_piece_id', Integer, ForeignKey('transcribed_piece.id'), nullable=False),
     Column('feature_id', Integer, ForeignKey('feature.id'), nullable=False)
 )
@@ -139,10 +139,6 @@ class Feature(Base):
     source = Column(String)
     phase = Column(Integer)
 
-    # for differentiating from subclass entries
-    subtype = Column(String(20))
-
-    #seqid = Column(String)
     # any piece of coordinate always has just one seqid
     coordinate_id = Column(Integer, ForeignKey('coordinate.id'), nullable=False)
     coordinate = relationship('Coordinate', back_populates='features')
@@ -163,20 +159,15 @@ class Feature(Base):
         CheckConstraint(phase < 3, name='check_phase_less_three'),
     )
 
-    __mapper_args__ = {
-        'polymorphic_on': subtype,
-        'polymorphic_identity': 'general'
-    }
-
     def __repr__(self):
         start_caveat = end_caveat = ''
         if self.start_is_biological_start is None:
             start_caveat = '?'
-        elif self.start_is_biological_start == False:
+        elif self.start_is_biological_start is False:
             start_caveat = '*'
         if self.end_is_biological_end is None:
             end_caveat = '?'
-        elif self.end_is_biological_end == False:
+        elif self.end_is_biological_end is False:
             end_caveat = '*'
         s = '<{py_type}, {pk}: {givenid} of type: {type} @({start}{start_caveat} -> {end}{end_caveat}) on {coor}, ' \
             'is_plus: {plus}, phase: {phase}>'.format(
