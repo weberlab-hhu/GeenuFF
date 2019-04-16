@@ -267,7 +267,6 @@ class TranscriptInterpBase(object):
         for piece in self.sort_pieces():
             piece_features = self.sorted_features(piece)
             for aligned_features in self.full_stack_matches(piece_features):
-                print(piece.id, piece.position)
                 yield aligned_features, piece
 
     def sorted_features(self, piece):

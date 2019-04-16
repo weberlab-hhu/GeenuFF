@@ -71,6 +71,10 @@ class ImportControl(object):
 
         self._mk_session()  # initializes session, engine, and insertion_queues
 
+    @property
+    def genome_handler_type(self):
+        return GenomeHandler
+
     def _mk_session(self):
         self.engine = create_engine(self.database_path, echo=False)  # todo, dynamic / real path
         orm.Base.metadata.create_all(self.engine)
@@ -134,7 +138,7 @@ class ImportControl(object):
 
     def make_genome(self, **kwargs):
         # todo, parse in meta data from kwargs?
-        self.genome_handler = GenomeHandler()
+        self.genome_handler = self.genome_handler_type()
         ag = orm.Genome()
         self.genome_handler.add_data(ag)
         self.session.add(ag)
