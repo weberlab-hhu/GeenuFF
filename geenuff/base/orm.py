@@ -105,8 +105,8 @@ class TranscribedPiece(Base):
     __table_args__ = (UniqueConstraint('transcribed_id', 'position'),)
 
     def __repr__(self):
-        return "<TranscribedPiece, {}: with features {}>".format(
-            self.id, [(x.id, x.start, x.end, x.given_id) for x in self.features])
+        return "<TranscribedPiece, {}: in position {} with features {}>".format(
+            self.id, self.position, [(x.id, x.start, x.end, x.given_id) for x in self.features])
 
 
 class Translated(Base):

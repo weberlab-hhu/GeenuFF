@@ -267,16 +267,16 @@ class TranscriptInterpBase(object):
         for piece in self.sort_pieces():
             piece_features = self.sorted_features(piece)
             for aligned_features in self.full_stack_matches(piece_features):
+                print(piece.id, piece.position)
                 yield aligned_features, piece
 
-    @staticmethod
-    def sorted_features(piece):
+    def sorted_features(self, piece):
         features = piece.features
         # confirm strand & seqid
         assert all([f.coordinate == features[0].coordinate for f in features]), \
-            'not all matching: {}'.format([(f.id, f.coordinate) for f in features])
+            'on {}, piece {}, not all matching: {}'.format(self.transcript.data, (piece.id, piece.position), [(f.id, f.coordinate) for f in features])
         assert all([f.is_plus_strand == features[0].is_plus_strand for f in features]), \
-            'not all matching: {}'.format([(f.id, f.is_plus_strand) for f in features])
+            'on {}, piece {}, not all matching: {}'.format(self.transcript.data, (piece.id, piece.position), [(f.id, f.is_plus_strand) for f in features])
         features = sorted(features, key=lambda x: x.pos_cmp_key())
         return features
 
@@ -470,6 +470,7 @@ class HandleMaker(object):
         self.handles = []
         sl = self.super_locus_handler.data
         datas = sl.translateds + sl.transcribeds
+
         for item in datas:
             self.handles.append(self._get_or_make_one_handler(item))
 
