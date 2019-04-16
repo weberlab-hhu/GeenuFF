@@ -16,6 +16,19 @@ def convert2list(obj):
     return out
 
 
+def db_attr_as_dict(orm_obj):
+    """removes known, shared non-db entry attributes from a copy of orm_obj.__dict__
+
+    can be used, e.g. to setup new db entry matching the here-by filtered one"""
+
+    exclude = ["_sa_instance_state", "handler"]
+    out = copy.copy(orm_obj.__dict__)
+    for item in exclude:
+        if item in out:
+            del out[item]
+    return out
+
+
 class Handler(object):
 
     def __init__(self):
@@ -404,7 +417,7 @@ class TranscriptInterpBase(object):
             is_bio = feature.end_is_biological_end
         return at, is_bio
 
-    def _get_by_type_and_bearing(self, target_type, target_start_not_end, target_is_biological=True):
+    def get_by_type_and_bearing(self, target_type, target_start_not_end, target_is_biological=True):
         out = []
         for piece in self.transcript.data.transcribed_pieces:
             for feature in piece.features:
@@ -418,28 +431,28 @@ class TranscriptInterpBase(object):
         return out
 
     def transcription_start_sites(self):
-        return self._get_by_type_and_bearing(types.TRANSCRIBED, target_start_not_end=True)
+        return self.get_by_type_and_bearing(types.TRANSCRIBED, target_start_not_end=True)
 
     def translation_start_sites(self):  # AKA start codon
-        return self._get_by_type_and_bearing(types.CODING, target_start_not_end=True)
+        return self.get_by_type_and_bearing(types.CODING, target_start_not_end=True)
 
     def intron_start_sites(self):  # AKA Donor splice site
-        return self._get_by_type_and_bearing(types.INTRON, target_start_not_end=True)
+        return self.get_by_type_and_bearing(types.INTRON, target_start_not_end=True)
 
     def trans_intron_start_sites(self):
-        return self._get_by_type_and_bearing(types.TRANS_INTRON, target_start_not_end=True)
+        return self.get_by_type_and_bearing(types.TRANS_INTRON, target_start_not_end=True)
 
     def transcription_end_sites(self):
-        return self._get_by_type_and_bearing(types.TRANSCRIBED, target_start_not_end=False)
+        return self.get_by_type_and_bearing(types.TRANSCRIBED, target_start_not_end=False)
 
     def translation_end_sites(self):  # AKA follows stop codon
-        return self._get_by_type_and_bearing(types.CODING, target_start_not_end=False)
+        return self.get_by_type_and_bearing(types.CODING, target_start_not_end=False)
 
     def intron_end_sites(self):  # AKA follows acceptor splice site
-        return self._get_by_type_and_bearing(types.INTRON, target_start_not_end=False)
+        return self.get_by_type_and_bearing(types.INTRON, target_start_not_end=False)
 
     def trans_intron_end_sites(self):
-        return self._get_by_type_and_bearing(types.TRANS_INTRON, target_start_not_end=False)
+        return self.get_by_type_and_bearing(types.TRANS_INTRON, target_start_not_end=False)
 
 
 class HandleMaker(object):
