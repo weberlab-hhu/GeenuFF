@@ -333,7 +333,6 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
         self.check_and_fix_structure(coordinate, controller=controller)
 
     def _mark_erroneous(self, entry, coordinate, controller, msg=''):
-        controller.clean_entry(entry)  # todo, why isn't this already called via gff_gen or so?
         assert entry.type in [x.value for x in types.SuperLocusAll]
         logging.warning(
             '{species}:{seqid}, {start}-{end}:{gene_id} by {src}, {msg} - marked erroneous'.format(
@@ -930,14 +929,21 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             else:
                 err_start = before0.data.upstream_from_interval(before0) - sign * error_buffer  # mask prev feat. too
                 err_end = at + sign  # so that the error masks the coordinate with the close status
-
+                gffid_to_coords = self.controller.genome_handler.gffid_to_coords
+                if sign == 1:  # if is_plus_strand, todo, use same logic/setup as elsewhere
+                    start_of_sequence = gffid_to_coords[template.gffentry.seqid].start
+                    err_start = max(start_of_sequence, err_start)
+                else:
+                    end_of_sequence = gffid_to_coords[template.gffentry.seqid].end - 1
+                    err_start = min(end_of_sequence, err_start)
                 self.new_feature(gffentry=template.gffentry, type=types.ERROR, start=err_start, end=err_end,
                                  start_is_biological_start=True, end_is_biological_end=True,
                                  phase=None)
 
                 coding_feature = self.new_feature(gffentry=template.gffentry, type=types.CODING, start=at,
                                                   start_is_biological_start=False, translateds=[translated])
-                self.status.coding_tracker.set_channel_open_with_feature(feature=coding_feature, phase=template.phase)
+                self.status.coding_tracker.set_channel_open_with_feature(feature=coding_feature,
+                                                                         phase=template.gffentry.phase)
 
         else:
             template = before0.data
@@ -1033,6 +1039,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
                     self.new_feature(gffentry=cds_feature.gffentry, type=types.ERROR,
                                      start_is_biological_start=True, end_is_biological_end=True,
                                      start=err_start, end=err_end, phase=None)
+
         else:
             raise ValueError("why's this gene not start with 5' utr nor cds? types: {}, interpretations: {}".format(
                 [x.data.gffentry.type for x in intervals], possible_types))
@@ -1093,7 +1100,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             ivals_after = interval_sets[i + 1]
             self.interpret_transition(ivals_before, ivals_after, plus_strand)
 
-        self.interpret_last_pos(intervals=interval_sets[-1])
+        self.interpret_last_pos(intervals=interval_sets[-1], plus_strand=plus_strand)
 
     @staticmethod
     def possible_types(intervals):

@@ -842,6 +842,42 @@ def test_transcript_interpreter():
     assert transcribeds[0].start == 0
 
 
+def test_transcript_interpreter_minus_strand():
+    """Tests transcript interpreter also generally works in reverse direction"""
+    sl, controller = setup_testable_super_locus()
+    for transcript_handler in sl.transcribed_handlers:
+        for feature in transcript_handler.feature_handlers:
+            feature.gffentry.strand = '-'
+            feature.add_shortcuts_from_gffentry()
+            print(feature.gffentry)
+
+    for transcript_handler in sl.transcribed_handlers:
+        t_interp = gffimporter.TranscriptInterpreter(transcript_handler,
+                                                     super_locus=sl,
+                                                     controller=controller)
+        t_interp.decode_raw_features()
+    controller.insertion_queues.execute_so_far()
+    features = cleaned_commited_features(controller.session)
+    for f in features:
+        assert not f.is_plus_strand
+        assert f.start > f.end
+
+    errors = [x for x in features if x.type.value == types.ERROR]
+
+    assert len(errors) == 4  # one for x, two for z bc truncated, and one for y, bc of phase on the new "first" exon
+    assert set([e.start for e in errors]) == {110, 404}
+    expected_n_features = {'y': 5,  # transcribed, coding, 2 introns, error
+                           'z': 4,  # transcribed, coding, intron, error
+                           'x': 4}  # transcribed, coding, 2 errors
+    for t_id in expected_n_features:
+
+        transcribed = controller.session.query(orm.Transcribed).filter(
+            orm.Transcribed.given_id == t_id
+        ).first()
+        features = [f for piece in transcribed.transcribed_pieces for f in piece.features]
+        assert len(features) == expected_n_features[t_id]
+
+
 def test_transcript_get_first():
     # plus strand
     sl, controller = setup_testable_super_locus()
@@ -1003,6 +1039,7 @@ def test_transcript_transition_from_5p_to_end():
     assert transcribed_features[0].end == 400
     assert transcribed_features[0].start_is_biological_start
     assert transcribed_features[0].end_is_biological_end
+    assert transcribed_features[0].is_plus_strand
 
 
 def test_non_coding_transitions():
@@ -1044,7 +1081,7 @@ def test_errors_not_lost():
     sl, controller = setup_testable_super_locus()
     s = "1\tGnomon\tgene\t20\t405\t0.\t-\t0\tID=eg_missing_children"
     gene_entry = gffhelper.GFFObject(s)
-
+    controller.clean_entry(gene_entry)
     coordinate = controller.genome_handler.data.coordinates[0]
 
     sl._mark_erroneous(gene_entry, coordinate=coordinate, controller=controller)
