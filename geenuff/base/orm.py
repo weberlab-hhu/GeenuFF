@@ -17,7 +17,6 @@ class Genome(Base):
     accession = Column(String)
     version = Column(String)
     acquired_from = Column(String)
-    aliases = Column(String)
     coordinates = relationship("Coordinate", back_populates="genome")
 
 
@@ -51,7 +50,8 @@ class SuperLocus(Base):
     # a max size defined at SuperLoci
 
     id = Column(Integer, primary_key=True)
-    given_id = Column(String)
+    given_name = Column(String)
+    aliases = Column(String)
     type = Column(Enum(types.SuperLocusAll))
     # things SuperLocus can have a lot of
     transcribeds = relationship('Transcribed', back_populates='super_locus')
@@ -74,7 +74,7 @@ class Transcribed(Base):
     __tablename__ = 'transcribed'
 
     id = Column(Integer, primary_key=True)
-    given_id = Column(String)
+    given_name = Column(String)
 
     type = Column(Enum(types.TranscriptLevelAll))
 
@@ -84,7 +84,7 @@ class Transcribed(Base):
     transcribed_pieces = relationship('TranscribedPiece', back_populates='transcribed')
 
     def __repr__(self):
-        return '<Transcribed, {}, "{}" of type {}, with {} pieces>'.format(self.id, self.given_id, self.type,
+        return '<Transcribed, {}, "{}" of type {}, with {} pieces>'.format(self.id, self.given_name, self.type,
                                                                            len(self.transcribed_pieces))
 
 
@@ -92,7 +92,7 @@ class TranscribedPiece(Base):
     __tablename__ = 'transcribed_piece'
 
     id = Column(Integer, primary_key=True)
-    given_id = Column(String)
+    given_name = Column(String)
 
     position = Column(Integer, nullable=False)
 
@@ -106,14 +106,14 @@ class TranscribedPiece(Base):
 
     def __repr__(self):
         return "<TranscribedPiece, {}: in position {} with features {}>".format(
-            self.id, self.position, [(x.id, x.start, x.end, x.given_id) for x in self.features])
+            self.id, self.position, [(x.id, x.start, x.end, x.given_name) for x in self.features])
 
 
 class Translated(Base):
     __tablename__ = 'translated'
 
     id = Column(Integer, primary_key=True)
-    given_id = Column(String)
+    given_name = Column(String)
     # type can only be 'protein' so far as I know..., so skipping
     super_locus_id = Column(Integer, ForeignKey('super_locus.id'), nullable=False)
     super_locus = relationship('SuperLocus', back_populates='translateds')
@@ -126,7 +126,7 @@ class Feature(Base):
     __tablename__ = 'feature'
     # basic attributes
     id = Column(Integer, primary_key=True)
-    given_id = Column(String)
+    given_name = Column(String)
     type = Column(Enum(types.OnSequence))
 
     start = Column(Integer)
@@ -173,7 +173,7 @@ class Feature(Base):
             'is_plus: {plus}, phase: {phase}>'.format(
                 pk=self.id, start_caveat=start_caveat, end_caveat=end_caveat,
                 type=self.type, start=self.start, end=self.end, coor=self.coordinate, plus=self.is_plus_strand,
-                phase=self.phase, givenid=self.given_id, py_type=type(self)
+                phase=self.phase, givenid=self.given_name, py_type=type(self)
             )
         return s
 

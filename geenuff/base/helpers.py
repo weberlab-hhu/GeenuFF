@@ -1,5 +1,44 @@
 import logging
+import copy
 
+
+##### General #####
+
+def in_enum_values(x, enum):
+    return x in [item.value for item in enum]
+
+
+def none_to_list(x):
+    if x is None:
+        return []
+    else:
+        assert isinstance(x, list)
+        return x
+
+
+def convert2list(obj):
+    if isinstance(obj, list):
+        out = obj
+    elif isinstance(obj, set) or isinstance(obj, GeneratorType) or isinstance(obj, tuple):
+        out = list(obj)
+    else:
+        out = [obj]
+    return out
+
+
+def db_attr_as_dict(orm_obj):
+    """removes known, shared non-db entry attributes from a copy of orm_obj.__dict__
+    can be used, e.g. to setup new db entry matching the here-by filtered one
+    """
+    exclude = ["_sa_instance_state", "handler"]
+    out = copy.copy(orm_obj.__dict__)
+    for item in exclude:
+        if item in out:
+            del out[item]
+    return out
+
+
+##### Mapper #####
 
 class NonMatchableIDs(Exception):
     pass
@@ -98,6 +137,7 @@ def as_py_end(end):
 
 
 ##### SQL alchemy core queue control #####
+
 class Counter(object):
     def __init__(self, at=0):
         self._at = at

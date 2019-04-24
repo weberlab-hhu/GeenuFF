@@ -1,112 +1,9 @@
 import copy
-from types import GeneratorType
 import intervaltree
 
 from . import orm
 from . import types
-
-
-def convert2list(obj):
-    if isinstance(obj, list):
-        out = obj
-    elif isinstance(obj, set) or isinstance(obj, GeneratorType) or isinstance(obj, tuple):
-        out = list(obj)
-    else:
-        out = [obj]
-    return out
-
-
-def db_attr_as_dict(orm_obj):
-    """removes known, shared non-db entry attributes from a copy of orm_obj.__dict__
-
-    can be used, e.g. to setup new db entry matching the here-by filtered one"""
-
-    exclude = ["_sa_instance_state", "handler"]
-    out = copy.copy(orm_obj.__dict__)
-    for item in exclude:
-        if item in out:
-            del out[item]
-    return out
-
-
-class Handler(object):
-
-    def __init__(self):
-        self.data = None
-        self.id = None
-
-    def add_data(self, data):
-        assert isinstance(data, self.data_type)
-        if self.id is not None:
-            data.id = self.id
-        self.data = data
-        data.handler = self  # terrible form, but I need some sort of efficient point back
-
-    @property
-    def data_type(self):
-        raise NotImplementedError
-
-
-class GenomeHandlerBase(Handler):
-
-    @property
-    def data_type(self):
-        return orm.Genome
-
-
-class CoordinateHandlerBase(Handler):
-
-    @property
-    def data_type(self):
-        return orm.Coordinate
-
-
-class SuperLocusHandlerBase(Handler):
-
-    def __init__(self):
-        super().__init__()
-        self.handler_holder = HandleMaker(self)
-
-    def make_all_handlers(self):
-        self.handler_holder.make_all_handlers()
-
-    @property
-    def data_type(self):
-        return orm.SuperLocus
-
-
-class TranscribedHandlerBase(Handler):
-
-    @property
-    def data_type(self):
-        return orm.Transcribed
-
-
-class TranscribedPieceHandlerBase(Handler):
-
-    @property
-    def data_type(self):
-        return orm.TranscribedPiece
-
-
-class TranslatedHandlerBase(Handler):
-
-    @property
-    def data_type(self):
-        return orm.Translated
-
-
-class FeatureHandlerBase(Handler):
-
-    @property
-    def data_type(self):
-        return orm.Feature
-
-    def cmp_key(self):
-        return self.data.cmp_key()
-
-    def pos_cmp_key(self):
-        return self.data.pos_cmp_key()
+from .handlers import TranscribedHandlerBase
 
 
 class ChannelTracker(object):
@@ -169,7 +66,6 @@ class CodingChannelTracker(ChannelTracker):
         self.phase = None
 
 
-#### section TranscriptInterpreter, todo maybe put into a separate file later
 class TranscriptStatusBase(object):
     """can hold and manipulate all the info on current status (later: feature types) of a transcript"""
 
@@ -229,8 +125,10 @@ class TranscriptCoordinate(object):
         return self.coordinate_id, self.is_plus_strand, self.piece_position
 
     def __repr__(self):
-        return "coordinate: {}, piece position {}, is_plus {}: {}".format(self.coordinate_id, self.piece_position,
-                                                                          self.is_plus_strand, self.start)
+        return "coordinate: {}, piece position {}, is_plus {}: {}".format(self.coordinate_id,
+                                                                          self.piece_position,
+                                                                          self.is_plus_strand,
+                                                                          self.start)
 
     def __eq__(self, other):
         if isinstance(other, TranscriptCoordinate):
@@ -241,13 +139,54 @@ class TranscriptCoordinate(object):
 class Range(TranscriptCoordinate):
     """holds (and helps sort) a start-end range with the sequence, piece position, and direction"""
     def __init__(self, coordinate_id, piece_position, start, end, is_plus_strand):
-        super().__init__(coordinate_id=coordinate_id, piece_position=piece_position, is_plus_strand=is_plus_strand,
+        super().__init__(coordinate_id=coordinate_id,
+                         piece_position=piece_position,
+                         is_plus_strand=is_plus_strand,
                          start=start)
         self.end = end
 
     def __repr__(self):
-        return "coordinate: {}, piece position {}, is_plus {}: {}-{}".format(self.coordinate_id, self.piece_position,
-                                                                             self.is_plus_strand, self.start, self.end)
+        return "coordinate: {}, piece position {}, is_plus {}: {}-{}".format(self.coordinate_id,
+                                                                             self.piece_position,
+                                                                             self.is_plus_strand,
+                                                                             self.start,
+                                                                             self.end)
+
+
+class Position(object):
+    """organized data holder for passing start/end coordinates around"""
+    def __init__(self, position, is_biological):
+        self.position = position
+        self.is_biological = is_biological
+
+
+class EukCodingChannelTracker(CodingChannelTracker):
+    def __init__(self, phase=None):
+        super().__init__(phase=phase)
+        self.seen_start = False
+        self.seen_stop = False
+
+    def set_channel_open(self, phase):
+        super().set_channel_open(phase)
+        self.seen_start = True
+
+    def set_channel_closed(self):
+        super().set_channel_closed()
+        self.seen_stop = True
+
+
+class EukTranscriptStatus(TranscriptStatusBase):
+    """can hold and manipulate all the info on current status of a Eukaryotic transcript"""
+    def __init__(self):
+        super().__init__()
+        # initializes to intergenic (all channels / types set to False)
+        self.coding_tracker = EukCodingChannelTracker()
+
+    def is_5p_utr(self):
+        return self.is_utr() and not any([self.coding_tracker.seen_start, self.coding_tracker.seen_stop])
+
+    def is_3p_utr(self):
+        return self.is_utr() and self.coding_tracker.seen_start and self.coding_tracker.seen_stop
 
 
 def positional_match(feature, previous):
@@ -264,7 +203,7 @@ class TranscriptInterpBase(object):
         self.super_locus = super_locus
 
     def transition_5p_to_3p(self):
-        for piece in self.sort_pieces():
+        for piece in self.sorted_pieces():
             piece_features = self.sorted_features(piece)
             for aligned_features in self.full_stack_matches(piece_features):
                 yield aligned_features, piece
@@ -279,7 +218,7 @@ class TranscriptInterpBase(object):
         features = sorted(features, key=lambda x: x.pos_cmp_key())
         return features
 
-    def sort_pieces(self):
+    def sorted_pieces(self):
         pieces = self.transcript.data.transcribed_pieces
         ordered_pieces = sorted(pieces, key=lambda x: x.position)
         return ordered_pieces
@@ -308,7 +247,7 @@ class TranscriptInterpBase(object):
 
     def sort_all(self):
         out = []
-        for piece in self.sort_pieces():
+        for piece in self.sorted_pieces():
             out.append(self.sorted_features(piece))
         return out
 
@@ -452,44 +391,3 @@ class TranscriptInterpBase(object):
 
     def trans_intron_end_sites(self):
         return self.get_by_type_and_bearing(types.TRANS_INTRON, target_start_not_end=False)
-
-
-class HandleMaker(object):
-    def __init__(self, super_locus_handler):
-        self.super_locus_handler = super_locus_handler
-        self.handles = []
-
-    @staticmethod
-    def _get_paired_item(search4, search_col, return_col, nested_list):
-        matches = [x[return_col] for x in nested_list if x[search_col] == search4]
-        assert len(matches) == 1
-        return matches[0]
-
-    def make_all_handlers(self):
-        self.handles = []
-        sl = self.super_locus_handler.data
-        datas = sl.translateds + sl.transcribeds
-
-        for item in datas:
-            self.handles.append(self._get_or_make_one_handler(item))
-
-    def mk_n_append_handler(self, data):
-        handler = self._get_or_make_one_handler(data)
-        self.handles.append(handler)
-        return handler
-
-    def _get_or_make_one_handler(self, data):
-        try:
-            handler = data.handler
-        except AttributeError:
-            handler_type = self._get_handler_type(data)
-            handler = handler_type()
-            handler.add_data(data)
-        return handler
-
-    def _get_handler_type(self, old_data):
-        key = [(SuperLocusHandlerBase, orm.SuperLocus),
-               (TranscribedHandlerBase, orm.Transcribed),
-               (TranslatedHandlerBase, orm.Translated)]
-
-        return self._get_paired_item(type(old_data), search_col=1, return_col=0, nested_list=key)

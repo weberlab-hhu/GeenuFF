@@ -372,7 +372,7 @@ sha1 hash of the sequence the annotation is for)
 ###### super_loci
 essentially delineates the graph of things that might possibly be combined,
 
-has given_id as meta_info for the ~gene
+has given_name as meta_info for the ~gene
 
 ###### features
 these describe transitions that can occur in a gene model but
@@ -389,7 +389,7 @@ information {status_open, status_close}.
 * they have a score (confidence)
 * they have a phase (calculation and usage still need to be implemented, todo). This is particularly
 important if trying to encode a partial protein sequence.
-* they have a given_id 
+* they have a given_name 
 * they have a source
 * they have two additional subtypes: upstream and downstream features (more info below)
 * they have many to many relationship with translateds (mostly to assign the 'protein_id')
@@ -458,7 +458,7 @@ by a range of type "error" to mask the ambiguous area.
 ###### translateds
 Each Translated object basically just points to one protein's worth of "coding" 
 type features (and associated transcribed & super_locus),
-and has a given_id attribute.
+and has a given_name attribute.
 
 ###### transcribed_pieces
 TranscribedPieces delineate a collection of features that can be interpreted 

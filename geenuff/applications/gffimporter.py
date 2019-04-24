@@ -1,8 +1,10 @@
 from dustdas import gffhelper, fastahelper
 import intervaltree
-from .. import api
+
 from .. import orm
 from .. import types
+from .. import handlers
+from ..base.transcript_interp import TranscriptInterpBase, EukTranscriptStatus
 from .. import helpers
 
 import copy
@@ -11,6 +13,22 @@ import hashlib
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+
+
+class IntervalCountError(Exception):
+    pass
+
+
+class NoTranscriptError(Exception):
+    pass
+
+
+class TransSplicingError(Exception):
+    pass
+
+
+class NoGFFEntryError(Exception):
+    pass
 
 
 # core queue prep
@@ -41,13 +59,12 @@ class InsertionQueue(helpers.QueueController):
 class InsertCounterHolder(object):
     """provides incrementing unique integers to be used as primary keys for bulk inserts"""
     # todo, think about whether using class attributes for the counters would work? When should they reset?
-    def __init__(self):
-        self.feature = helpers.Counter()
-        self.translated = helpers.Counter()
-        self.transcribed = helpers.Counter()
-        self.super_locus = helpers.Counter()
-        self.transcribed_piece = helpers.Counter()
-        self.genome = helpers.Counter()
+    feature = helpers.Counter()
+    translated = helpers.Counter()
+    transcribed = helpers.Counter()
+    super_locus = helpers.Counter()
+    transcribed_piece = helpers.Counter()
+    genome = helpers.Counter()
 
 
 ##### main flow control #####
@@ -65,9 +82,6 @@ class ImportControl(object):
         self.super_loci = []
         # queues for adding to db
         self.insertion_queues = None
-
-        # counting everything that goes in
-        self.counters = InsertCounterHolder()
 
         self._mk_session()  # initializes session, engine, and insertion_queues
 
@@ -200,11 +214,11 @@ class GFFDerived(object):
         raise NotImplementedError
 
 
-class GenomeHandler(api.GenomeHandlerBase):
+class GenomeHandler(handlers.GenomeHandlerBase):
     def __init__(self, controller=None):
         super().__init__()
         if controller is not None:
-            self.id = controller.counters.genome()
+            self.id = InsertCounterHolder.genome()
         self.mapper = None
         self._coords_by_seqid = None
         self._gffid_to_coords = None
@@ -261,17 +275,17 @@ class GenomeHandler(api.GenomeHandlerBase):
                            genome=self.data)
 
 
-class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
+class SuperLocusHandler(handlers.SuperLocusHandlerBase, GFFDerived):
     def __init__(self, controller=None):
         super().__init__()
         GFFDerived.__init__(self)
         if controller is not None:
-            self.id = controller.counters.super_locus()
+            self.id = InsertCounterHolder.super_locus()
         self.transcribed_handlers = []
 
     def setup_insertion_ready(self):
         # todo, grab more aliases from gff attribute?
-        return {'type': self.gffentry.type, 'given_id': self.gffentry.get_ID(), 'id': self.id}
+        return {'type': self.gffentry.type, 'given_name': self.gffentry.get_ID(), 'id': self.id}
 
     def add_to_queue(self, insertion_queues, **kwargs):
         to_add = self.setup_insertion_ready()
@@ -281,7 +295,7 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
         insertion_queues.super_locus.queue.append(to_add)
 
     @property
-    def given_id(self):
+    def given_name(self):
         return self.gffentry.get_ID()
 
     def add_gff_entry(self, entry, controller):
@@ -290,17 +304,17 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
             if 'trans-splicing' in exception:
                 msg = 'trans-splice in attribute {} {}'.format(entry.get_ID(), entry.attribute)
                 raise TransSplicingError(msg)
-        if in_values(entry.type, types.SuperLocusAll):
+        if helpers.in_enum_values(entry.type, types.SuperLocusAll):
             self.gffentry = entry
             self.add_to_queue(controller.insertion_queues)
 
-        elif in_values(entry.type, types.TranscriptLevelAll):
+        elif helpers.in_enum_values(entry.type, types.TranscriptLevelAll):
             transcribed = TranscribedHandler(controller)
             transcribed.gffentry = copy.deepcopy(entry)
             transcribed.add_to_queue(controller.insertion_queues, super_locus=self, gffentry=entry)
             self.transcribed_handlers.append(transcribed)
 
-        elif in_values(entry.type, types.OnSequence):
+        elif helpers.in_enum_values(entry.type, types.OnSequence):
             feature = FeatureHandler(controller)
             feature.gffentry = copy.deepcopy(entry)
             assert len(self.transcribed_handlers) > 0, "no transcribeds found before feature"
@@ -337,7 +351,7 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
         logging.warning(
             '{species}:{seqid}, {start}-{end}:{gene_id} by {src}, {msg} - marked erroneous'.format(
                 src=entry.source, species="todo", seqid=entry.seqid, start=entry.start,
-                end=entry.end, gene_id=self.given_id, msg=msg
+                end=entry.end, gene_id=self.given_name, msg=msg
             ))
 
         # dummy transcript
@@ -386,16 +400,16 @@ class SuperLocusHandler(api.SuperLocusHandlerBase, GFFDerived):
                 controller.insertion_queues.execute_so_far()
 
 
-class FeatureHandler(api.FeatureHandlerBase, GFFDerived):
+class FeatureHandler(handlers.FeatureHandlerBase, GFFDerived):
 
     def __init__(self, controller=None, processed=False):
         super().__init__()
         GFFDerived.__init__(self)
         if controller is not None:
-            self.id = controller.counters.feature()
+            self.id = InsertCounterHolder.feature()
         self.processed = processed
         self._is_plus_strand = None
-        self._given_id = None
+        self._given_name = None
 
     @property
     def is_plus_strand(self):
@@ -407,17 +421,17 @@ class FeatureHandler(api.FeatureHandlerBase, GFFDerived):
             raise ValueError('attempt to use ._is_plus_strand while it is still None')
 
     @property
-    def given_id(self):
+    def given_name(self):
         if self.data is not None:
-            return self.data.given_id
-        elif self._given_id is not None:
-            return self._given_id
+            return self.data.given_name
+        elif self._given_name is not None:
+            return self._given_name
         else:
-            raise ValueError('attempt to use ._given_id while it is still None')
+            raise ValueError('attempt to use ._given_name while it is still None')
 
     def add_shortcuts_from_gffentry(self):
 
-        self._given_id = self.gffentry.get_ID()
+        self._given_name = self.gffentry.get_ID()
         if self.gffentry.strand == '+':
             self._is_plus_strand = True
         elif self.gffentry.strand == '-':
@@ -438,12 +452,12 @@ class FeatureHandler(api.FeatureHandlerBase, GFFDerived):
             for piece in transcribed_pieces:
                 assert piece.gffentry.get_ID() in parents
 
-        if self._is_plus_strand is None or self._given_id is None:
+        if self._is_plus_strand is None or self._given_name is None:
             self.add_shortcuts_from_gffentry()
 
         feature = {'id': self.id,
                    'subtype': 'general',
-                   'given_id': self.given_id,
+                   'given_name': self.given_name,
                    'coordinate_id': coordinate.id,
                    'is_plus_strand': self.is_plus_strand,
                    'score': self.gffentry.score,
@@ -512,38 +526,37 @@ class FeatureHandler(api.FeatureHandlerBase, GFFDerived):
         return helpers.as_py_end(self.gffentry.end)
 
 
-class TranscribedHandler(api.TranscribedHandlerBase, GFFDerived):
+class TranscribedHandler(handlers.TranscribedHandlerBase, GFFDerived):
     def __init__(self, controller=None):
         super().__init__()
         GFFDerived.__init__(self)
         if controller is not None:
-            self.id = controller.counters.transcribed()
-        self.controlller = controller
+            self.id = InsertCounterHolder.transcribed()
+        self.controller = controller
         self.transcribed_piece_handlers = []
         self.feature_handlers = []
-        self.translated_handlers = []
 
     def setup_insertion_ready(self, gffentry=None, super_locus=None):
         if gffentry is not None:
             parents = gffentry.get_Parent()
             # the simple case
             if len(parents) == 1:
-                assert super_locus.given_id == parents[0]
+                assert super_locus.given_name == parents[0]
                 entry_type = gffentry.type
-                given_id = gffentry.get_ID()
+                given_name = gffentry.get_ID()
             else:
                 raise NotImplementedError  # todo handle multi inheritance, etc...
         else:
-            entry_type = given_id = None
+            entry_type = given_name = None
 
         transcribed_2_add = {
             'type': entry_type,
-            'given_id': given_id,
+            'given_name': given_name,
             'super_locus_id': super_locus.id,
             'id': self.id
         }
 
-        piece = TranscribedPieceHandler(controller=self.controlller)
+        piece = TranscribedPieceHandler(controller=self.controller)
         piece.gffentry = copy.deepcopy(gffentry)
 
         piece_2_add = piece.setup_insertion_ready(gffentry,
@@ -569,99 +582,51 @@ class TranscribedHandler(api.TranscribedHandlerBase, GFFDerived):
         return pieces[0]
 
 
-class TranscribedPieceHandler(api.TranscribedPieceHandlerBase, GFFDerived):
+class TranscribedPieceHandler(handlers.TranscribedPieceHandlerBase, GFFDerived):
     def __init__(self, controller=None):
         super().__init__()
         GFFDerived.__init__(self)
         if controller is not None:
-            self.id = controller.counters.transcribed_piece()
+            self.id = InsertCounterHolder.transcribed_piece()
 
     def setup_insertion_ready(self, gffentry=None, super_locus=None, transcribed=None, position=0):
         if gffentry is not None:
             parents = gffentry.get_Parent()
             # the simple case
             if len(parents) == 1:
-                assert super_locus.given_id == parents[0]
-                given_id = gffentry.get_ID()
+                assert super_locus.given_name == parents[0]
+                given_name = gffentry.get_ID()
             else:
                 raise NotImplementedError  # todo handle multi inheritance, etc...
         else:
-            given_id = None
+            given_name = None
 
         transcribed_piece = {
             'id': self.id,
             'transcribed_id': transcribed.id,
             'super_locus_id': super_locus.id,
-            'given_id': given_id,
+            'given_name': given_name,
             'position': position,
         }
         return transcribed_piece
 
 
-class TranslatedHandler(api.TranslatedHandlerBase):
+class TranslatedHandler(handlers.TranslatedHandlerBase):
     def __init__(self, controller=None):  # todo, all handlers, controller=None
         super().__init__()
         if controller is not None:
-            self.id = controller.counters.translated()
+            self.id = InsertCounterHolder.translated()
 
-    def setup_insertion_ready(self, super_locus_handler=None, given_id=''):
+    def setup_insertion_ready(self, super_locus_handler=None, given_name=''):
         translated = {
             'id': self.id,
             'super_locus_id': super_locus_handler.id,
-            'given_id': given_id,
+            'given_name': given_name,
         }
         return translated
 
 
-class NoTranscriptError(Exception):
-    pass
-
-
-class TransSplicingError(Exception):
-    pass
-
-
-class NoGFFEntryError(Exception):
-    pass
-
-
-class Position(object):
-    """organized data holder for passing start/end coordinates around"""
-    def __init__(self, position, is_biological):
-        self.position = position
-        self.is_biological = is_biological
-
-
-class EukCodingChannelTracker(api.CodingChannelTracker):
-    def __init__(self, phase=None):
-        super().__init__(phase=phase)
-        self.seen_start = False
-        self.seen_stop = False
-
-    def set_channel_open(self, phase):
-        super().set_channel_open(phase)
-        self.seen_start = True
-
-    def set_channel_closed(self):
-        super().set_channel_closed()
-        self.seen_stop = True
-
-
-class EukTranscriptStatus(api.TranscriptStatusBase):
-    """can hold and manipulate all the info on current status of a Eukaryotic transcript"""
-    def __init__(self):
-        super().__init__()
-        # initializes to intergenic (all channels / types set to False)
-        self.coding_tracker = EukCodingChannelTracker()
-
-    def is_5p_utr(self):
-        return self.is_utr() and not any([self.coding_tracker.seen_start, self.coding_tracker.seen_stop])
-
-    def is_3p_utr(self):
-        return self.is_utr() and self.coding_tracker.seen_start and self.coding_tracker.seen_stop
-
-
-class TranscriptInterpreter(api.TranscriptInterpBase):
+class TranscriptInterpreter(TranscriptInterpBase):
     """takes raw/from-gff transcript, and converts to geenuff explicit format"""
     HANDLED = 'handled'
 
@@ -701,7 +666,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             assert cds_feature.gffentry.type == types.CDS, "{} != {}".format(cds_feature.gff_entry.type,
                                                                              types.CDS)
         except AttributeError:
-            raise NoGFFEntryError('No gffentry for {}'.format(cds_feature.data.given_id))
+            raise NoGFFEntryError('No gffentry for {}'.format(cds_feature.data.given_name))
         # check if anything is labeled as protein_id
         protein_id = cds_feature.gffentry.attrib_filter(tag='protein_id')
         # failing that, try and get parent ID (presumably transcript, maybe gene)
@@ -745,7 +710,7 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
             protein = TranslatedHandler(controller=self.controller)
             # ready translated for database entry
             translated = protein.setup_insertion_ready(super_locus_handler=self.super_locus,
-                                                       given_id=key)
+                                                       given_name=key)
             self.controller.insertion_queues.translated.queue.append(translated)
             proteins[key] = protein
         return proteins
@@ -1161,12 +1126,10 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
         return self.transcript.feature_handlers
 
     def has_no_unprocessed_features(self):
-        # note,
-        out = True
         for feature in self._all_features():
             if not feature.processed:
-                out = False
-        return out
+                return False
+        return True
 
     @staticmethod
     def _get_intervals_by_type(stacked_intervals, target_type):
@@ -1197,33 +1160,3 @@ class TranscriptInterpreter(api.TranscriptInterpBase):
 
     def last_cds(self, stacked_intervals):
         return self._by_pos_and_type(stacked_intervals, -1, target_type=types.CDS)
-
-
-class IntervalCountError(Exception):
-    pass
-
-
-def in_values(x, enum):
-    return x in [item.value for item in enum]
-
-
-def none_to_list(x):
-    if x is None:
-        return []
-    else:
-        assert isinstance(x, list)
-        return x
-
-
-def upstream(x, y, sign):
-    if (y - x) * sign >= 0:
-        return x
-    else:
-        return y
-
-
-def downstream(x, y, sign):
-    if (x - y) * sign >= 0:
-        return x
-    else:
-        return y
