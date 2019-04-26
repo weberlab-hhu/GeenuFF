@@ -281,16 +281,23 @@ class GenomeHandler(handlers.GenomeHandlerBase):
 
 
 class CoordinateHandler(handlers.CoordinateHandlerBase):
-    def __init__(self, data=None):
+    def __init__(self, data=None, controller=None):
         super().__init__()
         self.add_data(data)
+        self.controller = controller
 
-    def add_mer_counts(min_k, max_k):
+    def add_mer_counts(self, min_k, max_k):
+        session = self.controller.session
         for k in range(min_k, max_k + 1):
-            # query for sequences
-            # add counts
             mer_counter = MerCounter(k)
-            mer_counter.add_sequence(sequence)
+            mer_counter.add_sequence(self.data.sequence)
+            for mer_sequence, count in mer_counter.counts.items():
+                mer = orm.Mer(coordinate_id=self.data.id,
+                              mer_sequence=mer_sequence,
+                              count=count,
+                              length=k)
+                session.add(mer)
+        session.commit()
 
 
 class SuperLocusHandler(handlers.SuperLocusHandlerBase, GFFDerived):

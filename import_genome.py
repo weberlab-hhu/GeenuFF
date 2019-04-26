@@ -2,8 +2,7 @@ import logging
 import argparse
 import os
 
-from geenuff.applications.gffimporter import ImportControl
-from geenuff.base.mers import MerCounter
+from geenuff.applications.gffimporter import ImportControl, CoordinateHandler
 from geenuff.base import orm
 
 
@@ -51,16 +50,8 @@ def add_mers(args, controller):
     latest_genome = session.query(orm.Genome).order_by(orm.Genome.id.desc()).first()
     coords = session.query(orm.Coordinate).filter(orm.Genome.id == latest_genome.id).all()
     for coord in coords:
-        for k in range(args.min_k, args.max_k + 1):
-            mer_counter = MerCounter(k)
-            mer_counter.add_sequence(coord.sequence)
-            for mer_sequence, count in mer_counter.counts.items():
-                mer = orm.Mer(coordinate_id=coord.id,
-                              mer_sequence=mer_sequence,
-                              count=count,
-                              length=k)
-                session.add(mer)
-    session.commit()
+        coord_handler = CoordinateHandler(data=coord, controller=controller)
+        coord_handler.add_mer_counts(args.min_k, args.max_k)
 
 
 def main(args):
@@ -89,6 +80,6 @@ if __name__ == '__main__':
                                 default=0, type=int)
     args = parser.parse_args()
 
-    assert args.min_k <= args.max_k
+    assert args.min_k <= args.max_k, 'min_k can not be greater than max_k'
 
     main(args)
