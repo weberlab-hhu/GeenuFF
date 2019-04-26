@@ -1,4 +1,5 @@
 # Project specific
+tmp/*
 geenuff/testdata/dummyloci_annotations.sqlitedb
 
 # Byte-compiled / optimized / DLL files

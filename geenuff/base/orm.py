@@ -1,8 +1,8 @@
-from . import types
-
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy import Table, Column, Integer, ForeignKey, String, Enum, CheckConstraint, UniqueConstraint, Boolean, Float
 from sqlalchemy.orm import relationship
+
+from . import types
 
 # setup classes for data holding
 Base = declarative_base()
@@ -24,6 +24,7 @@ class Coordinate(Base):
     __tablename__ = 'coordinate'
 
     id = Column(Integer, primary_key=True)
+    sequence = Column(String)
     start = Column(Integer, nullable=False)
     end = Column(Integer, nullable=False)
     seqid = Column(String, nullable=False)
@@ -32,14 +33,36 @@ class Coordinate(Base):
     genome = relationship('Genome', back_populates='coordinates')
 
     features = relationship('Feature', back_populates='coordinate')
+    mers = relationship('Mer', back_populates='coordinate')
 
     __table_args__ = (
         CheckConstraint(start >= 0, name='check_start_1plus'),
         CheckConstraint(end > start, name='check_end_gr_start'),
-        {})
+    )
 
     def __repr__(self):
         return '<Coordinate {}, {}:{}-{}>'.format(self.id, self.seqid, self.start, self.end)
+
+
+class Mer(Base):
+    __tablename__ = "mer"
+
+    id = Column(Integer, primary_key=True)
+    coordinate_id = Column(Integer, ForeignKey('coordinate.id'), nullable=False)
+
+    mer_sequence = Column(String, nullable=False)
+    count = Column(Integer)
+    length = Column(Integer)
+
+    coordinate = relationship('orm.Coordinate', back_populates="mers")
+
+    UniqueConstraint('mer_sequence', 'coordinate_id', name='unique_kmer_per_coord')
+
+    __table_args__ = (
+        CheckConstraint('length(mer_sequence) > 0', name='check_string_gt_0'),
+        CheckConstraint('count >= 0', name='check_count_gt_0'),
+        CheckConstraint('length >= 1', name='check_length_gt_1'),
+    )
 
 
 class SuperLocus(Base):

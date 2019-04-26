@@ -5,6 +5,7 @@ from .. import orm
 from .. import types
 from .. import handlers
 from ..base.transcript_interp import TranscriptInterpBase, EukTranscriptStatus
+from ..base.mers import MerCounter
 from .. import helpers
 
 import copy
@@ -271,8 +272,25 @@ class GenomeHandler(handlers.GenomeHandlerBase):
         for fasta_header, seq in fp.read_fasta(seq_file):
             seqid = fasta_header.split(id_delim)[0]
             # todo, parallelize sequence & annotation format, then import directly from ~Slice
-            orm.Coordinate(start=0, end=len(seq), seqid=seqid, sha1=self.hashseq(seq),
-                           genome=self.data)
+            coord = orm.Coordinate(sequence=seq,
+                                   start=0,
+                                   end=len(seq),
+                                   seqid=seqid,
+                                   sha1=self.hashseq(seq),
+                                   genome=self.data)
+
+
+class CoordinateHandler(handlers.CoordinateHandlerBase):
+    def __init__(self, data=None):
+        super().__init__()
+        self.add_data(data)
+
+    def add_mer_counts(min_k, max_k):
+        for k in range(min_k, max_k + 1):
+            # query for sequences
+            # add counts
+            mer_counter = MerCounter(k)
+            mer_counter.add_sequence(sequence)
 
 
 class SuperLocusHandler(handlers.SuperLocusHandlerBase, GFFDerived):
