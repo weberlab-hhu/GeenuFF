@@ -4,14 +4,12 @@ import logging
 import hashlib
 import itertools
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
 from dustdas import gffhelper, fastahelper
 from .. import orm
 from .. import types
 from .. import handlers
 from ..base.transcript_interp import TranscriptInterpBase, EukTranscriptStatus
+from ..base.controller import Controller
 from .. import helpers
 
 
@@ -69,33 +67,19 @@ class InsertCounterHolder(object):
 
 
 ##### main flow control #####
-class ImportControl(object):
+class ImportControl(Controller):
 
     def __init__(self, database_path, err_path='/dev/null'):
-        if not database_path.startswith('sqlite:///'):
-            database_path = 'sqlite:///{}'.format(database_path)
-        self.database_path = database_path
-        self.session = None
-        self.err_path = err_path
-        self.engine = None
+        super().__init__(database_path, err_path)
         self.genome_handler = None
         self.coordinates = {}
         self.super_loci = []
         # queues for adding to db
-        self.insertion_queues = None
-
-        self._mk_session()  # initializes session, engine, and insertion_queues
+        self.insertion_queues = InsertionQueue(session=self.session, engine=self.engine)
 
     @property
     def genome_handler_type(self):
         return GenomeHandler
-
-    def _mk_session(self):
-        self.engine = create_engine(self.database_path, echo=False)  # todo, dynamic / real path
-        orm.Base.metadata.create_all(self.engine)
-        Session = sessionmaker(bind=self.engine)
-        self.session = Session()
-        self.insertion_queues = InsertionQueue(session=self.session, engine=self.engine)
 
     def gff_gen(self, gff_file):
         known = [x.value for x in types.AllKnown]
@@ -292,8 +276,6 @@ class CoordinateHandler(handlers.CoordinateHandlerBase):
                 mer = ''.join(mer)
                 self.counts[mer] = 0
             self.counts[MerCounter.amb] = 0
-            # most recent base pairs of up to length k
-            self.sliding_mer = []
 
         def export(self):
             out = copy.deepcopy(self.counts)
