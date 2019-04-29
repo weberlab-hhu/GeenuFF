@@ -1,8 +1,14 @@
 import logging
 import copy
+import hashlib
 
 
 ##### General #####
+
+def sequence_hash(sequence):
+    sha1 = hashlib.sha1(sequence.encode())
+    return sha1.hexdigest()
+
 
 def in_enum_values(x, enum):
     return x in [item.value for item in enum]

@@ -209,12 +209,6 @@ class GenomeHandler(handlers.GenomeHandlerBase):
         self._gffid_to_coords = None
         self._gff_seq_ids = None
 
-    @staticmethod
-    def hashseq(seq):
-        m = hashlib.sha1()
-        m.update(seq.encode())
-        return m.hexdigest()
-
     @property
     def data_type(self):
         return orm.Genome
@@ -260,7 +254,7 @@ class GenomeHandler(handlers.GenomeHandlerBase):
                                    start=0,
                                    end=len(seq),
                                    seqid=seqid,
-                                   sha1=self.hashseq(seq),
+                                   sha1=helpers.sequence_hash(seq),
                                    genome=self.data)
 
 

@@ -11,13 +11,14 @@ class Controller(object):
         self.err_path = err_path
         self.engine = None
         self.session = None
-        self._mk_session()  # initializes session, engine, and insertion_queues
+        self.engine, self.session = Controller.mk_session(self.database_path)
 
-    def _mk_session(self):
-        self.engine = create_engine(self.database_path, echo=False)
-        orm.Base.metadata.create_all(self.engine)
-        Session = sessionmaker(bind=self.engine)
-        self.session = Session()
+    @staticmethod
+    def mk_session(database_path):
+        engine = create_engine(database_path, echo=False)
+        orm.Base.metadata.create_all(engine)
+        session = sessionmaker(bind=engine)()
+        return engine, session
 
     @staticmethod
     def full_db_path(path):
