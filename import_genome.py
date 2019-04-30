@@ -2,7 +2,7 @@ import logging
 import argparse
 import os
 
-from geenuff.applications.gffimporter import ImportControl, CoordinateHandler
+from geenuff.applications.gffimporter import ImportController, CoordinateHandler
 from geenuff.base import orm
 
 
@@ -50,7 +50,7 @@ def main(args):
     logging.basicConfig(level=logging.WARNING)
     paths = PathFinder(args.basedir, fasta=args.fasta, gff=args.gff3)
 
-    controller = ImportControl(database_path=paths.db_out, err_path=paths.problems_out)
+    controller = ImportController(database_path=paths.db_out, err_path=paths.problems_out)
     controller.add_sequences(paths.fasta_in)
 
     controller.add_gff(paths.gff_in)
