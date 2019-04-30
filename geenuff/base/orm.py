@@ -33,7 +33,6 @@ class Coordinate(Base):
     genome = relationship('Genome', back_populates='coordinates')
 
     features = relationship('Feature', back_populates='coordinate')
-    mers = relationship('Mer', back_populates='coordinate')
 
     __table_args__ = (
         CheckConstraint(start >= 0, name='check_start_1plus'),
@@ -44,25 +43,6 @@ class Coordinate(Base):
         return '<Coordinate {}, {}:{}-{}>'.format(self.id, self.seqid, self.start, self.end)
 
 
-class Mer(Base):
-    __tablename__ = "mer"
-
-    id = Column(Integer, primary_key=True)
-    coordinate_id = Column(Integer, ForeignKey('coordinate.id'), nullable=False)
-
-    mer_sequence = Column(String, nullable=False)
-    count = Column(Integer)
-    length = Column(Integer)
-
-    coordinate = relationship('orm.Coordinate', back_populates="mers")
-
-    UniqueConstraint('mer_sequence', 'coordinate_id', name='unique_kmer_per_coord')
-
-    __table_args__ = (
-        CheckConstraint('length(mer_sequence) > 0', name='check_string_gt_0'),
-        CheckConstraint('count >= 0', name='check_count_gt_0'),
-        CheckConstraint('length >= 1', name='check_length_gt_1'),
-    )
 
 
 class SuperLocus(Base):

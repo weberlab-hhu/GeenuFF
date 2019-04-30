@@ -45,14 +45,6 @@ class PathFinder(object):
         assert len(possibilities) == 1, 'no(n) unique {} file found as input. Found: {}'.format(info, possibilities)
 
 
-def add_mers(args, controller):
-    session = controller.session
-    latest_genome = session.query(orm.Genome).order_by(orm.Genome.id.desc()).first()
-    coords = session.query(orm.Coordinate).filter(orm.Genome.id == latest_genome.id).all()
-    for coord in coords:
-        coord_handler = CoordinateHandler(data=coord, controller=controller)
-        coord_handler.add_mer_counts(args.min_k, args.max_k)
-
 
 def main(args):
     logging.basicConfig(level=logging.WARNING)
@@ -60,10 +52,7 @@ def main(args):
 
     controller = ImportControl(database_path=paths.db_out, err_path=paths.problems_out)
     controller.add_sequences(paths.fasta_in)
-    if args.max_k > 0:
-        if args.min_k < 1:
-            args.min_k = 1
-        add_mers(args, controller)
+
     controller.add_gff(paths.gff_in)
 
 
@@ -73,13 +62,7 @@ if __name__ == '__main__':
     custominput = parser.add_argument_group("Override default with custom input location:")
     custominput.add_argument('--gff3', help='gff3 formatted file to parse / standardize')
     custominput.add_argument('--fasta', help='fasta file to parse standardize')
-    fasta_specific = parser.add_argument_group("Sequence meta_info customizable:")
-    fasta_specific.add_argument('--min_k', help='minumum size kmer to calculate from sequence',
-                                default=0, type=int)
-    fasta_specific.add_argument('--max_k', help='maximum size kmer to calculate from sequence',
-                                default=0, type=int)
-    args = parser.parse_args()
 
-    assert args.min_k <= args.max_k, 'min_k can not be greater than max_k'
+    args = parser.parse_args()
 
     main(args)

@@ -259,54 +259,11 @@ class GenomeHandler(handlers.GenomeHandlerBase):
 
 
 class CoordinateHandler(handlers.CoordinateHandlerBase):
-    class MerCounter(object):
-        amb = 'ambiguous_mers'
-
-        def __init__(self, k):
-            self.k = k
-            self.counts = {}
-            # calculate all possible mers of this length, and set counter to 0
-            for mer in itertools.product('ATCG', repeat=k):
-                mer = ''.join(mer)
-                self.counts[mer] = 0
-            self.counts[MerCounter.amb] = 0
-
-        def export(self):
-            out = copy.deepcopy(self.counts)
-            for key in self.counts:
-                if key != MerCounter.amb:
-                    # collapse to cannonical kmers
-                    rc_key = helpers.reverse_complement(key)
-                    if key != min(key, rc_key):
-                        out[rc_key] += out[key]
-                        out.pop(key)
-            return out
-
-        def add_sequence(self, sequence):
-            for i in range(len(sequence) -  self.k + 1):
-                mer = sequence[i:i+self.k]
-                try:
-                    self.counts[mer] += 1
-                except KeyError:
-                    self.counts[MerCounter.amb] += 1
 
     def __init__(self, data=None, controller=None):
         super().__init__()
         self.add_data(data)
-        self.controller = controller
-
-    def add_mer_counts(self, min_k, max_k):
-        session = self.controller.session
-        for k in range(min_k, max_k + 1):
-            mer_counter = MerCounter(k)
-            mer_counter.add_sequence(self.data.sequence)
-            for mer_sequence, count in mer_counter.counts.items():
-                mer = orm.Mer(coordinate_id=self.data.id,
-                              mer_sequence=mer_sequence,
-                              count=count,
-                              length=k)
-                session.add(mer)
-        session.commit()
+        self.controller = controller  # is controller still used from here? todo...
 
 
 class SuperLocusHandler(handlers.SuperLocusHandlerBase, GFFDerived):
