@@ -32,6 +32,13 @@ def convert2list(obj):
     return out
 
 
+def full_db_path(path):
+    sqlite_prefix = 'sqlite:///'
+    if not path.startswith(sqlite_prefix):
+        return sqlite_prefix + path
+    return path
+
+
 def db_attr_as_dict(orm_obj):
     """removes known, shared non-db entry attributes from a copy of orm_obj.__dict__
     can be used, e.g. to setup new db entry matching the here-by filtered one

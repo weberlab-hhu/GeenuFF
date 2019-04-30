@@ -1,15 +1,17 @@
+import os
 import intervaltree
 import copy
 import logging
 import hashlib
 import itertools
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
 from dustdas import gffhelper, fastahelper
 from .. import orm
 from .. import types
 from .. import handlers
 from ..base.transcript_interp import TranscriptInterpBase, EukTranscriptStatus
-from ..base.controller import Controller
 from .. import helpers
 
 
@@ -67,15 +69,24 @@ class InsertCounterHolder(object):
 
 
 ##### main flow control #####
-class ImportControl(Controller):
-
+class ImportController(object):
     def __init__(self, database_path, err_path='/dev/null'):
-        super().__init__(database_path, err_path)
+        self.database_path = database_path
+        self.err_path = err_path
         self.genome_handler = None
         self.coordinates = {}
         self.super_loci = []
+        self._mk_session()
         # queues for adding to db
         self.insertion_queues = InsertionQueue(session=self.session, engine=self.engine)
+
+    def _mk_session(self):
+        if os.path.exists(self.database_path):
+            os.remove(self.database_path)
+            print('removed existing database at {}'.format(self.database_path))
+        self.engine = create_engine(helpers.full_db_path(self.database_path), echo=False)
+        orm.Base.metadata.create_all(self.engine)
+        self.session = sessionmaker(bind=self.engine)()
 
     @property
     def genome_handler_type(self):
@@ -667,7 +678,7 @@ class TranscriptInterpreter(TranscriptInterpBase):
     def __init__(self, transcript, super_locus, controller):
         super().__init__(transcript, super_locus, session=controller.session)
         self.status = EukTranscriptStatus()
-        assert isinstance(controller, ImportControl)
+        assert isinstance(controller, ImportController)
         self.controller = controller
         try:
             self.proteins = self._setup_proteins()

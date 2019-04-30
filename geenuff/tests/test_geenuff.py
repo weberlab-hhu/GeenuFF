@@ -33,7 +33,7 @@ def setup_data_handler(handler_type, data_type, **kwargs):
 
 
 def setup_testable_super_locus(db_path='sqlite:///:memory:'):
-    controller = gffimporter.ImportControl(err_path='/dev/null', database_path=db_path)
+    controller = gffimporter.ImportController(err_path='/dev/null', database_path=db_path)
     controller.add_sequences('testdata/dummyloci.fa')
     controller.add_gff('testdata/dummyloci.gff3', clean=False)
     return controller.super_loci[0], controller
@@ -705,7 +705,7 @@ def test_biointerp_features_as_transitions():
 # section: gffimporter
 def test_data_frm_gffentry():
     """Test the interpretation and transformation of raw GFF entries."""
-    controller = gffimporter.ImportControl(database_path='sqlite:///:memory:', err_path=None)
+    controller = gffimporter.ImportController(database_path='sqlite:///:memory:', err_path=None)
 
     sess = controller.session
     g, gh = setup_data_handler(gffimporter.GenomeHandler, orm.Genome)
@@ -808,7 +808,7 @@ def test_possible_types():
 
 def test_import_coordinate():
     """Import and test coordinate information from a dummy gff file."""
-    controller = gffimporter.ImportControl(database_path='sqlite:///:memory:')
+    controller = gffimporter.ImportController(database_path='sqlite:///:memory:')
     seq_path = 'testdata/dummyloci.fa'
     controller.add_sequences(seq_path)
     coors = controller.genome_handler.data.coordinates
@@ -1245,7 +1245,7 @@ def test_erroneous_splice():
 
 
 def test_gff_gen():
-    controller = gffimporter.ImportControl(database_path='sqlite:///:memory:')
+    controller = gffimporter.ImportController(database_path='sqlite:///:memory:')
     x = list(controller.gff_gen('testdata/testerSl.gff3'))
     assert len(x) == 103
     assert x[0].type == 'region'
@@ -1253,7 +1253,7 @@ def test_gff_gen():
 
 
 def test_gff_useful_gen():
-    controller = gffimporter.ImportControl(database_path='sqlite:///:memory:')
+    controller = gffimporter.ImportController(database_path='sqlite:///:memory:')
     x = list(controller.useful_gff_entries('testdata/testerSl.gff3'))
     assert len(x) == 100  # should drop the region entry
     assert x[0].type == 'gene'
@@ -1261,7 +1261,7 @@ def test_gff_useful_gen():
 
 
 def test_gff_grouper():
-    controller = gffimporter.ImportControl(database_path='sqlite:///:memory:')
+    controller = gffimporter.ImportController(database_path='sqlite:///:memory:')
     x = list(controller.group_gff_by_gene('testdata/testerSl.gff3'))
     assert len(x) == 5
     for group in x:
@@ -1282,7 +1282,7 @@ def test_import2biointerp():
 
     sequence_path = 'testdata/biointerp_loci.fa'
     gff3 = 'testdata/biointerp_loci.gff3'
-    controller = gffimporter.ImportControl(database_path='sqlite:///:memory:', err_path='/dev/null')
+    controller = gffimporter.ImportController(database_path='sqlite:///:memory:', err_path='/dev/null')
     controller.add_sequences(sequence_path)
     controller.add_gff(gff3)
     controller.session.commit()
