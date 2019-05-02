@@ -1,13 +1,10 @@
+import os
+import pytest
 from dustdas import gffhelper
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import IntegrityError
 import sqlalchemy
-import pytest
-import os
-
-#import sys
-#sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir))
 
 from .. import orm
 from ..applications import importer
@@ -810,17 +807,33 @@ def test_possible_types():
     assert set(pt) == {five_prime, three_prime}
 
 
-def test_import_coordinate():
-    """Import and test coordinate information from a dummy gff file."""
-    controller = ImportController(database_path='sqlite:///:memory:')
-    seq_path = 'testdata/dummyloci.fa'
-    controller.add_sequences(seq_path)
-    coors = controller.genome_handler.data.coordinates
-    assert len(coors) == 1
-    assert coors[0].seqid == '1'
-    assert coors[0].start == 0
-    assert coors[0].end == 405
-    assert coors[0].sha1 == 'dc6f3ba2b0c08f7d08053837b810f86cbaa06f38'  # sha1 for 'N' * 405
+def test_fasta_import():
+    """Import and test coordinate information from a dummy fasta file."""
+    def import_fasta(path):
+        controller = ImportController(database_path='sqlite:///:memory:')
+        controller.add_sequences(path)
+        return controller
+
+    # test very short dummyloci file
+    controller = import_fasta('testdata/dummyloci.fa')
+    coords = controller.genome_handler.data.coordinates
+    assert len(coords) == 1
+    coord = coords[0]
+    assert coord.seqid == '1'
+    assert coord.start == 0
+    assert coord.end == 405
+    assert coord.sha1 == 'dc6f3ba2b0c08f7d08053837b810f86cbaa06f38'
+    assert coord.sequence == 'N' * 405
+
+    # test slightly longer biointerp file
+    controller = import_fasta('testdata/biointerp_loci.fa')
+    coords = controller.genome_handler.data.coordinates
+    assert len(coords) == 1
+    coord = coords[0]
+    assert coord.seqid == 'a'
+    assert coord.start == 0
+    assert coord.end == 199 * 100
+    assert coord.sequence == 'atcg' * 25 * 199
 
 
 def test_transcript_interpreter():
