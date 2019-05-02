@@ -1,16 +1,14 @@
+import os
+import pytest
 from dustdas import gffhelper
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import IntegrityError
 import sqlalchemy
-import pytest
-import os
-
-#import sys
-#sys.path.append(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir))
 
 from .. import orm
-from ..applications import gffimporter
+from ..applications import importer
+from ..applications.importer import ImportController
 from .. import types
 from .. import handlers
 from ..base.transcript_interp import Range, TranscriptCoordinate, TranscriptInterpBase
@@ -33,7 +31,7 @@ def setup_data_handler(handler_type, data_type, **kwargs):
 
 
 def setup_testable_super_locus(db_path='sqlite:///:memory:'):
-    controller = gffimporter.ImportController(err_path='/dev/null', database_path=db_path)
+    controller = ImportController(err_path='/dev/null', database_path=db_path)
     controller.add_sequences('testdata/dummyloci.fa')
     controller.add_gff('testdata/dummyloci.gff3', clean=False)
     return controller.super_loci[0], controller
@@ -702,13 +700,13 @@ def test_biointerp_features_as_transitions():
     assert partial_rev.ti.transcription_start_sites() == []
 
 
-# section: gffimporter
+# section: importer
 def test_data_frm_gffentry():
     """Test the interpretation and transformation of raw GFF entries."""
-    controller = gffimporter.ImportController(database_path='sqlite:///:memory:', err_path=None)
+    controller = ImportController(database_path='sqlite:///:memory:', err_path=None)
 
     sess = controller.session
-    g, gh = setup_data_handler(gffimporter.GenomeHandler, orm.Genome)
+    g, gh = setup_data_handler(importer.GenomeHandler, orm.Genome)
     coords = orm.Coordinate(start=1, end=100000, seqid='NC_015438.2', genome=g)
 
     sess.add_all([g, coords])
@@ -719,7 +717,7 @@ def test_data_frm_gffentry():
     exon_string = 'NC_015438.2\tGnomon\texon\t4343\t4809\t.\t+\t.\tID=id1;Parent=rna0;Dbxref=GeneID:104645797'
     gene_entry = gffhelper.GFFObject(gene_string)
     controller.clean_entry(gene_entry)
-    handler = gffimporter.SuperLocusHandler()
+    handler = importer.SuperLocusHandler()
     handler.gffentry = gene_entry
     sl2add = handler.setup_insertion_ready()
 
@@ -729,7 +727,7 @@ def test_data_frm_gffentry():
     assert sl2add['type'] == 'gene'
 
     mrna_entry = gffhelper.GFFObject(mrna_string)
-    mrna_handler = gffimporter.TranscribedHandler()
+    mrna_handler = importer.TranscribedHandler()
     mrna2add, piece2add = mrna_handler.setup_insertion_ready(mrna_entry, super_locus=handler)
     piece_handler = mrna_handler.transcribed_piece_handlers[0]
     assert piece2add['transcribed_id'] == mrna2add['id'] == mrna_handler.id
@@ -740,7 +738,7 @@ def test_data_frm_gffentry():
 
     exon_entry = gffhelper.GFFObject(exon_string)
     controller.clean_entry(exon_entry)
-    exon_handler = gffimporter.FeatureHandler()
+    exon_handler = importer.FeatureHandler()
     exon_handler.gffentry = exon_entry
     exon2add, feature2pieces, feature2translateds = exon_handler.setup_insertion_ready(
         super_locus=handler, transcribed_pieces=[piece_handler], coordinate=coords)
@@ -755,7 +753,10 @@ def test_data_frm_gffentry():
     assert exon2add['score'] is None
     assert exon2add['coordinate_id'] == coords.id
     assert exon2add['super_locus_id'] == handler.id
-    assert feature2pieces[0] == {'transcribed_piece_id': piece_handler.id, 'feature_id': exon2add['id']}
+    assert feature2pieces[0] == {
+        'transcribed_piece_id': piece_handler.id,
+        'feature_id': exon2add['id']
+    }
     assert feature2translateds == []
 
 
@@ -763,9 +764,9 @@ def test_organize_and_split_features():
     """Tests 5'-3' ordering of features and slicing at overlaps"""
     sl, controller = setup_testable_super_locus()
     transcript_full = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
-    transcript_interpreter = gffimporter.TranscriptInterpreter(transcript_full,
-                                                               super_locus=sl,
-                                                               controller=controller)
+    transcript_interpreter = importer.TranscriptInterpreter(transcript_full,
+                                                            super_locus=sl,
+                                                            controller=controller)
 
     ordered_features = transcript_interpreter.organize_and_split_features()
     ordered_features = list(ordered_features)
@@ -777,9 +778,9 @@ def test_organize_and_split_features():
         assert types.CDS in [x.data.gffentry.type for x in ordered_features[i]]
 
     transcript_short = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'z'][0]
-    transcript_interpreter = gffimporter.TranscriptInterpreter(transcript_short,
-                                                               super_locus=sl,
-                                                               controller=controller)
+    transcript_interpreter = importer.TranscriptInterpreter(transcript_short,
+                                                            super_locus=sl,
+                                                            controller=controller)
     ordered_features = transcript_interpreter.organize_and_split_features()
     ordered_features = list(ordered_features)
     assert len(ordered_features) == 1
@@ -793,9 +794,9 @@ def test_possible_types():
 
     sl, controller = setup_testable_super_locus()
     transcript_full = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
-    transcript_interpreter = gffimporter.TranscriptInterpreter(transcript_full,
-                                                               super_locus=sl,
-                                                               controller=controller)
+    transcript_interpreter = importer.TranscriptInterpreter(transcript_full,
+                                                            super_locus=sl,
+                                                            controller=controller)
     ordered_features = transcript_interpreter.intervals_5to3(plus_strand=True)
     ordered_features = list(ordered_features)
     pt = transcript_interpreter.possible_types(ordered_features[0])
@@ -806,17 +807,33 @@ def test_possible_types():
     assert set(pt) == {five_prime, three_prime}
 
 
-def test_import_coordinate():
-    """Import and test coordinate information from a dummy gff file."""
-    controller = gffimporter.ImportController(database_path='sqlite:///:memory:')
-    seq_path = 'testdata/dummyloci.fa'
-    controller.add_sequences(seq_path)
-    coors = controller.genome_handler.data.coordinates
-    assert len(coors) == 1
-    assert coors[0].seqid == '1'
-    assert coors[0].start == 0
-    assert coors[0].end == 405
-    assert coors[0].sha1 == 'dc6f3ba2b0c08f7d08053837b810f86cbaa06f38'  # sha1 for 'N' * 405
+def test_fasta_import():
+    """Import and test coordinate information from a dummy fasta file."""
+    def import_fasta(path):
+        controller = ImportController(database_path='sqlite:///:memory:')
+        controller.add_sequences(path)
+        return controller
+
+    # test very short dummyloci file
+    controller = import_fasta('testdata/dummyloci.fa')
+    coords = controller.genome_handler.data.coordinates
+    assert len(coords) == 1
+    coord = coords[0]
+    assert coord.seqid == '1'
+    assert coord.start == 0
+    assert coord.end == 405
+    assert coord.sha1 == 'dc6f3ba2b0c08f7d08053837b810f86cbaa06f38'
+    assert coord.sequence == 'N' * 405
+
+    # test slightly longer biointerp file
+    controller = import_fasta('testdata/biointerp_loci.fa')
+    coords = controller.genome_handler.data.coordinates
+    assert len(coords) == 1
+    coord = coords[0]
+    assert coord.seqid == 'a'
+    assert coord.start == 0
+    assert coord.end == 199 * 100
+    assert coord.sequence == 'atcg' * 25 * 199
 
 
 def test_transcript_interpreter():
@@ -824,9 +841,9 @@ def test_transcript_interpreter():
     sl, controller = setup_testable_super_locus()
     transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
     # change so that there are implicit UTRs
-    t_interp = gffimporter.TranscriptInterpreter(transcript_handler,
-                                                 super_locus=sl,
-                                                 controller=controller)
+    t_interp = importer.TranscriptInterpreter(transcript_handler,
+                                              super_locus=sl,
+                                              controller=controller)
     t_interp.decode_raw_features()
     # has all standard features
     controller.session.commit()
@@ -859,9 +876,9 @@ def test_transcript_interpreter_minus_strand():
             print(feature.gffentry)
 
     for transcript_handler in sl.transcribed_handlers:
-        t_interp = gffimporter.TranscriptInterpreter(transcript_handler,
-                                                     super_locus=sl,
-                                                     controller=controller)
+        t_interp = importer.TranscriptInterpreter(transcript_handler,
+                                                  super_locus=sl,
+                                                  controller=controller)
         t_interp.decode_raw_features()
     controller.insertion_queues.execute_so_far()
     features = cleaned_commited_features(controller.session)
@@ -889,9 +906,9 @@ def test_transcript_get_first():
     # plus strand
     sl, controller = setup_testable_super_locus()
     transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
-    t_interp = gffimporter.TranscriptInterpreter(transcript_handler,
-                                                 super_locus=sl,
-                                                 controller=controller)
+    t_interp = importer.TranscriptInterpreter(transcript_handler,
+                                              super_locus=sl,
+                                              controller=controller)
     sorted_intervals = t_interp.intervals_5to3(plus_strand=True)
     i0 = sorted_intervals[0]
     for intv in sorted_intervals:
@@ -919,9 +936,9 @@ def test_transcript_get_first_minus_strand():
 
     transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
 
-    t_interp = gffimporter.TranscriptInterpreter(transcript_handler,
-                                                 super_locus=sl,
-                                                 controller=controller)
+    t_interp = importer.TranscriptInterpreter(transcript_handler,
+                                              super_locus=sl,
+                                              controller=controller)
     sorted_intervals = t_interp.intervals_5to3(plus_strand=False)
 
     i0 = sorted_intervals[0]
@@ -952,9 +969,9 @@ def test_transcript_get_first_without_UTR():
 
     transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'x'][0]
 
-    t_interp = gffimporter.TranscriptInterpreter(transcript_handler,
-                                                 super_locus=sl,
-                                                 controller=controller)
+    t_interp = importer.TranscriptInterpreter(transcript_handler,
+                                              super_locus=sl,
+                                              controller=controller)
     # test without UTR (x doesn't have last exon, and therefore will end in CDS); remember, flipped it to minus strand
     prefeatures = transcript_handler.feature_handlers
     print('prefeatures', prefeatures)
@@ -991,9 +1008,9 @@ def test_transcript_get_first_without_UTR():
 def test_transcript_transition_from_5p_to_end():
     sl, controller = setup_testable_super_locus()
     transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
-    t_interp = gffimporter.TranscriptInterpreter(transcript_handler,
-                                                 super_locus=sl,
-                                                 controller=controller)
+    t_interp = importer.TranscriptInterpreter(transcript_handler,
+                                              super_locus=sl,
+                                              controller=controller)
     ivals_sets = t_interp.intervals_5to3(plus_strand=True)
     t_interp.interpret_first_pos(ivals_sets[0])
     # hit start codon
@@ -1053,9 +1070,9 @@ def test_non_coding_transitions():
     sl, controller = setup_testable_super_locus()
     transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'z'][0]
     piece = transcript_handler.one_piece()
-    t_interp = gffimporter.TranscriptInterpreter(transcript_handler,
-                                                 super_locus=sl,
-                                                 controller=controller)
+    t_interp = importer.TranscriptInterpreter(transcript_handler,
+                                              super_locus=sl,
+                                              controller=controller)
     # get single-exon no-CDS transcript
     # delete CDS feature
     features = transcript_handler.feature_handlers
@@ -1105,7 +1122,7 @@ def test_setup_proteins():
     """Tests explicit protein creation from mRNA & CDS gff features"""
     sl, controller = setup_testable_super_locus()
     transcript = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
-    t_interp = gffimporter.TranscriptInterpreter(transcript, sl, controller)
+    t_interp = importer.TranscriptInterpreter(transcript, sl, controller)
     controller.insertion_queues.execute_so_far()
     print(t_interp.proteins)
     assert len(t_interp.proteins.keys()) == 1
@@ -1120,7 +1137,7 @@ def test_cp_features_to_prot():
     sl, controller = setup_testable_super_locus()
     controller.session.commit()
     transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
-    t_interp = gffimporter.TranscriptInterpreter(transcript_handler, sl, controller)
+    t_interp = importer.TranscriptInterpreter(transcript_handler, sl, controller)
 
     t_interp.decode_raw_features()
     controller.session.commit()
@@ -1223,7 +1240,7 @@ def test_erroneous_splice():
     #f1 = sess.query(orm.Feature).filter(orm.Feature.given_name == 'ftr000001').first()
     f0_handler.gffentry.end = f1_handler.gffentry.end = 115
 
-    ti = gffimporter.TranscriptInterpreter(transcript, controller=controller, super_locus=sl)
+    ti = importer.TranscriptInterpreter(transcript, controller=controller, super_locus=sl)
     ti.decode_raw_features()
     sess.commit()
     controller.insertion_queues.execute_so_far()
@@ -1245,7 +1262,7 @@ def test_erroneous_splice():
 
 
 def test_gff_gen():
-    controller = gffimporter.ImportController(database_path='sqlite:///:memory:')
+    controller = ImportController(database_path='sqlite:///:memory:')
     x = list(controller.gff_gen('testdata/testerSl.gff3'))
     assert len(x) == 103
     assert x[0].type == 'region'
@@ -1253,7 +1270,7 @@ def test_gff_gen():
 
 
 def test_gff_useful_gen():
-    controller = gffimporter.ImportController(database_path='sqlite:///:memory:')
+    controller = ImportController(database_path='sqlite:///:memory:')
     x = list(controller.useful_gff_entries('testdata/testerSl.gff3'))
     assert len(x) == 100  # should drop the region entry
     assert x[0].type == 'gene'
@@ -1261,7 +1278,7 @@ def test_gff_useful_gen():
 
 
 def test_gff_grouper():
-    controller = gffimporter.ImportController(database_path='sqlite:///:memory:')
+    controller = ImportController(database_path='sqlite:///:memory:')
     x = list(controller.group_gff_by_gene('testdata/testerSl.gff3'))
     assert len(x) == 5
     for group in x:
@@ -1282,7 +1299,7 @@ def test_import2biointerp():
 
     sequence_path = 'testdata/biointerp_loci.fa'
     gff3 = 'testdata/biointerp_loci.gff3'
-    controller = gffimporter.ImportController(database_path='sqlite:///:memory:', err_path='/dev/null')
+    controller = ImportController(database_path='sqlite:///:memory:', err_path='/dev/null')
     controller.add_sequences(sequence_path)
     controller.add_gff(gff3)
     controller.session.commit()

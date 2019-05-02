@@ -191,6 +191,10 @@ class ImportController(object):
         self.insertion_queues.execute_so_far()
         err_handle.close()
 
+    def add_genome(self, fasta_path, gff_path, clean_gff=True):
+        self.add_sequences(fasta_path)
+        self.add_gff(gff_path, clean=clean_gff)
+
     def clean_super_loci(self):
         for sl in self.super_loci:
             coordinate = self.genome_handler.gffid_to_coords[sl.gffentry.seqid]

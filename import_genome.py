@@ -45,15 +45,12 @@ class PathFinder(object):
         assert len(possibilities) == 1, 'no(n) unique {} file found as input. Found: {}'.format(info, possibilities)
 
 
-
 def main(args):
     logging.basicConfig(level=logging.WARNING)
     paths = PathFinder(args.basedir, fasta=args.fasta, gff=args.gff3)
 
     controller = ImportController(database_path=paths.db_out, err_path=paths.problems_out)
-    controller.add_sequences(paths.fasta_in)
-
-    controller.add_gff(paths.gff_in)
+    controller.add_genome(paths.fasta_in, paths.gff_in)
 
 
 if __name__ == '__main__':
