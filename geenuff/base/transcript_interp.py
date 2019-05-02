@@ -211,7 +211,7 @@ class TranscriptInterpBase(object):
     def sorted_features(self, piece):
         features = piece.features
         # confirm strand & seqid
-        assert all([f.coordinate == features[0].coordinate for f in features]), \
+        assert all([f.coordinate.seqid == features[0].coordinate.seqid for f in features]), \
             'on {}, piece {}, not all matching: {}'.format(self.transcript.data, (piece.id, piece.position), [(f.id, f.coordinate) for f in features])
         assert all([f.is_plus_strand == features[0].is_plus_strand for f in features]), \
             'on {}, piece {}, not all matching: {}'.format(self.transcript.data, (piece.id, piece.position), [(f.id, f.is_plus_strand) for f in features])
