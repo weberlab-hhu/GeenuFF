@@ -162,6 +162,8 @@ class Feature(Base):
                                back_populates='features')
 
     __table_args__ = (
+        UniqueConstraint('coordinate_id', 'type', 'start', 'end', 'is_plus_strand',
+                         name='unique_feature'),
         CheckConstraint(end >= -1, name='check_end_minus1plus'),
         CheckConstraint(start >= 0, name="check_start_0plus"),
         CheckConstraint(phase >= 0, name='check_phase_not_negative'),
