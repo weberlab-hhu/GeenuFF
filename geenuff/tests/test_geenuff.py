@@ -32,8 +32,9 @@ def setup_data_handler(handler_type, data_type, **kwargs):
 
 def setup_testable_super_locus(db_path='sqlite:///:memory:'):
     controller = ImportController(err_path='/dev/null', database_path=db_path)
-    controller.add_sequences('testdata/dummyloci.fa')
-    controller.add_gff('testdata/dummyloci.gff3', clean=False)
+    controller.add_genome('testdata/dummyloci.fa',
+                          'testdata/dummyloci.gff3',
+                          clean_gff=False)
     return controller.super_loci[0], controller
 
 
@@ -1316,11 +1317,9 @@ def test_import2biointerp():
             super().__init__(coordinate_id=1, piece_position=0, is_plus_strand=True, start=start, end=end)
 
     sequence_path = 'testdata/biointerp_loci.fa'
-    gff3 = 'testdata/biointerp_loci.gff3'
+    gff_path = 'testdata/biointerp_loci.gff3'
     controller = ImportController(database_path='sqlite:///:memory:', err_path='/dev/null')
-    controller.add_sequences(sequence_path)
-    controller.add_gff(gff3)
-    controller.session.commit()
+    controller.add_genome(sequence_path, gff_path)
 
     super_loci = controller.session.query(orm.SuperLocus).all()
     assert len(super_loci) == 2

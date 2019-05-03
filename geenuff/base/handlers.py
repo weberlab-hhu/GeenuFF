@@ -7,12 +7,15 @@ from . import types
 
 class Handler(object):
 
-    def __init__(self):
-        self.data = None
+    def __init__(self, data=None):
         self.id = None
+        if data is not None:
+            self.add_data(data)
+        else:
+            self.data = None
 
     def add_data(self, data):
-        assert isinstance(data, self.data_type)
+        assert isinstance(data, self.data_type), 'data type does not match with handler class'
         if self.id is not None:
             data.id = self.id
         self.data = data
