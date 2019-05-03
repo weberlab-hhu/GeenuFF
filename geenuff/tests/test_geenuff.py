@@ -808,7 +808,7 @@ def test_possible_types():
 
 
 def test_fasta_import():
-    """Import and test coordinate information from a dummy fasta file."""
+    """Import and test coordinate information from two dummy fasta files"""
     def import_fasta(path):
         controller = ImportController(database_path='sqlite:///:memory:')
         controller.add_sequences(path)
@@ -834,6 +834,24 @@ def test_fasta_import():
     assert coord.start == 0
     assert coord.end == 199 * 100
     assert coord.sequence == 'atcg' * 25 * 199
+
+    # test import of multiple sequences from one file
+    controller = import_fasta('testdata/dummyloci_multiple.fa')
+    coords = controller.genome_handler.data.coordinates
+    assert len(coords) == 3
+    assert coords[0].seqid == '1'
+    assert coords[0].start == 0
+    assert coords[0].end == 405
+    assert coords[0].sha1 == 'dc6f3ba2b0c08f7d08053837b810f86cbaa06f38'
+    assert coords[0].sequence == 'N' * 405
+    assert coords[1].seqid == 'abc'
+    assert coords[1].start == 0
+    assert coords[1].end == 808
+    assert coords[1].sequence == 'aaggcctt' * 101
+    assert coords[2].seqid == 'test123'
+    assert coords[2].start == 0
+    assert coords[2].end == 100
+    assert coords[2].sequence == 'a' * 100
 
 
 def test_transcript_interpreter():
