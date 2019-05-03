@@ -35,14 +35,13 @@ class Coordinate(Base):
     features = relationship('Feature', back_populates='coordinate')
 
     __table_args__ = (
+        UniqueConstraint('genome_id', 'seqid', 'start', 'end', name='unique_coords_per_genome'),
         CheckConstraint(start >= 0, name='check_start_1plus'),
         CheckConstraint(end > start, name='check_end_gr_start'),
     )
 
     def __repr__(self):
         return '<Coordinate {}, {}:{}-{}>'.format(self.id, self.seqid, self.start, self.end)
-
-
 
 
 class SuperLocus(Base):
@@ -105,11 +104,18 @@ class TranscribedPiece(Base):
     features = relationship('Feature', secondary=association_transcribed_piece_to_feature,
                             back_populates='transcribed_pieces')
 
-    __table_args__ = (UniqueConstraint('transcribed_id', 'position'),)
+    __table_args__ = (
+        UniqueConstraint('transcribed_id', 'position', name='unique_positions_per_piece'),
+    )
 
     def __repr__(self):
-        return "<TranscribedPiece, {}: in position {} with features {}>".format(
-            self.id, self.position, [(x.id, x.start, x.end, x.given_name) for x in self.features])
+        features = [(x.id, x.start, x.end, x.given_name) for x in self.features]
+        return ('<TranscribedPiece, {}: for transcribed {} '
+                'in position {} with features {}>').format(self.id,
+                                                           self.transcribed_id,
+                                                           self.position,
+                                                           features)
+
 
 
 class Translated(Base):

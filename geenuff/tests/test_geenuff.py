@@ -89,13 +89,26 @@ def test_coordinate_constraints():
 
     # should be ok
     coors = orm.Coordinate(start=0, end=30, seqid='abc', genome=g)
-    coors2 = orm.Coordinate(start=0, end=1, seqid='abc', genome=g)
+    coors2 = orm.Coordinate(start=0, end=1, seqid='abcd', genome=g)
     sess.add_all([coors, coors2])
     sess.commit()
 
+    # same seqid and genome is allowed for slices
+    coors3 = orm.Coordinate(start=1, end=30, seqid='abc', genome=g)
+    sess.add(coors3)
+    sess.commit()
+
     # should cause trouble
+    # same start/end for the same seqid/genome is not allowed
+    coord_same = orm.Coordinate(start=0, end=30, seqid='abc', genome=g)
+    with pytest.raises(IntegrityError):
+        sess.add(coord_same)
+        sess.commit()
+    sess.rollback()
+
+    # start/end constraints
     coors_bad1 = orm.Coordinate(start=-12, end=30, seqid='abc', genome=g)
-    coors_bad2 = orm.Coordinate(start=100, end=30, seqid='abc', genome=g)
+    coors_bad2 = orm.Coordinate(start=100, end=30, seqid='abcd', genome=g)
     coors_bad3 = orm.Coordinate(start=1, end=30, genome=g)
     with pytest.raises(IntegrityError):
         sess.add(coors_bad1)  # start below 1
