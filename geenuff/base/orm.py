@@ -138,12 +138,12 @@ class Feature(Base):
     given_name = Column(String)
     type = Column(Enum(types.OnSequence))
 
-    start = Column(Integer)
-    start_is_biological_start = Column(Boolean)
-    end = Column(Integer)
-    end_is_biological_end = Column(Boolean)
+    start = Column(Integer, nullable=False)
+    start_is_biological_start = Column(Boolean, nullable=False)
+    end = Column(Integer, nullable=False)
+    end_is_biological_end = Column(Boolean, nullable=False)
 
-    is_plus_strand = Column(Boolean)
+    is_plus_strand = Column(Boolean, nullable=False)
     score = Column(Float)
     source = Column(String)
     phase = Column(Integer)
@@ -168,6 +168,8 @@ class Feature(Base):
         CheckConstraint(start >= 0, name="check_start_0plus"),
         CheckConstraint(phase >= 0, name='check_phase_not_negative'),
         CheckConstraint(phase < 3, name='check_phase_less_three'),
+        # if start_is_biological_start is True, phase has to be 0
+        CheckConstraint('not start_is_biological_start or phase = 0', name='check_phase_bio_start')
     )
 
     def __repr__(self):
