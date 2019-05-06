@@ -834,7 +834,7 @@ def test_fasta_import():
     assert coord.seqid == 'a'
     assert coord.start == 0
     assert coord.end == 199 * 100
-    assert coord.sequence == 'atcg' * 25 * 199
+    assert coord.sequence == 'ATCG' * 25 * 199  # also testing the upper case conversion
 
     # test import of multiple sequences from one file
     controller = import_fasta('testdata/dummyloci_multiple.fa')
@@ -848,11 +848,11 @@ def test_fasta_import():
     assert coords[1].seqid == 'abc'
     assert coords[1].start == 0
     assert coords[1].end == 808
-    assert coords[1].sequence == 'aaggcctt' * 101
+    assert coords[1].sequence == 'AAGGCCTT' * 101
     assert coords[2].seqid == 'test123'
     assert coords[2].start == 0
     assert coords[2].end == 100
-    assert coords[2].sequence == 'a' * 100
+    assert coords[2].sequence == 'A' * 100
 
 
 def test_transcript_interpreter():
