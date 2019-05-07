@@ -46,12 +46,19 @@ class SuperLocusHandlerBase(Handler):
         super().__init__()
         self.handler_holder = HandleMaker(self)
 
-    def make_all_handlers(self):
-        self.handler_holder.make_all_handlers()
-
     @property
     def data_type(self):
         return orm.SuperLocus
+
+    @property
+    def features(self):
+        for transcript in self.data.transcribeds:
+            for piece in transcript.transcribed_pieces:
+                for feature in piece.features:
+                    yield feature
+
+    def make_all_handlers(self):
+        self.handler_holder.make_all_handlers()
 
 
 class TranscribedHandlerBase(Handler):
