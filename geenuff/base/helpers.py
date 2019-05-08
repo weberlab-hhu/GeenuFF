@@ -164,7 +164,7 @@ class Counter(object):
 
     def sync_with_db(self, session):
         from sqlalchemy import func
-        self._at = session.query(func.max(self.cl.id)).one()[0] + 1
+        self._at = session.query(func.max(self.cl.id)).one()[0]
 
     def __call__(self, *args, **kwargs):
         self._at += 1
