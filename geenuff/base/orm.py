@@ -35,7 +35,7 @@ class Coordinate(Base):
     features = relationship('Feature', back_populates='coordinate')
 
     __table_args__ = (
-        UniqueConstraint('genome_id', 'seqid', 'start', 'end', name='unique_coords_per_genome'),
+        UniqueConstraint('genome_id', 'seqid', name='unique_coords_per_genome'),
         CheckConstraint(start >= 0, name='check_start_1plus'),
         CheckConstraint(end > start, name='check_end_gr_start'),
     )
