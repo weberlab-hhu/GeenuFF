@@ -2,7 +2,7 @@ import logging
 import argparse
 import os
 
-from geenuff.applications.gffimporter import ImportController, CoordinateHandler
+from geenuff.applications.importer import ImportController, CoordinateHandler
 from geenuff.base import orm
 
 
@@ -49,16 +49,24 @@ def main(args):
     logging.basicConfig(level=logging.WARNING)
     paths = PathFinder(args.basedir, fasta=args.fasta, gff=args.gff3)
 
-    controller = ImportController(database_path=paths.db_out, err_path=paths.problems_out)
+    controller = ImportController(database_path=paths.db_out,
+                                  err_path=paths.problems_out,
+                                  replace_db=args.replace_db)
     controller.add_genome(paths.fasta_in, paths.gff_in)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--basedir', help='organized output (& input) directory', required=True)
+
     custominput = parser.add_argument_group("Override default with custom input location:")
     custominput.add_argument('--gff3', help='gff3 formatted file to parse / standardize')
     custominput.add_argument('--fasta', help='fasta file to parse standardize')
+    custominput.add_argument('--db_path', help='path of the GeenuFF database')
+
+    parser.add_argument('--replace_db', action='store_true',
+                        help=('whether to override a GeenuFF database found at '
+                              'the default location or at the location of --db_path'))
 
     args = parser.parse_args()
 

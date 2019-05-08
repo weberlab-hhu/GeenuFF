@@ -35,7 +35,7 @@ def setup_testable_super_locus(db_path='sqlite:///:memory:'):
     controller.add_genome('testdata/dummyloci.fa',
                           'testdata/dummyloci.gff3',
                           clean_gff=False)
-    return controller.super_loci[0], controller
+    return controller.latest_super_loci[0], controller
 
 
 def cleaned_commited_features(sess):
@@ -817,7 +817,7 @@ def test_fasta_import():
 
     # test very short dummyloci file
     controller = import_fasta('testdata/dummyloci.fa')
-    coords = controller.genome_handler.data.coordinates
+    coords = controller.latest_genome_handler.data.coordinates
     assert len(coords) == 1
     coord = coords[0]
     assert coord.seqid == '1'
@@ -828,7 +828,7 @@ def test_fasta_import():
 
     # test slightly longer biointerp file
     controller = import_fasta('testdata/biointerp_loci.fa')
-    coords = controller.genome_handler.data.coordinates
+    coords = controller.latest_genome_handler.data.coordinates
     assert len(coords) == 1
     coord = coords[0]
     assert coord.seqid == 'a'
@@ -838,7 +838,7 @@ def test_fasta_import():
 
     # test import of multiple sequences from one file
     controller = import_fasta('testdata/dummyloci_multiple.fa')
-    coords = controller.genome_handler.data.coordinates
+    coords = controller.latest_genome_handler.data.coordinates
     assert len(coords) == 3
     assert coords[0].seqid == '1'
     assert coords[0].start == 0
@@ -1125,7 +1125,7 @@ def test_errors_not_lost():
     s = "1\tGnomon\tgene\t20\t405\t0.\t-\t0\tID=eg_missing_children"
     gene_entry = gffhelper.GFFObject(s)
     controller.clean_entry(gene_entry)
-    coordinate = controller.genome_handler.data.coordinates[0]
+    coordinate = controller.latest_genome_handler.data.coordinates[0]
 
     sl._mark_erroneous(gene_entry, coordinate=coordinate, controller=controller)
     assert len(sl.transcribed_handlers) == 4
@@ -1181,7 +1181,7 @@ def test_check_and_fix_structure():
     if os.path.exists(rel_path):
         os.remove(rel_path)
     sl, controller = setup_testable_super_locus(db_path)
-    coordinate = controller.genome_handler.data.coordinates[0]
+    coordinate = controller.latest_genome_handler.data.coordinates[0]
 
     sl.check_and_fix_structure(coordinate=coordinate, controller=controller)
     controller.insertion_queues.execute_so_far()

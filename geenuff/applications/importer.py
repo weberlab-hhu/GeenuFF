@@ -60,37 +60,48 @@ class InsertionQueue(helpers.QueueController):
 class InsertCounterHolder(object):
     """provides incrementing unique integers to be used as primary keys for bulk inserts"""
     # todo, think about whether using class attributes for the counters would work? When should they reset?
-    feature = helpers.Counter()
-    translated = helpers.Counter()
-    transcribed = helpers.Counter()
-    super_locus = helpers.Counter()
-    transcribed_piece = helpers.Counter()
-    genome = helpers.Counter()
+    feature = helpers.Counter(orm.Feature)
+    translated = helpers.Counter(orm.Translated)
+    transcribed = helpers.Counter(orm.Transcribed)
+    super_locus = helpers.Counter(orm.SuperLocus)
+    transcribed_piece = helpers.Counter(orm.TranscribedPiece)
+    genome = helpers.Counter(orm.Genome)
+
+    @staticmethod
+    def sync_counters_with_db(session):
+        InsertCounterHolder.feature.sync_with_db(session)
+        InsertCounterHolder.translated.sync_with_db(session)
+        InsertCounterHolder.transcribed.sync_with_db(session)
+        InsertCounterHolder.super_locus.sync_with_db(session)
+        InsertCounterHolder.transcribed_piece.sync_with_db(session)
+        InsertCounterHolder.genome.sync_with_db(session)
 
 
 ##### main flow control #####
 class ImportController(object):
-    def __init__(self, database_path, err_path='/dev/null'):
+    def __init__(self, database_path, err_path='/dev/null', replace_db=False):
         self.database_path = database_path
         self.err_path = err_path
-        self.genome_handler = None
-        self.coordinates = {}
-        self.super_loci = []
-        self._mk_session()
+        self.latest_genome_handler = None
+        self.latest_super_loci = []
+        self._mk_session(replace_db)
         # queues for adding to db
         self.insertion_queues = InsertionQueue(session=self.session, engine=self.engine)
 
-    def _mk_session(self):
+    def _mk_session(self, replace_db):
+        appending_to_db = False
         if os.path.exists(self.database_path):
-            os.remove(self.database_path)
-            print('removed existing database at {}'.format(self.database_path))
+            if replace_db:
+                print('removed existing database at {}'.format(self.database_path))
+                os.remove(self.database_path)
+            else:
+                appending_to_db = True
+                print('appending to existing database at {}'.format(self.database_path))
         self.engine = create_engine(helpers.full_db_path(self.database_path), echo=False)
         orm.Base.metadata.create_all(self.engine)
         self.session = sessionmaker(bind=self.engine)()
-
-    @property
-    def genome_handler_type(self):
-        return GenomeHandler
+        if appending_to_db:
+            InsertCounterHolder.sync_counters_with_db(self.session)
 
     def gff_gen(self, gff_file):
         known = [x.value for x in types.AllKnown]
@@ -148,57 +159,49 @@ class ImportController(object):
 
     def make_genome(self, **kwargs):
         # todo, parse in meta data from kwargs?
-        self.genome_handler = self.genome_handler_type()
-        ag = orm.Genome()
-        self.genome_handler.add_data(ag)
-        self.session.add(ag)
+        genome = orm.Genome()
+        self.latest_genome_handler = GenomeHandler(genome)
+        self.session.add(genome)
         self.session.commit()
 
     def add_sequences(self, seq_path):
-        if self.genome_handler is None:
+        if self.latest_genome_handler is None:
             self.make_genome()
-        self.genome_handler.add_sequences(seq_path)
+        self.latest_genome_handler.add_sequences(seq_path)
         self.session.commit()
 
     def add_gff(self, gff_file, clean=True):
         # final prepping of seqid match up
-        self.genome_handler.mk_mapper(gff_file)
+        assert self.latest_genome_handler is not None, 'No recent genome found'
+        self.latest_genome_handler.mk_mapper(gff_file)
 
         super_loci = []
         err_handle = open(self.err_path, 'w')
         i = 1
         for entry_group in self.group_gff_by_gene(gff_file):
             super_locus = SuperLocusHandler(controller=self)
-            if self.genome_handler is None:
-                raise AttributeError('An GenomeHandler has to exist .add_gff '
-                                     'is called, use (self.make_genome(...)')
             if clean:
                 super_locus.add_n_clean_gff_entry_group(entry_group,
                                                         err_handle,
-                                                        genome=self.genome_handler.data,
+                                                        genome=self.latest_genome_handler.data,
                                                         controller=self)
             else:
                 super_locus.add_gff_entry_group(entry_group,
                                                 err_handle,
-                                                genome=self.genome_handler.data,
+                                                genome=self.latest_genome_handler.data,
                                                 controller=self)
 
             super_loci.append(super_locus)  # just to keep some direct python link to this
             if not i % 500:
                 self.insertion_queues.execute_so_far()
             i += 1
-        self.super_loci = super_loci
+        self.latest_super_loci = super_loci
         self.insertion_queues.execute_so_far()
         err_handle.close()
 
     def add_genome(self, fasta_path, gff_path, clean_gff=True):
         self.add_sequences(fasta_path)
         self.add_gff(gff_path, clean=clean_gff)
-
-    def clean_super_loci(self):
-        for sl in self.super_loci:
-            coordinate = self.genome_handler.gffid_to_coords[sl.gffentry.seqid]
-            sl.check_and_fix_structure(coordinate, controller=self)
 
 
 ##### gff parsing subclasses #####
@@ -215,8 +218,8 @@ class GFFDerived(object):
 
 
 class GenomeHandler(handlers.GenomeHandlerBase):
-    def __init__(self, controller=None):
-        super().__init__()
+    def __init__(self, data=None, controller=None):
+        super().__init__(data)
         if controller is not None:
             self.id = InsertCounterHolder.genome()
         self.mapper = None
@@ -649,7 +652,7 @@ class TranscriptInterpreter(TranscriptInterpBase):
             self.proteins = None  # this way we only run into an error if we actually wanted to use proteins
 
     def new_feature(self, gffentry, translateds=None, **kwargs):
-        coordinate = self.controller.genome_handler.gffid_to_coords[gffentry.seqid]
+        coordinate = self.controller.latest_genome_handler.gffid_to_coords[gffentry.seqid]
         handler = FeatureHandler(controller=self.controller, processed=True)
         handler.gffentry = copy.deepcopy(gffentry)
         feature, _, _ = handler.add_to_queue(insertion_queues=self.controller.insertion_queues,
@@ -902,7 +905,7 @@ class TranscriptInterpreter(TranscriptInterpBase):
             else:
                 err_start = before0.data.upstream_from_interval(before0) - sign * error_buffer  # mask prev feat. too
                 err_end = at + sign  # so that the error masks the coordinate with the close status
-                gffid_to_coords = self.controller.genome_handler.gffid_to_coords
+                gffid_to_coords = self.controller.latest_genome_handler.gffid_to_coords
                 if sign == 1:  # if is_plus_strand, todo, use same logic/setup as elsewhere
                     start_of_sequence = gffid_to_coords[template.gffentry.seqid].start
                     err_start = max(start_of_sequence, err_start)
@@ -994,7 +997,7 @@ class TranscriptInterpreter(TranscriptInterpBase):
             self.status.transcribed_tracker.set_channel_open_with_feature(transcribed_feature)
 
             # mask a dummy region up-stream as it's very unclear whether it should be intergenic/intronic/utr
-            gffid_to_coords = self.controller.genome_handler.gffid_to_coords
+            gffid_to_coords = self.controller.latest_genome_handler.gffid_to_coords
             if plus_strand:
                 # unless we're at the start of the sequence
                 start_of_sequence = gffid_to_coords[cds_feature.gffentry.seqid].start
@@ -1035,7 +1038,7 @@ class TranscriptInterpreter(TranscriptInterpBase):
                 {'end': at, 'end_is_biological_end': False}
             )
             # may or may not be stop codon, but will just mark as error (unless at edge of sequence)
-            gffid_to_coords = self.controller.genome_handler.gffid_to_coords
+            gffid_to_coords = self.controller.latest_genome_handler.gffid_to_coords
 
             start_of_sequence = gffid_to_coords[cds_feature.gffentry.seqid].start - 1
             end_of_sequence = gffid_to_coords[cds_feature.gffentry.seqid].end
