@@ -42,8 +42,8 @@ class CoordinateHandlerBase(Handler):
 
 class SuperLocusHandlerBase(Handler):
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, data=None):
+        super().__init__(data)
         self.handler_holder = HandleMaker(self)
 
     @property

@@ -27,7 +27,8 @@ class ChannelTracker(object):
         if isinstance(x, bool):
             self._in_region = x
         else:
-            raise ValueError("in_region supports only boolean values {} of type {} found".format(x, type(x)))
+            raise ValueError("in_region supports only boolean values {} "
+                             "of type {} found".format(x, type(x)))
 
     @property
     def open_feature(self):
@@ -38,8 +39,8 @@ class ChannelTracker(object):
         if isinstance(feature, dict) or feature is None:
             self._open_feature = feature
         else:
-            raise ValueError(
-                'expected instance of dict or None for open_feature, got {} of type {}'.format(feature, type(feature)))
+            raise ValueError('expected instance of dict or None for open_feature, '
+                             'got {} of type {}'.format(feature, type(feature)))
 
     def update_and_close_feature(self, update_dict):
         self.open_feature.update(update_dict)
@@ -67,8 +68,9 @@ class CodingChannelTracker(ChannelTracker):
 
 
 class TranscriptStatusBase(object):
-    """can hold and manipulate all the info on current status (later: feature types) of a transcript"""
-
+    """can hold and manipulate all the info on current status
+    (later: feature types) of a transcript
+    """
     def __init__(self):
         # initializes to intergenic (all channels / types set to False)
         self.transcribed_tracker = ChannelTracker()
@@ -78,10 +80,12 @@ class TranscriptStatusBase(object):
         self.error_tracker = ChannelTracker()
 
     def __repr__(self):
-        return "in_transcribed: {}, in_intron: {}, in_coding: {}, in_trans_intron: {}, phase: {}".format(
-            self.transcribed_tracker.in_region, self.intron_tracker.in_region, self.coding_tracker.in_region,
-            self.trans_intron_tracker.in_region, self.coding_tracker.phase
-        )
+        return ("in_transcribed: {}, in_intron: {}, in_coding: {}, "
+                "in_trans_intron: {}, phase: {}").format(self.transcribed_tracker.in_region,
+                                                         self.intron_tracker.in_region,
+                                                         self.coding_tracker.in_region,
+                                                         self.trans_intron_tracker.in_region,
+                                                         self.coding_tracker.phase)
 
     def is_utr(self):
         return self.transcribed_tracker.in_region and \
@@ -183,7 +187,8 @@ class EukTranscriptStatus(TranscriptStatusBase):
         self.coding_tracker = EukCodingChannelTracker()
 
     def is_5p_utr(self):
-        return self.is_utr() and not any([self.coding_tracker.seen_start, self.coding_tracker.seen_stop])
+        return self.is_utr() and not any([self.coding_tracker.seen_start,
+                                          self.coding_tracker.seen_stop])
 
     def is_3p_utr(self):
         return self.is_utr() and self.coding_tracker.seen_start and self.coding_tracker.seen_stop
@@ -194,7 +199,9 @@ def positional_match(feature, previous):
 
 
 class TranscriptInterpBase(object):
-    """handles basics from transitioning (piece & feature sorting) through biological interpretation of a transcript"""
+    """handles basics from transitioning (piece & feature sorting)
+    through biological interpretation of a transcript
+    """
     def __init__(self, transcript, super_locus, session=None):
         assert isinstance(transcript, TranscribedHandlerBase)
         self.status = TranscriptStatusBase()
