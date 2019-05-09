@@ -199,7 +199,7 @@ def positional_match(feature, previous):
 
 
 class TranscriptInterpBase(object):
-    """handles basics from transitioning (piece & feature sorting)
+    """Handles basics from transitioning (piece & feature sorting)
     through biological interpretation of a transcript
     """
     def __init__(self, transcript, super_locus, session=None):

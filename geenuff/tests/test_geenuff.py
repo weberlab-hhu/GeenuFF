@@ -16,7 +16,7 @@ from .. import helpers
 
 ### Helper functions ###
 # section: orm
-def mk_session(db_path='sqlite:///:memory:'):
+def mk_memory_session(db_path='sqlite:///:memory:'):
     engine = create_engine(db_path, echo=False)
     orm.Base.metadata.create_all(engine)
     Session = sessionmaker(bind=engine)
@@ -30,7 +30,7 @@ def setup_data_handler(handler_type, data_type, **kwargs):
     return data, handler
 
 
-def setup_testable_super_locus(db_path='sqlite:///:memory:'):
+def setup_dummyloci_super_locus(db_path='sqlite:///:memory:'):
     controller = ImportController(err_path='/dev/null', database_path=db_path)
     controller.add_genome('testdata/dummyloci.fa',
                           'testdata/dummyloci.gff3',
@@ -56,7 +56,7 @@ def test_annogenome2coordinate_relation():
     """Check if everything is consistent when we add an Genome and a Coordinate
     to the db. Also check for correct deletion behavior.
     """
-    sess = mk_session()
+    sess = mk_memory_session()
     g = orm.Genome(species='Athaliana', version='1.2', acquired_from='Phytozome12')
     coord = orm.Coordinate(start=0, end=30, seqid='abc', genome=g)
     assert g is coord.genome
@@ -84,7 +84,7 @@ def test_annogenome2coordinate_relation():
 
 def test_coordinate_constraints():
     """Check the coordinate constraints"""
-    sess = mk_session()
+    sess = mk_memory_session()
     g = orm.Genome()
 
     # should be ok
@@ -112,7 +112,7 @@ def test_coordinate_constraints():
 
 def test_coordinate_insert():
     """Test what happens when we insert two coordinates"""
-    sess = mk_session()
+    sess = mk_memory_session()
     g = orm.Genome()
     coords = orm.Coordinate(start=1, end=30, seqid='abc', genome=g)
     coords2 = orm.Coordinate(start=11, end=330, seqid='def', genome=g)
@@ -151,7 +151,7 @@ def test_many2many_with_features():
 
 def test_feature_has_its_things():
     """Test if properties of Feature table are correct and constraints are enforced"""
-    sess = mk_session()
+    sess = mk_memory_session()
     # test feature with nothing much set
     g = orm.Genome()
     c = orm.Coordinate(start=1, end=30, seqid='abc', genome=g)
@@ -196,7 +196,7 @@ def test_partially_remove_coordinate():
     """Add two coordinates to an annotated genome and test if everything ends
     up valid.
     """
-    sess = mk_session()
+    sess = mk_memory_session()
     g = orm.Genome()
     place_holder = orm.Genome()
     coord0 = orm.Coordinate(start=1, end=30, seqid='abc', genome=g)
@@ -217,7 +217,7 @@ def test_transcribed_piece_unique_constraints():
     """Add transcribed pieces in valid and invalid configurations and test for
     valid outcomes.
     """
-    sess = mk_session()
+    sess = mk_memory_session()
     sl = orm.SuperLocus()
     transcribed0 = orm.Transcribed(super_locus=sl)
     transcribed1 = orm.Transcribed(super_locus=sl)
@@ -245,7 +245,7 @@ def test_order_pieces():
     if the order for the transcribed pieces and the features is returned according to the
     position property instead of db insertion order.
     """
-    sess = mk_session()
+    sess = mk_memory_session()
     g = orm.Genome(species='Athaliana', version='1.2', acquired_from='Phytozome12')
     coor = orm.Coordinate(seqid='a', start=1, end=1000, genome=g)
     sess.add_all([g, coor])
@@ -291,12 +291,24 @@ def test_order_pieces():
     print([piece0, piece1, piece2], 'expected')
     print(op, 'sorted')
     assert op == [piece0, piece1, piece2]
-    # and finally, order features by piece
+    # order features by piece
     fully_sorted = ti.sort_all()
     expected = [[feature0u],
                 [feature1d, feature1u],
                 [feature2d]]
     assert fully_sorted == expected
+    # test assertion of matching strand
+    feature_neg = orm.Feature(transcribed_pieces=[piece2],
+                              coordinate=coor,
+                              start=5,
+                              end=10,
+                              given_name='neg',
+                              is_plus_strand=False)
+    sess.add(feature_neg)
+    sess.commit()
+    with pytest.raises(AssertionError):
+        ti.sorted_features(piece2)
+
 
 
 class TransspliceDemoData(object):
@@ -387,7 +399,7 @@ def test_transition_transsplice():
     """Test if the transsplicing scenario of TransspliceDemoData is interpreted correctly by
     transition_5p_to_3p() of TranscriptInterpBase.
     """
-    sess = mk_session()
+    sess = mk_memory_session()
     d = TransspliceDemoData(sess)  # setup _d_ata
     d.make_all_handlers()
     # forward pass, same sequence, two pieces
@@ -549,7 +561,7 @@ class BiointerpDemoDataPartial(object):
 
 def test_biointerp_features_as_ranges():
     """checks biological interpretation for ranges from db for simple, spliced, coding gene"""
-    sess = mk_session()
+    sess = mk_memory_session()
     fw = BiointerpDemoDataCoding(sess, is_plus_strand=True)
 
     assert fw.ti.transcribed_ranges() == [Range(coordinate_id=1, is_plus_strand=True, piece_position=0,
@@ -600,7 +612,7 @@ def test_biointerp_features_as_ranges():
 
 def test_biointerp_features_as_ranges_transsplice():
     """checks biological interpretation for ranges from db for non-coding, trans-spliced (from same chromosome) gene"""
-    sess = mk_session()
+    sess = mk_memory_session()
     fw = BioInterpDemodataTranssplice(sess, is_plus_strand_piece0=True, is_plus_strand_piece1=True)
 
     assert fw.ti.transcribed_ranges() == [Range(coordinate_id=1, is_plus_strand=True, piece_position=0,
@@ -626,7 +638,7 @@ def test_biointerp_features_as_ranges_transsplice():
 
 def test_biointerp_features_as_ranges_partial():
     """check biological interpretation for ranges from non-coding transcribed fragment"""
-    sess = mk_session()
+    sess = mk_memory_session()
     fw = BiointerpDemoDataPartial(sess, is_plus_strand=True)
     assert fw.ti.transcribed_ranges() == [Range(coordinate_id=1, is_plus_strand=True, piece_position=0,
                                                     start=100, end=500)]
@@ -644,7 +656,7 @@ def test_biointerp_features_as_ranges_partial():
 
 def test_biointerp_features_as_transitions():
     """checks biological interpretation for sites from db for simple, spliced, coding gene"""
-    sess = mk_session()
+    sess = mk_memory_session()
     fw = BiointerpDemoDataCoding(sess, is_plus_strand=True)
     assert fw.ti.transcription_start_sites() == [TranscriptCoordinate(coordinate_id=1, is_plus_strand=True,
                                                                           piece_position=0, start=100)]
@@ -763,7 +775,7 @@ def test_data_frm_gffentry():
 
 def test_organize_and_split_features():
     """Tests 5'-3' ordering of features and slicing at overlaps"""
-    sl, controller = setup_testable_super_locus()
+    sl, controller = setup_dummyloci_super_locus()
     transcript_full = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
     transcript_interpreter = importer.TranscriptInterpreter(transcript_full,
                                                             super_locus=sl,
@@ -793,7 +805,7 @@ def test_possible_types():
     five_prime = types.OnSequence.five_prime_UTR.name
     three_prime = types.OnSequence.three_prime_UTR.name
 
-    sl, controller = setup_testable_super_locus()
+    sl, controller = setup_dummyloci_super_locus()
     transcript_full = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
     transcript_interpreter = importer.TranscriptInterpreter(transcript_full,
                                                             super_locus=sl,
@@ -857,7 +869,7 @@ def test_fasta_import():
 
 def test_transcript_interpreter():
     """tests decoding of raw from-gff features via the TranscriptInterpreter class"""
-    sl, controller = setup_testable_super_locus()
+    sl, controller = setup_dummyloci_super_locus()
     transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
     # change so that there are implicit UTRs
     t_interp = importer.TranscriptInterpreter(transcript_handler,
@@ -887,7 +899,7 @@ def test_transcript_interpreter():
 
 def test_transcript_interpreter_minus_strand():
     """Tests transcript interpreter also generally works in reverse direction"""
-    sl, controller = setup_testable_super_locus()
+    sl, controller = setup_dummyloci_super_locus()
     for transcript_handler in sl.transcribed_handlers:
         for feature in transcript_handler.feature_handlers:
             feature.gffentry.strand = '-'
@@ -923,7 +935,7 @@ def test_transcript_interpreter_minus_strand():
 
 def test_transcript_get_first():
     # plus strand
-    sl, controller = setup_testable_super_locus()
+    sl, controller = setup_dummyloci_super_locus()
     transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
     t_interp = importer.TranscriptInterpreter(transcript_handler,
                                               super_locus=sl,
@@ -947,7 +959,7 @@ def test_transcript_get_first():
 
 def test_transcript_get_first_minus_strand():
     # minus strand
-    sl, controller = setup_testable_super_locus()
+    sl, controller = setup_dummyloci_super_locus()
     for transcript_handler in sl.transcribed_handlers:
         for feature in transcript_handler.feature_handlers:
             feature.gffentry.strand = '-'
@@ -980,7 +992,7 @@ def test_transcript_get_first_minus_strand():
 
 def test_transcript_get_first_without_UTR():
     # minus strand
-    sl, controller = setup_testable_super_locus()
+    sl, controller = setup_dummyloci_super_locus()
     for transcript_handler in sl.transcribed_handlers:
         for feature in transcript_handler.feature_handlers:
             feature.gffentry.strand = '-'
@@ -1025,10 +1037,10 @@ def test_transcript_get_first_without_UTR():
 
 
 def test_transcript_transition_from_5p_to_end():
-    sl, controller = setup_testable_super_locus()
-    transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
+    slh, controller = setup_dummyloci_super_locus()
+    transcript_handler = [x for x in slh.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
     t_interp = importer.TranscriptInterpreter(transcript_handler,
-                                              super_locus=sl,
+                                              super_locus=slh,
                                               controller=controller)
     ivals_sets = t_interp.intervals_5to3(plus_strand=True)
     t_interp.interpret_first_pos(ivals_sets[0])
@@ -1084,13 +1096,34 @@ def test_transcript_transition_from_5p_to_end():
     assert transcribed_features[0].end_is_biological_end
     assert transcribed_features[0].is_plus_strand
 
+    # test transition_5p_to_3p, originally done for Helixer
+    # the transcript needs to query for as the handlers in slh.transcribed_handlers
+    # do not contain an Transcribed orm instance due to core insert
+    # (the same is true for super_locus
+    super_locus = controller.session.query(orm.SuperLocus).\
+                      filter(orm.SuperLocus.given_name == slh.gffentry.get_ID()).one()
+    slh.add_data(super_locus)
+    transcript = [x for x in slh.data.transcribeds if x.given_name == 'y'][0]
+    t_interp.transcript.add_data(transcript)
+    transitions = list(t_interp.transition_5p_to_3p())
+    assert len(transitions) == 4
+    pieces = [x[1] for x in transitions]
+    features = [x[0][0] for x in transitions]
+    #ordered_starts = [0, 10, 100, 110, 120, 200, 300, 400]
+    ordered_starts = [0, 10, 100, 120]
+    assert [x.start for x in features] == ordered_starts
+    expected_types = [types.TRANSCRIBED, types.CODING, types.INTRON, types.INTRON]
+    assert [x.type.value for x in features] == expected_types
+    assert all([x.position == 0 for x in pieces])
+
+
 
 def test_non_coding_transitions():
-    sl, controller = setup_testable_super_locus()
-    transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'z'][0]
+    slh, controller = setup_dummyloci_super_locus()
+    transcript_handler = [x for x in slh.transcribed_handlers if x.gffentry.get_ID() == 'z'][0]
     piece = transcript_handler.one_piece()
     t_interp = importer.TranscriptInterpreter(transcript_handler,
-                                              super_locus=sl,
+                                              super_locus=slh,
                                               controller=controller)
     # get single-exon no-CDS transcript
     # delete CDS feature
@@ -1121,16 +1154,16 @@ def test_non_coding_transitions():
 
 
 def test_errors_not_lost():
-    sl, controller = setup_testable_super_locus()
+    slh, controller = setup_dummyloci_super_locus()
     s = "1\tGnomon\tgene\t20\t405\t0.\t-\t0\tID=eg_missing_children"
     gene_entry = gffhelper.GFFObject(s)
     controller.clean_entry(gene_entry)
     coordinate = controller.latest_genome_handler.data.coordinates[0]
 
-    sl._mark_erroneous(gene_entry, coordinate=coordinate, controller=controller)
-    assert len(sl.transcribed_handlers) == 4
+    slh._mark_erroneous(gene_entry, coordinate=coordinate, controller=controller)
+    assert len(slh.transcribed_handlers) == 4
 
-    sl.check_and_fix_structure(coordinate=coordinate, controller=controller)
+    slh.check_and_fix_structure(coordinate=coordinate, controller=controller)
     features = controller.session.query(orm.Feature).filter(orm.Feature.given_name == 'eg_missing_children').all()
     assert len(features) == 1
     assert features[0].start == 404
@@ -1139,9 +1172,9 @@ def test_errors_not_lost():
 
 def test_setup_proteins():
     """Tests explicit protein creation from mRNA & CDS gff features"""
-    sl, controller = setup_testable_super_locus()
-    transcript = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
-    t_interp = importer.TranscriptInterpreter(transcript, sl, controller)
+    slh, controller = setup_dummyloci_super_locus()
+    transcript = [x for x in slh.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
+    t_interp = importer.TranscriptInterpreter(transcript, slh, controller)
     controller.insertion_queues.execute_so_far()
     print(t_interp.proteins)
     assert len(t_interp.proteins.keys()) == 1
@@ -1153,10 +1186,10 @@ def test_setup_proteins():
 
 def test_cp_features_to_prot():
     """Test linking of appropriate features to newly created protein (translated)"""
-    sl, controller = setup_testable_super_locus()
+    slh, controller = setup_dummyloci_super_locus()
     controller.session.commit()
-    transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
-    t_interp = importer.TranscriptInterpreter(transcript_handler, sl, controller)
+    transcript_handler = [x for x in slh.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
+    t_interp = importer.TranscriptInterpreter(transcript_handler, slh, controller)
 
     t_interp.decode_raw_features()
     controller.session.commit()
@@ -1180,10 +1213,10 @@ def test_check_and_fix_structure():
     db_path = 'sqlite:///{}'.format(rel_path)
     if os.path.exists(rel_path):
         os.remove(rel_path)
-    sl, controller = setup_testable_super_locus(db_path)
+    slh, controller = setup_dummyloci_super_locus(db_path)
     coordinate = controller.latest_genome_handler.data.coordinates[0]
 
-    sl.check_and_fix_structure(coordinate=coordinate, controller=controller)
+    slh.check_and_fix_structure(coordinate=coordinate, controller=controller)
     controller.insertion_queues.execute_so_far()
     # check handling of nice transcript
     protein = controller.session.query(orm.Translated).filter(orm.Translated.given_name == 'y.p').all()
@@ -1243,15 +1276,13 @@ def test_check_and_fix_structure():
 
 
 def test_erroneous_splice():
-    db_path = 'sqlite:///:memory:'
-
-    sl, controller = setup_testable_super_locus(db_path)
+    slh, controller = setup_dummyloci_super_locus()
     sess = controller.session
     # get target transcript
-    transcript = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'x'][0]
+    transcript = [x for x in slh.transcribed_handlers if x.gffentry.get_ID() == 'x'][0]
     # fish out "first exon" features and extend so intron is of -length
     features = []
-    for scribed in sl.transcribed_handlers:
+    for scribed in slh.transcribed_handlers:
         features += scribed.feature_handlers
     f0_handler = [f for f in features if f.gffentry.get_ID() == 'ftr000000'][0]
     f1_handler = [f for f in features if f.gffentry.get_ID() == 'ftr000001'][0]
@@ -1259,7 +1290,7 @@ def test_erroneous_splice():
     #f1 = sess.query(orm.Feature).filter(orm.Feature.given_name == 'ftr000001').first()
     f0_handler.gffentry.end = f1_handler.gffentry.end = 115
 
-    ti = importer.TranscriptInterpreter(transcript, controller=controller, super_locus=sl)
+    ti = importer.TranscriptInterpreter(transcript, controller=controller, super_locus=slh)
     ti.decode_raw_features()
     sess.commit()
     controller.insertion_queues.execute_so_far()

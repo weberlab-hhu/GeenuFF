@@ -278,14 +278,6 @@ class GenomeHandler(handlers.GenomeHandlerBase):
                                    genome=self.data)
 
 
-class CoordinateHandler(handlers.CoordinateHandlerBase):
-
-    def __init__(self, data=None, controller=None):
-        super().__init__()
-        self.add_data(data)
-        self.controller = controller  # is controller still used from here? todo...
-
-
 class SuperLocusHandler(handlers.SuperLocusHandlerBase, GFFDerived):
     def __init__(self, controller=None):
         super().__init__()
@@ -375,8 +367,11 @@ class SuperLocusHandler(handlers.SuperLocusHandlerBase, GFFDerived):
                                                        controller=controller)
 
         # setup error as only feature (defacto it's a mask)
-        feature = transcript_interpreter.new_feature(gffentry=entry, type=types.ERROR, start_is_biological_start=True,
-                                                     end_is_biological_end=True, coordinate_id=coordinate.id)
+        feature = transcript_interpreter.new_feature(gffentry=entry,
+                                                     type=types.ERROR,
+                                                     start_is_biological_start=True,
+                                                     end_is_biological_end=True,
+                                                     coordinate_id=coordinate.id)
         # gff start and end -> geenuff coordinates
         if feature["is_plus_strand"]:
             err_start = entry.start - 1
@@ -391,7 +386,8 @@ class SuperLocusHandler(handlers.SuperLocusHandlerBase, GFFDerived):
         self.transcribed_handlers.append(transcribed_e_handler)
 
     def check_and_fix_structure(self, coordinate, controller):
-        # todo, add against sequence check to see if start/stop and splice sites are possible or not, e.g. is start ATG?
+        # todo, add against sequence check to see if start/stop and
+        # splice sites are possible or not, e.g. is start ATG?
         # if it's empty (no bottom level features at all) mark as erroneous
         features = []
         for transcript in self.transcribed_handlers:
@@ -400,8 +396,10 @@ class SuperLocusHandler(handlers.SuperLocusHandlerBase, GFFDerived):
             self._mark_erroneous(self.gffentry, coordinate=coordinate, controller=controller)
 
         for transcript in self.transcribed_handlers:
-            t_interpreter = TranscriptInterpreter(transcript, super_locus=self, controller=controller)
-            # skip any transcript consisting of only processed features (in context, should just be pre-interp errors)
+            t_interpreter = TranscriptInterpreter(transcript, super_locus=self,
+                                                  controller=controller)
+            # skip any transcript consisting of only processed
+            # features (in context, should just be pre-interp errors)
             if t_interpreter.has_no_unprocessed_features():
                 pass
             else:
