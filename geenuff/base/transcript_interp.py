@@ -150,11 +150,11 @@ class Range(TranscriptCoordinate):
         self.end = end
 
     def __repr__(self):
-        return "coordinate: {}, piece position {}, is_plus {}: {}-{}".format(self.coordinate_id,
-                                                                             self.piece_position,
-                                                                             self.is_plus_strand,
-                                                                             self.start,
-                                                                             self.end)
+        return "coordinate: {}, piece_position: {}, is_plus: {}, {}-{}".format(self.coordinate_id,
+                                                                               self.piece_position,
+                                                                               self.is_plus_strand,
+                                                                               self.start,
+                                                                               self.end)
 
 
 class Position(object):
