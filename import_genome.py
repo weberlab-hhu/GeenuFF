@@ -2,7 +2,7 @@ import logging
 import argparse
 import os
 
-from geenuff.applications.importer import ImportController, CoordinateHandler
+from geenuff.applications.importer import ImportController
 from geenuff.base import orm
 
 
