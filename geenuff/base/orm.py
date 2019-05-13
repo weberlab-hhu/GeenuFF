@@ -19,6 +19,10 @@ class Genome(Base):
     acquired_from = Column(String)
     coordinates = relationship("Coordinate", back_populates="genome")
 
+    __table_args__ = (
+        UniqueConstraint('species', 'version', name='unique_genome_species_and_version'),
+    )
+
 
 class Coordinate(Base):
     __tablename__ = 'coordinate'
