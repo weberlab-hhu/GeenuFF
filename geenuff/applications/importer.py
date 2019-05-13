@@ -15,7 +15,6 @@ from ..base.transcript_interp import TranscriptInterpBase, EukTranscriptStatus
 from .. import helpers
 
 
-
 class IntervalCountError(Exception):
     pass
 
@@ -47,12 +46,8 @@ class InsertionQueue(helpers.QueueController):
             orm.association_translated_to_feature.insert())
 
         self.ordered_queues = [
-            self.super_locus,
-            self.transcribed,
-            self.transcribed_piece,
-            self.translated,
-            self.feature,
-            self.association_transcribed_piece_to_feature,
+            self.super_locus, self.transcribed, self.transcribed_piece, self.translated,
+            self.feature, self.association_transcribed_piece_to_feature,
             self.association_translated_to_feature
         ]
 
@@ -166,11 +161,20 @@ class ImportController(object):
         self.session.add(genome)
         self.session.commit()
 
+    def add_genome(self, fasta_path, gff_path, genome_args=None, clean_gff=True):
+        self.clean_tmp_data()
+        self.add_sequences(fasta_path, genome_args)
+        self.add_gff(gff_path, clean=clean_gff)
+
     def add_sequences(self, seq_path, genome_args=None):
         if self.latest_genome_handler is None:
             self.make_genome(genome_args)
         self.latest_genome_handler.add_sequences(seq_path)
         self.session.commit()
+
+    def clean_tmp_data(self):
+        self.latest_genome_handler = None
+        self.latest_super_loci = []
 
     def add_gff(self, gff_file, clean=True):
         # final prepping of seqid match up
@@ -180,17 +184,16 @@ class ImportController(object):
         super_loci = []
         err_handle = open(self.err_path, 'w')
         for i, entry_group in enumerate(self.group_gff_by_gene(gff_file)):
-            super_locus = SuperLocusHandler(controller=self)
             if clean:
-                super_locus.add_n_clean_gff_entry_group(entry_group,
-                                                        err_handle,
-                                                        genome=self.latest_genome_handler.data,
-                                                        controller=self)
+                self.add_n_clean_gff_entry_group(entry_group,
+                                                 err_handle,
+                                                 genome=self.latest_genome_handler.data,
+                                                 controller=self)
             else:
-                super_locus.add_gff_entry_group(entry_group,
-                                                err_handle,
-                                                genome=self.latest_genome_handler.data,
-                                                controller=self)
+                self.add_gff_entry_group(entry_group,
+                                         err_handle,
+                                         genome=self.latest_genome_handler.data,
+                                         controller=self)
 
             super_loci.append(super_locus)
             if not i % 500:
@@ -199,14 +202,129 @@ class ImportController(object):
         self.latest_super_loci = super_loci
         err_handle.close()
 
-    def add_genome(self, fasta_path, gff_path, genome_args=None, clean_gff=True):
-        self.clean_tmp_data()
-        self.add_sequences(fasta_path, genome_args)
-        self.add_gff(gff_path, clean=clean_gff)
+    def add_gff_entry_group(self, entries, ts_err_handle, genome, controller):
+        def add_super_locus_to_queue(controller, entry):
+            super_locus_handler = SuperLocusHandler(controller)
+            super_locus_handler.gffentry = entry
+            super_locus_handler.add_to_queue(controller.insertion_queues)
+            return super_locus_handler
 
-    def clean_tmp_data(self):
-        self.latest_genome_handler = None
-        self.latest_super_loci = []
+        def add_transcript_to_queue(controller, entry, super_locus_handler):
+            assert super_locus_handler is not None 'no super locus found before feature'
+            transcribed_handler = TranscribedHandler(controller)
+            transcribed_handler.gffentry = copy.deepcopy(entry)
+            transcribed_handler.add_to_queue(controller.insertion_queues,
+                                             super_locus=super_locus_handler,
+                                             gffentry=entry)
+            super_locus_handler.transcribed_handlers.append(transcribed_handler)
+            return transcribed_handler
+
+        def add_unprocessed_feature_to_transcript(controller, entry, transcript_handler):
+            assert transcript_handler is not None 'no transcribeds found before feature'
+            feature_handler = FeatureHandler(controller)
+            feature_handler.gffentry = copy.deepcopy(entry)
+            feature_handler.add_shortcuts_from_gffentry()
+            transcript_handler.feature_handlers.append(feature_handler)
+
+        latest_super_locus, latest_transcript_handler = None, None
+        try:
+            for entry in list(entries):
+                exceptions = entry.attrib_filter(tag="exception")
+                for exception in [x.value for x in exceptions]:
+                    if 'trans-splicing' in exception:
+                        msg = 'trans-splice in attribute {} {}'.format(entry.get_ID(),
+                                                                       entry.attribute)
+                        raise TransSplicingError(msg)
+                if helpers.in_enum_values(entry.type, types.SuperLocusAll):
+                    latest_super_locus = add_super_locus_to_queue(controller, entry)
+                elif helpers.in_enum_values(entry.type, types.TranscriptLevelAll):
+                    latest_transcript_handler = add_transcript_to_queue(controller,
+                                                                        entry,
+                                                                        latest_super_locus)
+                elif helpers.in_enum_values(entry.type, types.OnSequence):
+                    add_unprocessed_feature_to_transcript(controller,
+                                                          entry,
+                                                          latest_transcript_handler)
+                else:
+                    raise ValueError("problem handling entry of type {}".format(entry.type))
+        except TransSplicingError as e:
+            coordinate = genome.handler.gffid_to_coords[entries[0].seqid]
+            self._mark_erroneous(entries[0], coordinate, controller, 'trans-splicing')
+            logging.warning('skipping but noting trans-splicing: {}'.format(str(e)))
+            ts_err_handle.writelines([x.to_json() for x in entries])
+        except AssertionError as e:
+            coordinate = genome.handler.gffid_to_coords[entries[0].seqid]
+            self._mark_erroneous(entries[0], coordinate, controller, str(e))
+            logging.warning('marking errer bc {}'.format(e))
+
+    def add_n_clean_gff_entry_group(self, entries, ts_err_handle, genome, controller):
+        self.add_gff_entry_group(entries, ts_err_handle, genome, controller)
+        coordinate = genome.handler.gffid_to_coords[self.gffentry.seqid]
+        self.check_and_fix_structure(coordinate, controller=controller)
+
+    def _mark_erroneous(self, entry, coordinate, controller, msg=''):
+        assert entry.type in [x.value for x in types.SuperLocusAll]
+        logging.warning(
+            '{species}:{seqid}, {start}-{end}:{gene_id} by {src}, {msg} - marked erroneous'.format(
+                src=entry.source,
+                species="todo",
+                seqid=entry.seqid,
+                start=entry.start,
+                end=entry.end,
+                gene_id=self.given_name,
+                msg=msg))
+
+        # dummy transcript
+        transcribed_e_handler = TranscribedHandler(controller)
+        transcribed_e_handler.gffentry = copy.deepcopy(entry)
+        transcribed_e_handler.add_to_queue(controller.insertion_queues, super_locus=self)
+
+        transcript_interpreter = TranscriptInterpreter(transcript=transcribed_e_handler,
+                                                       super_locus=self,
+                                                       controller=controller)
+
+        # setup error as only feature (defacto it's a mask)
+        feature = transcript_interpreter.new_feature(gffentry=entry,
+                                                     type=types.ERROR,
+                                                     start_is_biological_start=True,
+                                                     end_is_biological_end=True,
+                                                     coordinate_id=coordinate.id)
+        # gff start and end -> geenuff coordinates
+        if feature["is_plus_strand"]:
+            err_start = entry.start - 1
+            err_end = entry.end
+        else:
+            err_start = entry.end - 1
+            err_end = entry.start - 2
+
+        for key, val in [('start', err_start), ('end', err_end)]:
+            feature[key] = val
+
+        self.transcribed_handlers.append(transcribed_e_handler)
+
+    def check_and_fix_structure(self, coordinate, controller):
+        # todo, add against sequence check to see if start/stop and
+        # splice sites are possible or not, e.g. is start ATG?
+        # if it's empty (no bottom level features at all) mark as erroneous
+        features = []
+        for transcript in self.transcribed_handlers:
+            features += transcript.feature_handlers
+        if not features:
+            self._mark_erroneous(self.gffentry, coordinate=coordinate, controller=controller)
+
+        for transcript in self.transcribed_handlers:
+            t_interpreter = TranscriptInterpreter(transcript,
+                                                  super_locus=self,
+                                                  controller=controller)
+            # skip any transcript consisting of only processed
+            # features (in context, should just be pre-interp errors)
+            if t_interpreter.has_no_unprocessed_features():
+                pass
+            else:
+                # make new features
+                t_interpreter.decode_raw_features()
+                # make sure the new features link to protein if appropriate
+                controller.insertion_queues.execute_so_far()
 
 
 ##### gff parsing subclasses #####
@@ -306,116 +424,7 @@ class SuperLocusHandler(handlers.SuperLocusHandlerBase, GFFDerived):
     def given_name(self):
         return self.gffentry.get_ID()
 
-    def add_gff_entry(self, entry, controller):
-        exceptions = entry.attrib_filter(tag="exception")
-        for exception in [x.value for x in exceptions]:
-            if 'trans-splicing' in exception:
-                msg = 'trans-splice in attribute {} {}'.format(entry.get_ID(), entry.attribute)
-                raise TransSplicingError(msg)
-        if helpers.in_enum_values(entry.type, types.SuperLocusAll):
-            self.gffentry = entry
-            self.add_to_queue(controller.insertion_queues)
-
-        elif helpers.in_enum_values(entry.type, types.TranscriptLevelAll):
-            transcribed = TranscribedHandler(controller)
-            transcribed.gffentry = copy.deepcopy(entry)
-            transcribed.add_to_queue(controller.insertion_queues, super_locus=self, gffentry=entry)
-            self.transcribed_handlers.append(transcribed)
-
-        elif helpers.in_enum_values(entry.type, types.OnSequence):
-            feature = FeatureHandler(controller)
-            feature.gffentry = copy.deepcopy(entry)
-            assert len(self.transcribed_handlers) > 0, "no transcribeds found before feature"
-            feature.add_shortcuts_from_gffentry()
-            self.transcribed_handlers[-1].feature_handlers.append(feature)
-        else:
-            raise ValueError("problem handling entry of type {}".format(entry.type))
-
-    def _add_gff_entry_group(self, entries, controller):
-        entries = list(entries)
-        for entry in entries:
-            self.add_gff_entry(entry, controller)
-
-    def add_gff_entry_group(self, entries, ts_err_handle, genome, controller):
-        try:
-            self._add_gff_entry_group(entries, controller)
-        except TransSplicingError as e:
-            coordinate = genome.handler.gffid_to_coords[entries[0].seqid]
-            self._mark_erroneous(entries[0], coordinate, controller, 'trans-splicing')
-            logging.warning('skipping but noting trans-splicing: {}'.format(str(e)))
-            ts_err_handle.writelines([x.to_json() for x in entries])
-        except AssertionError as e:
-            coordinate = genome.handler.gffid_to_coords[entries[0].seqid]
-            self._mark_erroneous(entries[0], coordinate, controller, str(e))
-            logging.warning('marking errer bc {}'.format(e))
-
-    def add_n_clean_gff_entry_group(self, entries, ts_err_handle, genome, controller):
-        self.add_gff_entry_group(entries, ts_err_handle, genome, controller)
-        coordinate = genome.handler.gffid_to_coords[self.gffentry.seqid]
-        self.check_and_fix_structure(coordinate, controller=controller)
-
-    def _mark_erroneous(self, entry, coordinate, controller, msg=''):
-        assert entry.type in [x.value for x in types.SuperLocusAll]
-        logging.warning(
-            '{species}:{seqid}, {start}-{end}:{gene_id} by {src}, {msg} - marked erroneous'.format(
-                src=entry.source, species="todo", seqid=entry.seqid, start=entry.start,
-                end=entry.end, gene_id=self.given_name, msg=msg
-            ))
-
-        # dummy transcript
-        transcribed_e_handler = TranscribedHandler(controller)
-        transcribed_e_handler.gffentry = copy.deepcopy(entry)
-        transcribed_e_handler.add_to_queue(controller.insertion_queues, super_locus=self)
-
-        transcript_interpreter = TranscriptInterpreter(transcript=transcribed_e_handler,
-                                                       super_locus=self,
-                                                       controller=controller)
-
-        # setup error as only feature (defacto it's a mask)
-        feature = transcript_interpreter.new_feature(gffentry=entry,
-                                                     type=types.ERROR,
-                                                     start_is_biological_start=True,
-                                                     end_is_biological_end=True,
-                                                     coordinate_id=coordinate.id)
-        # gff start and end -> geenuff coordinates
-        if feature["is_plus_strand"]:
-            err_start = entry.start - 1
-            err_end = entry.end
-        else:
-            err_start = entry.end - 1
-            err_end = entry.start - 2
-
-        for key, val in [('start', err_start), ('end', err_end)]:
-            feature[key] = val
-
-        self.transcribed_handlers.append(transcribed_e_handler)
-
-    def check_and_fix_structure(self, coordinate, controller):
-        # todo, add against sequence check to see if start/stop and
-        # splice sites are possible or not, e.g. is start ATG?
-        # if it's empty (no bottom level features at all) mark as erroneous
-        features = []
-        for transcript in self.transcribed_handlers:
-            features += transcript.feature_handlers
-        if not features:
-            self._mark_erroneous(self.gffentry, coordinate=coordinate, controller=controller)
-
-        for transcript in self.transcribed_handlers:
-            t_interpreter = TranscriptInterpreter(transcript, super_locus=self,
-                                                  controller=controller)
-            # skip any transcript consisting of only processed
-            # features (in context, should just be pre-interp errors)
-            if t_interpreter.has_no_unprocessed_features():
-                pass
-            else:
-                # make new features
-                t_interpreter.decode_raw_features()
-                # make sure the new features link to protein if appropriate
-                controller.insertion_queues.execute_so_far()
-
-
 class FeatureHandler(handlers.FeatureHandlerBase, GFFDerived):
-
     def __init__(self, controller=None, processed=False):
         super().__init__()
         GFFDerived.__init__(self)
@@ -453,7 +462,10 @@ class FeatureHandler(handlers.FeatureHandlerBase, GFFDerived):
         else:
             raise ValueError('cannot interpret strand "{}"'.format(self.gffentry.strand))
 
-    def setup_insertion_ready(self, super_locus=None, transcribed_pieces=None, translateds=None,
+    def setup_insertion_ready(self,
+                              super_locus=None,
+                              transcribed_pieces=None,
+                              translateds=None,
                               coordinate=None):
 
         if transcribed_pieces is None:
@@ -462,35 +474,46 @@ class FeatureHandler(handlers.FeatureHandlerBase, GFFDerived):
             translateds = []
 
         parents = self.gffentry.get_Parent()
-        if parents is not None:  # which can occur e.g. when we just copied gffentry from gene for an error
+        # which can occur e.g. when we just copied gffentry from gene for an error
+        if parents is not None:
             for piece in transcribed_pieces:
                 assert piece.gffentry.get_ID() in parents
 
         if self._is_plus_strand is None or self._given_name is None:
             self.add_shortcuts_from_gffentry()
 
-        feature = {'id': self.id,
-                   'subtype': 'general',
-                   'given_name': self.given_name,
-                   'coordinate_id': coordinate.id,
-                   'is_plus_strand': self.is_plus_strand,
-                   'score': self.gffentry.score,
-                   'source': self.gffentry.source,
-                   'phase': self.gffentry.phase,  # todo, do I need to handle '.'?
-                   'super_locus_id': super_locus.id,
-                   'start': None,  # all currently set via kwargs in add_to_queue, as they aren't clear from  gffentry
-                   'end': None,  # note the dict must always have all keys for core
-                   'start_is_biological_start': None,
-                   'end_is_biological_end': None
-                   }
+        feature = {
+            'id': self.id,
+            'subtype': 'general',
+            'given_name': self.given_name,
+            'coordinate_id': coordinate.id,
+            'is_plus_strand': self.is_plus_strand,
+            'score': self.gffentry.score,
+            'source': self.gffentry.source,
+            'phase': self.gffentry.phase,  # todo, do I need to handle '.'?
+            'super_locus_id': super_locus.id,
+            # all currently set via kwargs in add_to_queue, as they aren't clear from  gffentry
+            'start': None,
+            'end': None,  # note the dict must always have all keys for core
+            'start_is_biological_start': None,
+            'end_is_biological_end': None
+        }
 
-        feature2pieces = [{'transcribed_piece_id': p.id, 'feature_id': self.id} for p in transcribed_pieces]
+        feature2pieces = [{
+            'transcribed_piece_id': p.id,
+            'feature_id': self.id
+        } for p in transcribed_pieces]
         feature2translateds = [{'translated_id': p.id, 'feature_id': self.id} for p in translateds]
 
         return feature, feature2pieces, feature2translateds
 
-    def add_to_queue(self, insertion_queues, super_locus=None, transcribed_pieces=None, translateds=None,
-                     coordinate=None, **kwargs):
+    def add_to_queue(self,
+                     insertion_queues,
+                     super_locus=None,
+                     transcribed_pieces=None,
+                     translateds=None,
+                     coordinate=None,
+                     **kwargs):
 
         feature, feature2pieces, feature2translateds = self.setup_insertion_ready(
             super_locus,
@@ -511,7 +534,8 @@ class FeatureHandler(handlers.FeatureHandlerBase, GFFDerived):
         if self.is_plus_strand:
             return interval.begin
         else:
-            return interval.end - 1  # -1 bc as this is now a start, it should be _inclusive_ (and flipped)
+            # -1 bc as this is now a start, it should be _inclusive_ (and flipped)
+            return interval.end - 1
 
     def downstream_from_interval(self, interval):
         if self.is_plus_strand:
@@ -652,18 +676,20 @@ class TranscriptInterpreter(TranscriptInterpBase):
         try:
             self.proteins = self._setup_proteins()
         except NoGFFEntryError:
-            self.proteins = None  # this way we only run into an error if we actually wanted to use proteins
+            # this way we only run into an error if we actually wanted to use proteins
+            self.proteins = None
 
     def new_feature(self, gffentry, translateds=None, **kwargs):
         coordinate = self.controller.latest_genome_handler.gffid_to_coords[gffentry.seqid]
         handler = FeatureHandler(controller=self.controller, processed=True)
         handler.gffentry = copy.deepcopy(gffentry)
-        feature, _, _ = handler.add_to_queue(insertion_queues=self.controller.insertion_queues,
-                                             super_locus=self.super_locus,
-                                             transcribed_pieces=self.transcript.transcribed_piece_handlers,
-                                             translateds=translateds,
-                                             coordinate=coordinate,
-                                             **kwargs)
+        feature, _, _ = handler.add_to_queue(
+            insertion_queues=self.controller.insertion_queues,
+            super_locus=self.super_locus,
+            transcribed_pieces=self.transcript.transcribed_piece_handlers,
+            translateds=translateds,
+            coordinate=coordinate,
+            **kwargs)
 
         return feature
 
@@ -677,8 +703,8 @@ class TranscriptInterpreter(TranscriptInterpBase):
     @staticmethod
     def _get_protein_id_from_cds(cds_feature):
         try:
-            assert cds_feature.gffentry.type == types.CDS, "{} != {}".format(cds_feature.gff_entry.type,
-                                                                             types.CDS)
+            assert cds_feature.gffentry.type == types.CDS, "{} != {}".format(
+                cds_feature.gff_entry.type, types.CDS)
         except AttributeError:
             raise NoGFFEntryError('No gffentry for {}'.format(cds_feature.data.given_name))
         # check if anything is labeled as protein_id
@@ -733,15 +759,15 @@ class TranscriptInterpreter(TranscriptInterpBase):
         features = self.transcript.feature_handlers
         seqids = [x.gffentry.seqid for x in features]
         if not all([x == seqids[0] for x in seqids]):
-            raise TransSplicingError("non matching seqids {}, for {}".format(seqids, self.super_locus.id))
+            raise TransSplicingError("non matching seqids {}, for {}".format(
+                seqids, self.super_locus.id))
         if all([x.is_plus_strand for x in features]):
             return True
         elif all([not x.is_plus_strand for x in features]):
             return False
         else:
-            raise TransSplicingError(
-                "Mixed strands at {} with {}".format(self.super_locus.id,
-                                                     [(x.coordinate.seqid, x.strand) for x in features]))
+            raise TransSplicingError("Mixed strands at {} with {}".format(
+                self.super_locus.id, [(x.coordinate.seqid, x.strand) for x in features]))
 
     def drop_invervals_with_duplicated_data(self, ivals_before, ivals_after):
         all_data = [x.data.data for x in ivals_before + ivals_after]
@@ -749,13 +775,19 @@ class TranscriptInterpreter(TranscriptInterpBase):
 
             marked_before = []
             for ival in ivals_before:
-                new = {'interval': ival, 'matches_edge': self.matches_edge_before(ival),
-                       'repeated': self.is_in_list(ival.data, [x.data for x in ivals_after])}
+                new = {
+                    'interval': ival,
+                    'matches_edge': self.matches_edge_before(ival),
+                    'repeated': self.is_in_list(ival.data, [x.data for x in ivals_after])
+                }
                 marked_before.append(new)
             marked_after = []
             for ival in ivals_after:
-                new = {'interval': ival, 'matches_edge': self.matches_edge_after(ival),
-                       'repeated': self.is_in_list(ival.data, [x.data for x in ivals_before])}
+                new = {
+                    'interval': ival,
+                    'matches_edge': self.matches_edge_after(ival),
+                    'repeated': self.is_in_list(ival.data, [x.data for x in ivals_before])
+                }
                 marked_after.append(new)
 
             # warn if slice-causer (matches_edge) is on both sides
@@ -767,13 +799,19 @@ class TranscriptInterpreter(TranscriptInterpBase):
             if slice_frm_before and slice_frm_after:
                 # if it's not a splice site
                 if matches_before[0].end == matches_after[0].begin:
-                    logging.warning('slice causer on both sides with repeates\nbefore: {}, after: {}'.format(
-                        [(x.data.gffentry.type, x.data.gffentry.start, x.data.gffentry.end) for x in ivals_before],
-                        [(x.data.gffentry.type, x.data.gffentry.start, x.data.gffentry.end) for x in ivals_after]
-                    ))
+                    logging.warning(
+                        'slice causer on both sides with repeates\nbefore: {}, after: {}'.format(
+                            [(x.data.gffentry.type, x.data.gffentry.start, x.data.gffentry.end)
+                             for x in ivals_before],
+                            [(x.data.gffentry.type, x.data.gffentry.start, x.data.gffentry.end)
+                             for x in ivals_after]))
             # finally, keep non repeats or where this side didn't cause slice
-            ivals_before = [x['interval'] for x in marked_before if not x['repeated'] or not slice_frm_before]
-            ivals_after = [x['interval'] for x in marked_after if not x['repeated'] or not slice_frm_after]
+            ivals_before = [
+                x['interval'] for x in marked_before if not x['repeated'] or not slice_frm_before
+            ]
+            ivals_after = [
+                x['interval'] for x in marked_after if not x['repeated'] or not slice_frm_after
+            ]
         return ivals_before, ivals_after
 
     @staticmethod
@@ -803,7 +841,8 @@ class TranscriptInterpreter(TranscriptInterpBase):
         sign = 1
         if not plus_strand:
             sign = -1
-        ivals_before, ivals_after = self.drop_invervals_with_duplicated_data(ivals_before, ivals_after)
+        ivals_before, ivals_after = self.drop_invervals_with_duplicated_data(
+            ivals_before, ivals_after)
         before_types = self.possible_types(ivals_before)
         after_types = self.possible_types(ivals_after)
         # 5' UTR can hit either start codon or splice site
@@ -860,7 +899,9 @@ class TranscriptInterpreter(TranscriptInterpBase):
         raise NotImplementedError  # todo later
 
     def is_gap(self, ivals_before, ivals_after, sign):
-        """checks for a gap between intervals, and validates it's a positive one on strand of interest"""
+        """checks for a gap between intervals, and validates it's a positive
+        one on strand of interest
+        """
         after0 = self.pick_one_interval(ivals_after)
         before0 = self.pick_one_interval(ivals_before)
         before_downstream = before0.data.downstream_from_interval(before0)
@@ -879,7 +920,12 @@ class TranscriptInterpreter(TranscriptInterpBase):
         pid = self._get_protein_id_from_cds(feature)
         return self.proteins[pid]
 
-    def handle_control_codon(self, ivals_before, ivals_after, sign, is_start=True, error_buffer=2000):
+    def handle_control_codon(self,
+                             ivals_before,
+                             ivals_after,
+                             sign,
+                             is_start=True,
+                             error_buffer=2000):
         target_after_type = None
         target_before_type = None
         if is_start:
@@ -902,11 +948,16 @@ class TranscriptInterpreter(TranscriptInterpBase):
             at = template.upstream_from_interval(after0)
             if template.gffentry.phase == 0:  # "non-0 phase @ {} in {}".format(template.id, template.super_locus.id)
                 start = at
-                coding_feature = self.new_feature(gffentry=template.gffentry, start=start, type=types.CODING,
-                                                  start_is_biological_start=True, translateds=[translated])
-                self.status.coding_tracker.set_channel_open_with_feature(feature=coding_feature, phase=0)
+                coding_feature = self.new_feature(gffentry=template.gffentry,
+                                                  start=start,
+                                                  type=types.CODING,
+                                                  start_is_biological_start=True,
+                                                  translateds=[translated])
+                self.status.coding_tracker.set_channel_open_with_feature(feature=coding_feature,
+                                                                         phase=0)
             else:
-                err_start = before0.data.upstream_from_interval(before0) - sign * error_buffer  # mask prev feat. too
+                err_start = before0.data.upstream_from_interval(
+                    before0) - sign * error_buffer  # mask prev feat. too
                 err_end = at + sign  # so that the error masks the coordinate with the close status
                 gffid_to_coords = self.controller.latest_genome_handler.gffid_to_coords
                 if sign == 1:  # if is_plus_strand, todo, use same logic/setup as elsewhere
@@ -915,19 +966,29 @@ class TranscriptInterpreter(TranscriptInterpBase):
                 else:
                     end_of_sequence = gffid_to_coords[template.gffentry.seqid].end - 1
                     err_start = min(end_of_sequence, err_start)
-                self.new_feature(gffentry=template.gffentry, type=types.ERROR, start=err_start, end=err_end,
-                                 start_is_biological_start=True, end_is_biological_end=True,
+                self.new_feature(gffentry=template.gffentry,
+                                 type=types.ERROR,
+                                 start=err_start,
+                                 end=err_end,
+                                 start_is_biological_start=True,
+                                 end_is_biological_end=True,
                                  phase=None)
 
-                coding_feature = self.new_feature(gffentry=template.gffentry, type=types.CODING, start=at,
-                                                  start_is_biological_start=False, translateds=[translated])
-                self.status.coding_tracker.set_channel_open_with_feature(feature=coding_feature,
-                                                                         phase=template.gffentry.phase)
+                coding_feature = self.new_feature(gffentry=template.gffentry,
+                                                  type=types.CODING,
+                                                  start=at,
+                                                  start_is_biological_start=False,
+                                                  translateds=[translated])
+                self.status.coding_tracker.set_channel_open_with_feature(
+                    feature=coding_feature, phase=template.gffentry.phase)
 
         else:
             template = before0.data
             at = template.downstream_from_interval(before0)
-            self.status.coding_tracker.update_and_close_feature({'end': at, 'end_is_biological_end': True})
+            self.status.coding_tracker.update_and_close_feature({
+                'end': at,
+                'end_is_biological_end': True
+            })
 
             if is_gap:
                 self.handle_splice(ivals_before, ivals_after, sign)
@@ -943,17 +1004,25 @@ class TranscriptInterpreter(TranscriptInterpBase):
         acceptor_tmplt = after0.data
         if sign > 0:
             # use original coords so that overlaps can be detected...
-            donor_at = donor_tmplt.downstream()  # -1 (to from 0) + 1 (intron start, not incl. exon end) = 0
-            acceptor_at = acceptor_tmplt.upstream() - 1  # -1 (to from 0), that's it as incl start is already excl end
+            donor_at = donor_tmplt.downstream(
+            )  # -1 (to from 0) + 1 (intron start, not incl. exon end) = 0
+            acceptor_at = acceptor_tmplt.upstream(
+            ) - 1  # -1 (to from 0), that's it as incl start is already excl end
         else:
-            donor_at = donor_tmplt.downstream() - 2  # -1 (fr 0), -1 (intron start (-), not incl. exon end) = -2
-            acceptor_at = acceptor_tmplt.upstream() - 1  # -1 (fr 0), that's it as incl start is already excl end
+            donor_at = donor_tmplt.downstream(
+            ) - 2  # -1 (fr 0), -1 (intron start (-), not incl. exon end) = -2
+            acceptor_at = acceptor_tmplt.upstream(
+            ) - 1  # -1 (fr 0), that's it as incl start is already excl end
         # add splice sites if there's a gap
         between_splice_sites = (acceptor_at - donor_at) * sign
         min_intron_len = 3  # todo, maybe get something small but not entirely impossible?
         if between_splice_sites > min_intron_len:
-            self.new_feature(gffentry=donor_tmplt.gffentry, start=donor_at, end=acceptor_at, phase=None,
-                             start_is_biological_start=True, end_is_biological_end=True,
+            self.new_feature(gffentry=donor_tmplt.gffentry,
+                             start=donor_at,
+                             end=acceptor_at,
+                             phase=None,
+                             start_is_biological_start=True,
+                             end_is_biological_end=True,
                              type=types.INTRON)
 
         # do nothing if there is just no gap between exons for a technical / reporting error
@@ -969,9 +1038,13 @@ class TranscriptInterpreter(TranscriptInterpBase):
                 err_start = donor_tmplt.upstream() - 1  # to fr 0
                 err_end = acceptor_tmplt.downstream() - 2  # -1 to fr 0, -1 to excl = -2
 
-            self.new_feature(gffentry=before0.data.gffentry, start=err_start, end=err_end,
-                             start_is_biological_start=True, end_is_biological_end=True,
-                             type=types.ERROR, bearing=types.START)
+            self.new_feature(gffentry=before0.data.gffentry,
+                             start=err_start,
+                             end=err_end,
+                             start_is_biological_start=True,
+                             end_is_biological_end=True,
+                             type=types.ERROR,
+                             bearing=types.START)
 
     def interpret_first_pos(self, intervals, plus_strand=True, error_buffer=2000):
         # shortcuts
@@ -982,20 +1055,29 @@ class TranscriptInterpreter(TranscriptInterpBase):
         possible_types = self.possible_types(intervals)
         if types.FIVE_PRIME_UTR in possible_types:
             # this should indicate we're good to go and have a transcription start site
-            transcribed_feature = self.new_feature(gffentry=i0.data.gffentry, type=types.TRANSCRIBED, start=at,
-                                                   phase=None, start_is_biological_start=True)
-            self.status.transcribed_tracker.set_channel_open_with_feature(feature=transcribed_feature)
+            transcribed_feature = self.new_feature(gffentry=i0.data.gffentry,
+                                                   type=types.TRANSCRIBED,
+                                                   start=at,
+                                                   phase=None,
+                                                   start_is_biological_start=True)
+            self.status.transcribed_tracker.set_channel_open_with_feature(
+                feature=transcribed_feature)
         elif cds in possible_types:
             # this could be first exon detected or start codon, ultimately, indeterminate
             cds_feature = self.pick_one_interval(intervals, target_type=cds).data
             translated = self.get_protein(cds_feature)
             # setup translated / coding feature
-            translated_feature = self.new_feature(gffentry=cds_feature.gffentry, type=types.CODING, start=at,
-                                                  start_is_biological_start=False, translateds=[translated])
-            self.status.coding_tracker.set_channel_open_with_feature(feature=translated_feature,
-                                                                     phase=cds_feature.gffentry.phase)
+            translated_feature = self.new_feature(gffentry=cds_feature.gffentry,
+                                                  type=types.CODING,
+                                                  start=at,
+                                                  start_is_biological_start=False,
+                                                  translateds=[translated])
+            self.status.coding_tracker.set_channel_open_with_feature(
+                feature=translated_feature, phase=cds_feature.gffentry.phase)
             # setup transcribed feature (bc coding implies transcript)
-            transcribed_feature = self.new_feature(gffentry=cds_feature.gffentry, type=types.TRANSCRIBED, start=at,
+            transcribed_feature = self.new_feature(gffentry=cds_feature.gffentry,
+                                                   type=types.TRANSCRIBED,
+                                                   start=at,
                                                    start_is_biological_start=False)
             self.status.transcribed_tracker.set_channel_open_with_feature(transcribed_feature)
 
@@ -1007,21 +1089,30 @@ class TranscriptInterpreter(TranscriptInterpBase):
                 if at != start_of_sequence:
                     err_start = max(start_of_sequence, at - error_buffer)
                     err_end = at + 1  # so that the error masks the coordinate with the close status
-                    self.new_feature(gffentry=cds_feature.gffentry, type=types.ERROR,
-                                     start_is_biological_start=True, end_is_biological_end=True,
-                                     start=err_start, end=err_end, phase=None)
+                    self.new_feature(gffentry=cds_feature.gffentry,
+                                     type=types.ERROR,
+                                     start_is_biological_start=True,
+                                     end_is_biological_end=True,
+                                     start=err_start,
+                                     end=err_end,
+                                     phase=None)
             else:
                 end_of_sequence = gffid_to_coords[cds_feature.gffentry.seqid].end - 1
                 if at != end_of_sequence:
                     err_start = min(end_of_sequence, at + error_buffer)
                     err_end = at - 1  # so that the error masks the coordinate with the close status
-                    self.new_feature(gffentry=cds_feature.gffentry, type=types.ERROR,
-                                     start_is_biological_start=True, end_is_biological_end=True,
-                                     start=err_start, end=err_end, phase=None)
+                    self.new_feature(gffentry=cds_feature.gffentry,
+                                     type=types.ERROR,
+                                     start_is_biological_start=True,
+                                     end_is_biological_end=True,
+                                     start=err_start,
+                                     end=err_end,
+                                     phase=None)
 
         else:
-            raise ValueError("why's this gene not start with 5' utr nor cds? types: {}, interpretations: {}".format(
-                [x.data.gffentry.type for x in intervals], possible_types))
+            raise ValueError(
+                "why's this gene not start with 5' utr nor cds? types: {}, interpretations: {}".
+                format([x.data.gffentry.type for x in intervals], possible_types))
 
     def interpret_last_pos(self, intervals, plus_strand=True, error_buffer=2000):
         i0 = self.pick_one_interval(intervals)
@@ -1029,17 +1120,22 @@ class TranscriptInterpreter(TranscriptInterpBase):
         possible_types = self.possible_types(intervals)
         if types.THREE_PRIME_UTR in possible_types:
             # this should be transcription termination site
-            self.status.transcribed_tracker.update_and_close_feature(
-                {'end': at, 'end_is_biological_end': True})
+            self.status.transcribed_tracker.update_and_close_feature({
+                'end': at,
+                'end_is_biological_end': True
+            })
         elif types.CDS in possible_types:
             # may or may not be stop codon, but will just mark as error (unless at edge of sequence)
             cds_feature = self.pick_one_interval(intervals, target_type=types.CDS).data
 
-            self.status.transcribed_tracker.update_and_close_feature(
-                {'end': at, 'end_is_biological_end': False})
-            self.status.coding_tracker.update_and_close_feature(
-                {'end': at, 'end_is_biological_end': False}
-            )
+            self.status.transcribed_tracker.update_and_close_feature({
+                'end': at,
+                'end_is_biological_end': False
+            })
+            self.status.coding_tracker.update_and_close_feature({
+                'end': at,
+                'end_is_biological_end': False
+            })
             # may or may not be stop codon, but will just mark as error (unless at edge of sequence)
             gffid_to_coords = self.controller.latest_genome_handler.gffid_to_coords
 
@@ -1049,20 +1145,28 @@ class TranscriptInterpreter(TranscriptInterpBase):
                 if at != end_of_sequence:
                     err_start = at - 1  # so that the error masks the coordinate with the open status
                     err_end = min(at + error_buffer, end_of_sequence)
-                    self.new_feature(gffentry=i0.data.gffentry, type=types.ERROR, start=err_start, end=err_end,
-                                     start_is_biological_start=True, end_is_biological_end=True,
+                    self.new_feature(gffentry=i0.data.gffentry,
+                                     type=types.ERROR,
+                                     start=err_start,
+                                     end=err_end,
+                                     start_is_biological_start=True,
+                                     end_is_biological_end=True,
                                      phase=None)
             else:
                 if at != start_of_sequence:
                     err_start = at + 1  # so that the error masks the coordinate with the open status
                     err_end = max(start_of_sequence, at - error_buffer)
-                    self.new_feature(gffentry=i0.data.gffentry, type=types.ERROR,
-                                     phase=None, start=err_start, start_is_biological_start=True,
-                                     end=err_end, end_is_biological_end=True)
+                    self.new_feature(gffentry=i0.data.gffentry,
+                                     type=types.ERROR,
+                                     phase=None,
+                                     start=err_start,
+                                     start_is_biological_start=True,
+                                     end=err_end,
+                                     end_is_biological_end=True)
         else:
-            raise ValueError("why's this gene not end with 3' utr/exon nor cds? types: {}, interpretations: {}".format(
-                [x.data.type for x in intervals], possible_types)
-            )
+            raise ValueError(
+                "why's this gene not end with 3' utr/exon nor cds? types: {}, interpretations: {}".
+                format([x.data.type for x in intervals], possible_types))
 
     def intervals_5to3(self, plus_strand=False):
         interval_sets = list(self.organize_and_split_features())
@@ -1095,9 +1199,9 @@ class TranscriptInterpreter(TranscriptInterpBase):
         set_o_types = set(observed_types)
         # check length
         if len(intervals) not in [1, 2]:
-            raise IntervalCountError('check interpretation by hand for transcript start with {}, {}'.format(
-                '\n'.join([str(ival.data.data) for ival in intervals]), observed_types
-            ))
+            raise IntervalCountError(
+                'check interpretation by hand for transcript start with {}, {}'.format(
+                    '\n'.join([str(ival.data.data) for ival in intervals]), observed_types))
         if set_o_types.issubset(set([x.value for x in types.KeepOnSequence])):
             out = [TranscriptInterpreter.HANDLED]
         # interpret type combination
@@ -1110,9 +1214,9 @@ class TranscriptInterpreter(TranscriptInterpBase):
         elif set_o_types == {cds, exon} or set_o_types == {cds}:
             out = [cds]
         else:
-            raise ValueError('check interpretation of combination for transcript start with {}, {}'.format(
-                intervals, observed_types
-            ))
+            raise ValueError(
+                'check interpretation of combination for transcript start with {}, {}'.format(
+                    intervals, observed_types))
         return out
 
     def organize_and_split_features(self):
