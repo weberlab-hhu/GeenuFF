@@ -83,7 +83,7 @@ class ImportController(object):
         self.database_path = database_path
         self.err_path = err_path
         self.latest_genome_handler = None
-        self.latest_super_loci = []
+        self.latest_super_loci = []  # shortcuts to ease insert
         self._mk_session(replace_db)
         # queues for adding to db
         self.insertion_queues = InsertionQueue(session=self.session, engine=self.engine)
@@ -157,16 +157,18 @@ class ImportController(object):
                 gene_group.append(entry)
         yield gene_group
 
-    def make_genome(self, **kwargs):
-        # todo, parse in meta data from kwargs?
-        genome = orm.Genome()
+    def make_genome(self, genome_args=None):
+        if type(genome_args) == dict:
+            genome = orm.Genome(**genome_args)
+        else:
+            genome = orm.Genome()
         self.latest_genome_handler = GenomeHandler(genome)
         self.session.add(genome)
         self.session.commit()
 
-    def add_sequences(self, seq_path):
+    def add_sequences(self, seq_path, genome_args=None):
         if self.latest_genome_handler is None:
-            self.make_genome()
+            self.make_genome(genome_args)
         self.latest_genome_handler.add_sequences(seq_path)
         self.session.commit()
 
@@ -177,8 +179,7 @@ class ImportController(object):
 
         super_loci = []
         err_handle = open(self.err_path, 'w')
-        i = 1
-        for entry_group in self.group_gff_by_gene(gff_file):
+        for i, entry_group in enumerate(self.group_gff_by_gene(gff_file)):
             super_locus = SuperLocusHandler(controller=self)
             if clean:
                 super_locus.add_n_clean_gff_entry_group(entry_group,
@@ -191,17 +192,21 @@ class ImportController(object):
                                                 genome=self.latest_genome_handler.data,
                                                 controller=self)
 
-            super_loci.append(super_locus)  # just to keep some direct python link to this
+            super_loci.append(super_locus)
             if not i % 500:
                 self.insertion_queues.execute_so_far()
-            i += 1
-        self.latest_super_loci = super_loci
         self.insertion_queues.execute_so_far()
+        self.latest_super_loci = super_loci
         err_handle.close()
 
-    def add_genome(self, fasta_path, gff_path, clean_gff=True):
-        self.add_sequences(fasta_path)
+    def add_genome(self, fasta_path, gff_path, genome_args=None, clean_gff=True):
+        self.clean_tmp_data()
+        self.add_sequences(fasta_path, genome_args)
         self.add_gff(gff_path, clean=clean_gff)
+
+    def clean_tmp_data(self):
+        self.latest_genome_handler = None
+        self.latest_super_loci = []
 
 
 ##### gff parsing subclasses #####

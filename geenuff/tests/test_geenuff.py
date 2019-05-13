@@ -2,6 +2,7 @@ import os
 import pytest
 from dustdas import gffhelper
 from sqlalchemy import create_engine
+from sqlalchemy import func
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import IntegrityError
 import sqlalchemy
@@ -15,8 +16,13 @@ from ..base.transcript_interp import Range, TranscriptCoordinate, TranscriptInte
 from .. import helpers
 
 
+@pytest.fixture(scope="session", autouse=True)
+def prepare(request):
+    if not os.getcwd().endswith('GeenuFF/geenuff'):
+        pytest.exit('Tests need to be run from GeenuFF/geenuff directory')
+
+
 ### Helper functions ###
-# section: orm
 def mk_memory_session(db_path='sqlite:///:memory:'):
     engine = create_engine(db_path, echo=False)
     orm.Base.metadata.create_all(engine)
@@ -32,7 +38,7 @@ def setup_data_handler(handler_type, data_type, **kwargs):
 
 
 def setup_dummyloci_super_locus(db_path='sqlite:///:memory:'):
-    controller = ImportController(err_path='/dev/null', database_path=db_path)
+    controller = ImportController(database_path=db_path)
     controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff3', clean_gff=False)
     return controller.latest_super_loci[0], controller
 
@@ -964,6 +970,49 @@ def test_fasta_import():
     assert coords[2].sequence == 'A' * 100
 
 
+def test_import_multiple_genomes():
+    controller = ImportController(database_path='sqlite:///:memory:')
+    controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff3', clean_gff=True)
+    query = controller.session.query
+
+    n_features_1 = query(orm.Feature).count()
+    n_coords_1 = query(orm.Coordinate).count()
+    n_genomes_1 = query(orm.Genome).count()
+    max_id_1 = query(func.max(orm.Feature.id)).one()[0]
+
+    # add two more genomes
+    controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff3', clean_gff=True)
+    controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff3', clean_gff=True)
+
+    n_features_3 = query(orm.Feature).count()
+    n_coords_3 = query(orm.Coordinate).count()
+    n_genomes_3 = query(orm.Genome).count()
+    assert n_features_1 * 3 == n_features_3
+    assert n_coords_1 * 3 == n_coords_3
+    assert n_genomes_1 * 3 == n_genomes_3
+
+    max_id_3 = query(func.max(orm.Feature.id)).one()[0]
+    assert max_id_1 * 3 == max_id_3
+
+    # test transcribed and super locus relation
+    transcribeds_sl_1 = query(orm.SuperLocus).filter(orm.SuperLocus.id == 1).one().transcribeds
+    transcribeds_sl_2 = query(orm.SuperLocus).filter(orm.SuperLocus.id == 2).one().transcribeds
+    transcribeds_sl_3 = query(orm.SuperLocus).filter(orm.SuperLocus.id == 3).one().transcribeds
+    assert len(transcribeds_sl_1) == len(transcribeds_sl_2) == len(transcribeds_sl_3)
+
+    n_transcribed = query(orm.Transcribed).count()
+    assert len(transcribeds_sl_1) + len(transcribeds_sl_2) + len(transcribeds_sl_3) == n_transcribed
+
+    # test translated and super locus relation
+    translateds_sl_1 = query(orm.SuperLocus).filter(orm.SuperLocus.id == 1).one().translateds
+    translateds_sl_2 = query(orm.SuperLocus).filter(orm.SuperLocus.id == 2).one().translateds
+    translateds_sl_3 = query(orm.SuperLocus).filter(orm.SuperLocus.id == 3).one().translateds
+    assert len(translateds_sl_1) == len(translateds_sl_2) == len(translateds_sl_3)
+
+    n_translated = query(orm.Transcribed).count()
+    assert len(translateds_sl_1) + len(translateds_sl_2) + len(translateds_sl_3) == n_translated
+
+
 def test_transcript_interpreter():
     """tests decoding of raw from-gff features via the TranscriptInterpreter class"""
     sl, controller = setup_dummyloci_super_locus()
@@ -1015,7 +1064,7 @@ def test_transcript_interpreter_minus_strand():
     errors = [x for x in features if x.type.value == types.ERROR]
 
     # one for x, two for z bc truncated, and one for y, bc of phase on the new "first" exon
-    assert len(errors) == 4 
+    assert len(errors) == 4
     assert set([e.start for e in errors]) == {110, 404}
     expected_n_features = {
         'y': 5,  # transcribed, coding, 2 introns, error
