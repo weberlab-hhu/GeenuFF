@@ -54,7 +54,6 @@ class InsertionQueue(helpers.QueueController):
 
 class InsertCounterHolder(object):
     """provides incrementing unique integers to be used as primary keys for bulk inserts"""
-    # todo, think about whether using class attributes for the counters would work? When should they reset?
     feature = helpers.Counter(orm.Feature)
     translated = helpers.Counter(orm.Translated)
     transcribed = helpers.Counter(orm.Transcribed)
@@ -72,13 +71,112 @@ class InsertCounterHolder(object):
         InsertCounterHolder.genome.sync_with_db(session)
 
 
+# todo remember to check for trans-splicing error in gff entry (see former add_gff_entry_group)
+# todo remember to work in the code that was in _mark_erroneous when handling errors
+
+class OrganizedGeenuffHandlerGroup(object):
+    """Stores the Handler object for a super locus in an organized fassion.
+    The format is similar to the one of OrganizedGFFEntryGroup, but it stores objects
+    according to the Geenuff way of saving genomic annotations.
+
+    The handlers are organized in the following way:
+
+    handlers = {
+        'super_locus_h' = super_locus_handler,
+        'transcript_hs' = {
+            transcript_handler1: {
+                cds_handler1: [intron_handler1, intron_handler2, ..],
+                cds_handler2: [intron_handler1, intron_handler2, ..]
+            },
+            transcript_handler2: {
+                cds_handler1: [intron_handler1, intron_handler2, ..],
+                cds_handler2: [intron_handler1, intron_handler2, ..]
+            },
+            ...
+    }
+    """
+
+    def __init__(self, organized_gff_entries, controller, err_handle):
+        self.controller = controller
+        self.err_handle = err_handle
+        self.handlers = {}
+        self.parse_gff_entries(organized_gff_entries)
+
+    def parse_gff_entries(self, entries):
+        import pudb; pudb.set_trace()
+        self.handlers['super_locus_h'] = SuperLocusHandler(self.controller, entries['super_locus'])
+
+class OrganizedGFFEntryGroup(object):
+    """Takes an entry group and stores the entries in an orderly fassion.
+    Can transform the gff way of gene encoding into a OrganizedGeenuffHandlerGroup.
+    Does not perform error checking, which happens later.
+
+    The entries are organized in the following way:
+
+    entries = {
+        'super_locus' = super_locus_entry,
+        'transcripts' = {
+            transcript_entry1: {
+                'exons': [ordered_exon_entry1, ordered_exon_entry2, ..],
+                'cds': [ordered_cds_entry1, ordered_cds_entry2, ..]
+            },
+            transcript_entry2: {
+                'exons': [ordered_exon_entry1, ordered_exon_entry2, ..],
+                'cds': [ordered_cds_entry1, ordered_cds_entry2, ..]
+            },
+            ...
+    }
+    """
+
+    def __init__(self, gff_entry_group, genome, controller, err_handle):
+        self.genome = genome
+        self.controller = controller
+        self.err_handle = err_handle
+        self.entries = {'transcripts':{}}
+        self.coord = None
+        self.add_gff_entry_group(gff_entry_group, err_handle)
+
+    def add_gff_entry_group(self, entries, err_handle):
+        latest_transcript = None
+        for entry in list(entries):
+            if helpers.in_enum_values(entry.type, types.SuperLocusAll):
+                assert 'super_locus' not in self.entries
+                self.entries['super_locus'] = entry
+            elif helpers.in_enum_values(entry.type, types.TranscriptLevelAll):
+                self.entries['transcripts'][entry] = {'exons': [], 'cds': []}
+                latest_transcript = entry
+            elif entry.type == types.EXON:
+                self.entries['transcripts'][latest_transcript]['exons'].append(entry)
+            elif entry.type == types.CDS:
+                self.entries['transcripts'][latest_transcript]['cds'].append(entry)
+            elif entry.type in [types.FIVE_PRIME_UTR, types.THREE_PRIME_UTR]:
+                # ignore these features but do not throw error
+                pass
+            else:
+                raise ValueError("problem handling entry of type {}".format(entry.type))
+
+        # set the coordinate
+        self.coord = self.genome.gffid_to_coords[self.entries['super_locus'].seqid]
+
+        # order exon and cds lists by start value
+        for transcript, value_dict in self.entries['transcripts'].items():
+            for key in ['exons', 'cds']:
+                value_dict[key].sort(key=lambda e:e.start)
+
+    def get_geenuff_handlers(self):
+        geenuff_handler_group = OrganizedGeenuffHandlerGroup(self.entries,
+                                                            self.controller,
+                                                            self.err_handle)
+        unchecked_handlers = geenuff_handler_group.handlers
+        pass
+
+
 ##### main flow control #####
 class ImportController(object):
     def __init__(self, database_path, err_path='/dev/null', replace_db=False):
         self.database_path = database_path
         self.err_path = err_path
         self.latest_genome_handler = None
-        self.latest_super_loci = []  # shortcuts to ease insert
         self._mk_session(replace_db)
         # queues for adding to db
         self.insertion_queues = InsertionQueue(session=self.session, engine=self.engine)
@@ -162,9 +260,11 @@ class ImportController(object):
         self.session.commit()
 
     def add_genome(self, fasta_path, gff_path, genome_args=None, clean_gff=True):
+        err_handle = open(self.err_path, 'w')
         self.clean_tmp_data()
         self.add_sequences(fasta_path, genome_args)
-        self.add_gff(gff_path, clean=clean_gff)
+        self.add_gff(gff_path, err_handle, clean=clean_gff)
+        err_handle.close()
 
     def add_sequences(self, seq_path, genome_args=None):
         if self.latest_genome_handler is None:
@@ -176,161 +276,30 @@ class ImportController(object):
         self.latest_genome_handler = None
         self.latest_super_loci = []
 
-    def add_gff(self, gff_file, clean=True):
+    def add_gff(self, gff_file, err_handle, clean=True):
         # final prepping of seqid match up
         assert self.latest_genome_handler is not None, 'No recent genome found'
         self.latest_genome_handler.mk_mapper(gff_file)
 
-        super_loci = []
-        err_handle = open(self.err_path, 'w')
         for i, entry_group in enumerate(self.group_gff_by_gene(gff_file)):
+            organized_entries = OrganizedGFFEntryGroup(entry_group,
+                                                       self.latest_genome_handler,
+                                                       self,
+                                                       err_handle)
+            geenuff_handlers = organized_entries.get_geenuff_handlers()
             if clean:
-                self.add_n_clean_gff_entry_group(entry_group,
-                                                 err_handle,
-                                                 genome=self.latest_genome_handler.data,
-                                                 controller=self)
-            else:
-                self.add_gff_entry_group(entry_group,
-                                         err_handle,
-                                         genome=self.latest_genome_handler.data,
-                                         controller=self)
-
-            super_loci.append(super_locus)
+                # check and correct for errors
+                pass
+            # insert
             if not i % 500:
                 self.insertion_queues.execute_so_far()
         self.insertion_queues.execute_so_far()
-        self.latest_super_loci = super_loci
-        err_handle.close()
-
-    def add_gff_entry_group(self, entries, ts_err_handle, genome, controller):
-        def add_super_locus_to_queue(controller, entry):
-            super_locus_handler = SuperLocusHandler(controller)
-            super_locus_handler.gffentry = entry
-            super_locus_handler.add_to_queue(controller.insertion_queues)
-            return super_locus_handler
-
-        def add_transcript_to_queue(controller, entry, super_locus_handler):
-            assert super_locus_handler is not None 'no super locus found before feature'
-            transcribed_handler = TranscribedHandler(controller)
-            transcribed_handler.gffentry = copy.deepcopy(entry)
-            transcribed_handler.add_to_queue(controller.insertion_queues,
-                                             super_locus=super_locus_handler,
-                                             gffentry=entry)
-            super_locus_handler.transcribed_handlers.append(transcribed_handler)
-            return transcribed_handler
-
-        def add_unprocessed_feature_to_transcript(controller, entry, transcript_handler):
-            assert transcript_handler is not None 'no transcribeds found before feature'
-            feature_handler = FeatureHandler(controller)
-            feature_handler.gffentry = copy.deepcopy(entry)
-            feature_handler.add_shortcuts_from_gffentry()
-            transcript_handler.feature_handlers.append(feature_handler)
-
-        latest_super_locus, latest_transcript_handler = None, None
-        try:
-            for entry in list(entries):
-                exceptions = entry.attrib_filter(tag="exception")
-                for exception in [x.value for x in exceptions]:
-                    if 'trans-splicing' in exception:
-                        msg = 'trans-splice in attribute {} {}'.format(entry.get_ID(),
-                                                                       entry.attribute)
-                        raise TransSplicingError(msg)
-                if helpers.in_enum_values(entry.type, types.SuperLocusAll):
-                    latest_super_locus = add_super_locus_to_queue(controller, entry)
-                elif helpers.in_enum_values(entry.type, types.TranscriptLevelAll):
-                    latest_transcript_handler = add_transcript_to_queue(controller,
-                                                                        entry,
-                                                                        latest_super_locus)
-                elif helpers.in_enum_values(entry.type, types.OnSequence):
-                    add_unprocessed_feature_to_transcript(controller,
-                                                          entry,
-                                                          latest_transcript_handler)
-                else:
-                    raise ValueError("problem handling entry of type {}".format(entry.type))
-        except TransSplicingError as e:
-            coordinate = genome.handler.gffid_to_coords[entries[0].seqid]
-            self._mark_erroneous(entries[0], coordinate, controller, 'trans-splicing')
-            logging.warning('skipping but noting trans-splicing: {}'.format(str(e)))
-            ts_err_handle.writelines([x.to_json() for x in entries])
-        except AssertionError as e:
-            coordinate = genome.handler.gffid_to_coords[entries[0].seqid]
-            self._mark_erroneous(entries[0], coordinate, controller, str(e))
-            logging.warning('marking errer bc {}'.format(e))
-
-    def add_n_clean_gff_entry_group(self, entries, ts_err_handle, genome, controller):
-        self.add_gff_entry_group(entries, ts_err_handle, genome, controller)
-        coordinate = genome.handler.gffid_to_coords[self.gffentry.seqid]
-        self.check_and_fix_structure(coordinate, controller=controller)
-
-    def _mark_erroneous(self, entry, coordinate, controller, msg=''):
-        assert entry.type in [x.value for x in types.SuperLocusAll]
-        logging.warning(
-            '{species}:{seqid}, {start}-{end}:{gene_id} by {src}, {msg} - marked erroneous'.format(
-                src=entry.source,
-                species="todo",
-                seqid=entry.seqid,
-                start=entry.start,
-                end=entry.end,
-                gene_id=self.given_name,
-                msg=msg))
-
-        # dummy transcript
-        transcribed_e_handler = TranscribedHandler(controller)
-        transcribed_e_handler.gffentry = copy.deepcopy(entry)
-        transcribed_e_handler.add_to_queue(controller.insertion_queues, super_locus=self)
-
-        transcript_interpreter = TranscriptInterpreter(transcript=transcribed_e_handler,
-                                                       super_locus=self,
-                                                       controller=controller)
-
-        # setup error as only feature (defacto it's a mask)
-        feature = transcript_interpreter.new_feature(gffentry=entry,
-                                                     type=types.ERROR,
-                                                     start_is_biological_start=True,
-                                                     end_is_biological_end=True,
-                                                     coordinate_id=coordinate.id)
-        # gff start and end -> geenuff coordinates
-        if feature["is_plus_strand"]:
-            err_start = entry.start - 1
-            err_end = entry.end
-        else:
-            err_start = entry.end - 1
-            err_end = entry.start - 2
-
-        for key, val in [('start', err_start), ('end', err_end)]:
-            feature[key] = val
-
-        self.transcribed_handlers.append(transcribed_e_handler)
-
-    def check_and_fix_structure(self, coordinate, controller):
-        # todo, add against sequence check to see if start/stop and
-        # splice sites are possible or not, e.g. is start ATG?
-        # if it's empty (no bottom level features at all) mark as erroneous
-        features = []
-        for transcript in self.transcribed_handlers:
-            features += transcript.feature_handlers
-        if not features:
-            self._mark_erroneous(self.gffentry, coordinate=coordinate, controller=controller)
-
-        for transcript in self.transcribed_handlers:
-            t_interpreter = TranscriptInterpreter(transcript,
-                                                  super_locus=self,
-                                                  controller=controller)
-            # skip any transcript consisting of only processed
-            # features (in context, should just be pre-interp errors)
-            if t_interpreter.has_no_unprocessed_features():
-                pass
-            else:
-                # make new features
-                t_interpreter.decode_raw_features()
-                # make sure the new features link to protein if appropriate
-                controller.insertion_queues.execute_so_far()
 
 
 ##### gff parsing subclasses #####
 class GFFDerived(object):
-    def __init__(self):
-        self.gffentry = None
+    def __init__(self, gffentry=None):
+        self.gffentry = gffentry
 
     def add_to_queue(self, insertion_queues, **kwargs):
         raise NotImplementedError
@@ -402,9 +371,9 @@ class GenomeHandler(handlers.GenomeHandlerBase):
 
 
 class SuperLocusHandler(handlers.SuperLocusHandlerBase, GFFDerived):
-    def __init__(self, controller=None):
+    def __init__(self, controller=None, gffentry=None):
         super().__init__()
-        GFFDerived.__init__(self)
+        GFFDerived.__init__(self, gffentry)
         if controller is not None:
             self.id = InsertCounterHolder.super_locus()
         self.transcribed_handlers = []
