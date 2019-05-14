@@ -25,6 +25,16 @@ class Handler(object):
     def data_type(self):
         raise NotImplementedError
 
+    @staticmethod
+    def _get_repr(class_name, params, addition=''):
+        param_str = ', '.join('{}:{}'.format(k, v) for k, v in params.items())
+        if addition:
+            return class_name + '[' +  param_str + ', ' + addition + ']'
+        else:
+            return class_name + '[' +  param_str + ']'
+
+    def __repr__(self):
+        return self._get_repr('Handler', {'id': self.id})
 
 class GenomeHandlerBase(Handler):
 

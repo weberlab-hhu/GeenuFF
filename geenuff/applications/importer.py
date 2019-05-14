@@ -111,6 +111,7 @@ class OrganizedGeenuffHandlerGroup(object):
         source = entries['super_locus'].source
 
         self.handlers['super_locus_h'] = SuperLocusHandler(entries['super_locus'], self.controller)
+        import pudb; pudb.set_trace()
         for t, t_entries in entries['transcripts'].items():
             # create transcript feature handler
             t_h = FeatureHandler(self.coord,
@@ -452,6 +453,10 @@ class SuperLocusHandler(handlers.SuperLocusHandlerBase, GFFDerived):
     def given_name(self):
         return self.gffentry.get_ID()
 
+    def __repr__(self):
+        return self._get_repr('SuperLocusHandler', {'id': self.id, 'given_name': self.given_name})
+
+
 class FeatureHandler(handlers.FeatureHandlerBase, GFFDerived):
     def __init__(self, coord, is_plus_strand, feature_type, phase=0, score=None, source=None, controller=None):
         """Initializes a handler for a soon to be inserted geenuff feature.
@@ -577,6 +582,16 @@ class FeatureHandler(handlers.FeatureHandlerBase, GFFDerived):
     @property
     def py_end(self):
         return helpers.as_py_end(self.gffentry.end)
+
+    def __repr__(self):
+        params = {
+            'id': self.id,
+            'coord_id': self.coord.id,
+            'is_plus_strand': self.is_plus_strand,
+            'type': self.type,
+            'phase': self.phase,
+        }
+        return self._get_repr('FeatureHandler', params, str(self.start) + '--' + str(self.end))
 
 
 class TranscribedHandler(handlers.TranscribedHandlerBase, GFFDerived):
