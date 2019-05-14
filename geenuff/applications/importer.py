@@ -96,15 +96,73 @@ class OrganizedGeenuffHandlerGroup(object):
     }
     """
 
-    def __init__(self, organized_gff_entries, controller, err_handle):
+    def __init__(self, organized_gff_entries, coord, controller, err_handle):
+        self.coord = coord
         self.controller = controller
         self.err_handle = err_handle
-        self.handlers = {}
+        self.handlers = {'transcript_hs': {}}
         self.parse_gff_entries(organized_gff_entries)
 
     def parse_gff_entries(self, entries):
-        import pudb; pudb.set_trace()
-        self.handlers['super_locus_h'] = SuperLocusHandler(self.controller, entries['super_locus'])
+        """Changes the GFF format into the GeenuFF format."""
+        # these attr are the same for all geenuff handlers going to be created
+        is_plus_strand = self.get_strand_direction(entries['super_locus'])
+        score = entries['super_locus'].score
+        source = entries['super_locus'].source
+
+        self.handlers['super_locus_h'] = SuperLocusHandler(entries['super_locus'], self.controller)
+        for t, t_entries in entries['transcripts'].items():
+            # create transcript feature handler
+            t_h = FeatureHandler(self.coord,
+                                 is_plus_strand,
+                                 types.TRANSCRIBED,
+                                 score=score,
+                                 source=source,
+                                 controller=self.controller)
+            t_h.start = t.start
+            t_h.end = t.end
+            self.handlers['transcript_hs'][t_h] = {}
+
+            # create coding features from exon limits
+            cds_h = FeatureHandler(self.coord,
+                                   is_plus_strand,
+                                   types.CODING,
+                                   # take the coding phase from the first cds entry in the gff
+                                   phase=t_entries['cds'][0].phase,
+                                   score=score,
+                                   source=source,
+                                   controller=self.controller)
+            cds_h.start = t_entries['exons'][0].start
+            cds_h.end = t_entries['exons'][-1].end
+            self.handlers['transcript_hs'][t_h][cds_h] = []
+
+            # create all the introns by traversing the exon entries and insert FeatureHandlers
+            # into the previously created list
+            # the introns should strictly always lie between successive gff exons
+            exons = t_entries['exons']
+            for i in range(len(exons) - 1):
+                intron_h = FeatureHandler(self.coord,
+                                          is_plus_strand,
+                                          types.INTRON,
+                                          score=score,
+                                          source=source,
+                                          controller=self.controller)
+                intron_h.start = exons[i].end
+                intron_h.end = exons[i + 1].start
+                self.handlers['transcript_hs'][t_h][cds_h].append(intron_h)
+
+    def adapt_start_end(self):
+        """Adapts the start/end values according to the coordinate and geenuff specs"""
+        pass
+
+    @staticmethod
+    def get_strand_direction(gffentry):
+        if gffentry.strand == '+':
+            return True
+        elif gffentry.strand == '-':
+            return False
+        else:
+            raise ValueError('cannot interpret strand "{}"'.format(gffentry.strand))
 
 class OrganizedGFFEntryGroup(object):
     """Takes an entry group and stores the entries in an orderly fassion.
@@ -128,11 +186,11 @@ class OrganizedGFFEntryGroup(object):
     }
     """
 
-    def __init__(self, gff_entry_group, genome, controller, err_handle):
-        self.genome = genome
+    def __init__(self, gff_entry_group, genome_h, controller, err_handle):
+        self.genome_h = genome_h
         self.controller = controller
         self.err_handle = err_handle
-        self.entries = {'transcripts':{}}
+        self.entries = {'transcripts': {}}
         self.coord = None
         self.add_gff_entry_group(gff_entry_group, err_handle)
 
@@ -156,7 +214,7 @@ class OrganizedGFFEntryGroup(object):
                 raise ValueError("problem handling entry of type {}".format(entry.type))
 
         # set the coordinate
-        self.coord = self.genome.gffid_to_coords[self.entries['super_locus'].seqid]
+        self.coord = self.genome_h.gffid_to_coords[self.entries['super_locus'].seqid]
 
         # order exon and cds lists by start value
         for transcript, value_dict in self.entries['transcripts'].items():
@@ -165,8 +223,9 @@ class OrganizedGFFEntryGroup(object):
 
     def get_geenuff_handlers(self):
         geenuff_handler_group = OrganizedGeenuffHandlerGroup(self.entries,
-                                                            self.controller,
-                                                            self.err_handle)
+                                                             self.coord,
+                                                             self.controller,
+                                                             self.err_handle)
         unchecked_handlers = geenuff_handler_group.handlers
         pass
 
@@ -371,7 +430,7 @@ class GenomeHandler(handlers.GenomeHandlerBase):
 
 
 class SuperLocusHandler(handlers.SuperLocusHandlerBase, GFFDerived):
-    def __init__(self, controller=None, gffentry=None):
+    def __init__(self, gffentry, controller=None):
         super().__init__()
         GFFDerived.__init__(self, gffentry)
         if controller is not None:
@@ -394,42 +453,29 @@ class SuperLocusHandler(handlers.SuperLocusHandlerBase, GFFDerived):
         return self.gffentry.get_ID()
 
 class FeatureHandler(handlers.FeatureHandlerBase, GFFDerived):
-    def __init__(self, controller=None, processed=False):
+    def __init__(self, coord, is_plus_strand, feature_type, phase=0, score=None, source=None, controller=None):
+        """Initializes a handler for a soon to be inserted geenuff feature.
+        As there is no 1to1 relation between a gff entry and a geenuff feature,
+        no gff entry is saved or directly used to infer attributes from.
+
+        In order to inherit the insertion functions from GFFDerived, this class
+        still inherits from it.
+        """
         super().__init__()
         GFFDerived.__init__(self)
         if controller is not None:
             self.id = InsertCounterHolder.feature()
-        self.processed = processed
-        self._is_plus_strand = None
-        self._given_name = None
-
-    @property
-    def is_plus_strand(self):
-        if self.data is not None:
-            return self.data.is_plus_strand
-        elif self._is_plus_strand is not None:
-            return self._is_plus_strand
-        else:
-            raise ValueError('attempt to use ._is_plus_strand while it is still None')
-
-    @property
-    def given_name(self):
-        if self.data is not None:
-            return self.data.given_name
-        elif self._given_name is not None:
-            return self._given_name
-        else:
-            raise ValueError('attempt to use ._given_name while it is still None')
-
-    def add_shortcuts_from_gffentry(self):
-
-        self._given_name = self.gffentry.get_ID()
-        if self.gffentry.strand == '+':
-            self._is_plus_strand = True
-        elif self.gffentry.strand == '-':
-            self._is_plus_strand = False
-        else:
-            raise ValueError('cannot interpret strand "{}"'.format(self.gffentry.strand))
+        self.coord = coord
+        self.is_plus_strand = is_plus_strand
+        self.type = feature_type
+        self.phase = phase
+        self.score = score
+        self.source = source
+        # these will have to be adapted to geenuff
+        self.start = -1
+        self.end = -1
+        self.start_is_biological_start = None
+        self.end_is_biological_end = None
 
     def setup_insertion_ready(self,
                               super_locus=None,
