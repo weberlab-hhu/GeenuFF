@@ -13,6 +13,7 @@ from .. import types
 from .. import handlers
 from ..base.transcript_interp import TranscriptInterpBase, EukTranscriptStatus
 from .. import helpers
+from ..base.helpers import as_py_start, as_py_end
 
 
 class IntervalCountError(Exception):
@@ -111,7 +112,6 @@ class OrganizedGeenuffHandlerGroup(object):
         source = entries['super_locus'].source
 
         self.handlers['super_locus_h'] = SuperLocusHandler(entries['super_locus'], self.controller)
-        import pudb; pudb.set_trace()
         for t, t_entries in entries['transcripts'].items():
             # create transcript feature handler
             t_h = FeatureHandler(self.coord,
@@ -120,8 +120,7 @@ class OrganizedGeenuffHandlerGroup(object):
                                  score=score,
                                  source=source,
                                  controller=self.controller)
-            t_h.start = t.start
-            t_h.end = t.end
+            t_h.set_start_end_from_gff(t.start, t.end)
             self.handlers['transcript_hs'][t_h] = {}
 
             # create coding features from exon limits
@@ -133,8 +132,9 @@ class OrganizedGeenuffHandlerGroup(object):
                                    score=score,
                                    source=source,
                                    controller=self.controller)
-            cds_h.start = t_entries['exons'][0].start
-            cds_h.end = t_entries['exons'][-1].end
+            gff_start = t_entries['exons'][0].start
+            gff_end = t_entries['exons'][-1].end
+            cds_h.set_start_end_from_gff(gff_start, gff_end)
             self.handlers['transcript_hs'][t_h][cds_h] = []
 
             # create all the introns by traversing the exon entries and insert FeatureHandlers
@@ -148,13 +148,12 @@ class OrganizedGeenuffHandlerGroup(object):
                                           score=score,
                                           source=source,
                                           controller=self.controller)
-                intron_h.start = exons[i].end
-                intron_h.end = exons[i + 1].start
+                # the introns are delimited by the surrounding exons
+                # the first base of an intron in right after the last exononic base
+                gff_start = exons[i].end + 1
+                gff_end = exons[i + 1].start - 1
+                intron_h.set_start_end_from_gff(gff_start, gff_end)
                 self.handlers['transcript_hs'][t_h][cds_h].append(intron_h)
-
-    def adapt_start_end(self):
-        """Adapts the start/end values according to the coordinate and geenuff specs"""
-        pass
 
     @staticmethod
     def get_strand_direction(gffentry):
@@ -549,39 +548,13 @@ class FeatureHandler(handlers.FeatureHandlerBase, GFFDerived):
         insertion_queues.association_translated_to_feature.queue += feature2translateds
         return feature, feature2pieces, feature2translateds
 
-    # "+ strand" [upstream, downstream) or "- strand" (downstream, upstream] from 0 coordinate
-    def upstream_from_interval(self, interval):
+    def set_start_end_from_gff(self, gff_start, gff_end):
         if self.is_plus_strand:
-            return interval.begin
+            self.start = as_py_start(gff_start)
+            self.end = as_py_end(gff_end)
         else:
-            # -1 bc as this is now a start, it should be _inclusive_ (and flipped)
-            return interval.end - 1
-
-    def downstream_from_interval(self, interval):
-        if self.is_plus_strand:
-            return interval.end
-        else:
-            return interval.begin - 1  # -1 to be _exclusive_ (and flipped)
-
-    def upstream(self):
-        if self.is_plus_strand:
-            return self.gffentry.start
-        else:
-            return self.gffentry.end
-
-    def downstream(self):
-        if self.is_plus_strand:
-            return self.gffentry.end
-        else:
-            return self.gffentry.start
-
-    @property
-    def py_start(self):
-        return helpers.as_py_start(self.gffentry.start)
-
-    @property
-    def py_end(self):
-        return helpers.as_py_end(self.gffentry.end)
+            self.start = as_py_start(gff_end)
+            self.end = as_py_end(gff_start)
 
     def __repr__(self):
         params = {
