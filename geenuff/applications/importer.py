@@ -85,11 +85,11 @@ class OrganizedGeenuffHandlerGroup(object):
     handlers = {
         'super_locus_h' = super_locus_handler,
         'transcript_hs' = {
-            transcript_handler1: {
+            transcript_feature_handler1: {
                 cds_handler1: [intron_handler1, intron_handler2, ..],
                 cds_handler2: [intron_handler1, intron_handler2, ..]
             },
-            transcript_handler2: {
+            transcript_feature_handler2: {
                 cds_handler1: [intron_handler1, intron_handler2, ..],
                 cds_handler2: [intron_handler1, intron_handler2, ..]
             },
@@ -117,6 +117,8 @@ class OrganizedGeenuffHandlerGroup(object):
             t_h = FeatureHandler(self.coord,
                                  is_plus_strand,
                                  types.TRANSCRIBED,
+                                 sub_type=t.type,
+                                 given_name=self.get_given_name(t),
                                  score=score,
                                  source=source,
                                  controller=self.controller)
@@ -154,6 +156,15 @@ class OrganizedGeenuffHandlerGroup(object):
                 gff_end = exons[i + 1].start - 1
                 intron_h.set_start_end_from_gff(gff_start, gff_end)
                 self.handlers['transcript_hs'][t_h][cds_h].append(intron_h)
+
+    def get_given_name(self, gffentry):
+        parents = gffentry.get_Parent()
+        # the simple case
+        if len(parents) == 1:
+            assert self.handlers['super_locus_h'].gffentry.get_ID() == parents[0]
+            return gffentry.get_ID()
+        else:
+            raise NotImplementedError  # todo handle multi inheritance, etc...
 
     @staticmethod
     def get_strand_direction(gffentry):
@@ -336,23 +347,42 @@ class ImportController(object):
         self.latest_super_loci = []
 
     def add_gff(self, gff_file, err_handle, clean=True):
+        def clean_and_insert(self, geenuff_handler_groups, clean):
+            if clean:
+                # check and correct for errors
+                pass
+            # insert handlers
+            self.insertion_queues.execute_so_far()
+
         # final prepping of seqid match up
         assert self.latest_genome_handler is not None, 'No recent genome found'
         self.latest_genome_handler.mk_mapper(gff_file)
 
+        geenuff_handler_groups = []
         for i, entry_group in enumerate(self.group_gff_by_gene(gff_file)):
             organized_entries = OrganizedGFFEntryGroup(entry_group,
                                                        self.latest_genome_handler,
                                                        self,
                                                        err_handle)
-            geenuff_handlers = organized_entries.get_geenuff_handlers()
-            if clean:
-                # check and correct for errors
-                pass
-            # insert
+            geenuff_handler_groups.append(organized_entries.get_geenuff_handlers())
             if not i % 500:
-                self.insertion_queues.execute_so_far()
-        self.insertion_queues.execute_so_far()
+                clean_and_insert(self, geenuff_handler_groups, clean)
+                geenuff_handler_groups = []
+        clean_and_insert(self, geenuff_handler_groups, clean)
+
+    def _mark_erroneous(self):
+        pass
+
+    def test_and_treat_errors(self, geenuff_handler_groups):
+        """Takes a list of OrganizedGeenuffHandlerGroup, which correspond to a list of
+        super loci, and looks for errors. Error features may be inserted and handlers be
+        removed when deemed necessary.
+        """
+        for i, group in enumerate(geenuff_handler_groups):
+            pass
+
+
+
 
 
 ##### gff parsing subclasses #####
@@ -457,7 +487,7 @@ class SuperLocusHandler(handlers.SuperLocusHandlerBase, GFFDerived):
 
 
 class FeatureHandler(handlers.FeatureHandlerBase, GFFDerived):
-    def __init__(self, coord, is_plus_strand, feature_type, phase=0, score=None, source=None, controller=None):
+    def __init__(self, coord, is_plus_strand, feature_type, sub_type=None, given_name=None, phase=0, score=None, source=None, controller=None):
         """Initializes a handler for a soon to be inserted geenuff feature.
         As there is no 1to1 relation between a gff entry and a geenuff feature,
         no gff entry is saved or directly used to infer attributes from.
@@ -470,8 +500,10 @@ class FeatureHandler(handlers.FeatureHandlerBase, GFFDerived):
         if controller is not None:
             self.id = InsertCounterHolder.feature()
         self.coord = coord
+        self.given_name = given_name
         self.is_plus_strand = is_plus_strand
         self.type = feature_type
+        self.sub_type = sub_type  # only used if type is transcribed to save the transcript type
         self.phase = phase
         self.score = score
         self.source = source
@@ -560,10 +592,34 @@ class FeatureHandler(handlers.FeatureHandlerBase, GFFDerived):
         params = {
             'id': self.id,
             'coord_id': self.coord.id,
-            'is_plus_strand': self.is_plus_strand,
             'type': self.type,
+            'is_plus_strand': self.is_plus_strand,
             'phase': self.phase,
         }
+        if self.sub_type:
+            params['sub_type'] = self.sub_type
+        if self.given_name:
+            params['given_name'] = self.given_name
+        return self._get_repr('FeatureHandler', params, str(self.start) + '--' + str(self.end))
+
+
+class TranscribedHandler(handlers.TranscribedHandlerBase, GFFDerived):
+    def __init__(self, controller=None):
+        super().__init__()
+        GFFDerived.__init__(self)
+        if controller is not None:
+            self.id = InsertCounterHolder.transcribed()
+        self.controller = controller
+        self.transcribed_piece_handlers = []
+        self.feature_handlers = []
+
+    def setup_insertion_ready(self, gffentry=None, super_locus=None):
+        if gffentry is not None:
+            parents = gffentry.get_Parent()
+            # the simple case
+            if len(parents) == 1:
+                assert super_locus.given_name == parents[0]
+                entry_type = gffentry.type
         return self._get_repr('FeatureHandler', params, str(self.start) + '--' + str(self.end))
 
 
