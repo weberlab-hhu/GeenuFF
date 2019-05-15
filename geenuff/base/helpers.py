@@ -146,6 +146,26 @@ def get_seqids_from_gff(gfffile):
                 seqids.add(line.split('\t')[0])
     return seqids
 
+##### GFF start/end to GeenuFF #####
+
+def get_strand_direction(gffentry):
+    if gffentry.strand == '+':
+        return True
+    elif gffentry.strand == '-':
+        return False
+    else:
+        raise ValueError('cannot interpret strand "{}"'.format(gffentry.strand))
+
+
+def get_geenuff_start_end(gff_start, gff_end, is_plus_strand):
+    if is_plus_strand:
+        start = as_py_start(gff_start)
+        end = as_py_end(gff_end)
+    else:
+        start = as_py_start(gff_end)
+        end = as_py_end(gff_start)
+    return start, end
+
 
 def as_py_start(start):
     return start - 1

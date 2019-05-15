@@ -13,7 +13,7 @@ from .. import types
 from .. import handlers
 from ..base.transcript_interp import TranscriptInterpBase, EukTranscriptStatus
 from .. import helpers
-from ..base.helpers import as_py_start, as_py_end
+from ..base.helpers import as_py_start, as_py_end, get_strand_direction, get_geenuff_start_end
 
 
 class IntervalCountError(Exception):
@@ -94,6 +94,8 @@ class OrganizedGeenuffHandlerGroup(object):
                 cds_handler2: [intron_handler1, intron_handler2, ..]
             },
             ...
+        },
+        'error_h' = [error_handler1, error_handler2, ..]
     }
     """
 
@@ -107,11 +109,18 @@ class OrganizedGeenuffHandlerGroup(object):
     def parse_gff_entries(self, entries):
         """Changes the GFF format into the GeenuFF format."""
         # these attr are the same for all geenuff handlers going to be created
-        is_plus_strand = self.get_strand_direction(entries['super_locus'])
-        score = entries['super_locus'].score
-        source = entries['super_locus'].source
+        sl = entries['super_locus']
+        is_plus_strand = get_strand_direction(sl)
+        score = sl.score
+        source = sl.source
 
-        self.handlers['super_locus_h'] = SuperLocusHandler(entries['super_locus'], self.controller)
+        sl_start, sl_end = get_geenuff_start_end(sl.start, sl.end, is_plus_strand)
+        self.handlers['super_locus_h'] = SuperLocusHandler(entries['super_locus'],
+                                                           coord=self.coord,
+                                                           is_plus_strand=is_plus_strand,
+                                                           start=sl_start,
+                                                           end=sl_end,
+                                                           controller=self.controller)
         for t, t_entries in entries['transcripts'].items():
             # create transcript feature handler
             t_h = FeatureHandler(self.coord,
@@ -165,15 +174,6 @@ class OrganizedGeenuffHandlerGroup(object):
             return gffentry.get_ID()
         else:
             raise NotImplementedError  # todo handle multi inheritance, etc...
-
-    @staticmethod
-    def get_strand_direction(gffentry):
-        if gffentry.strand == '+':
-            return True
-        elif gffentry.strand == '-':
-            return False
-        else:
-            raise ValueError('cannot interpret strand "{}"'.format(gffentry.strand))
 
 class OrganizedGFFEntryGroup(object):
     """Takes an entry group and stores the entries in an orderly fassion.
@@ -346,11 +346,24 @@ class ImportController(object):
         self.latest_genome_handler = None
         self.latest_super_loci = []
 
+    @staticmethod
+    def _split_groups_by_strand(groups):
+        # could potentially be done in a list comprehension one liner
+        plus, minus = [], []
+        for group in groups:
+            if get_strand_direction(group['super_locus_h'].gffentry):
+                plus.append(group)
+            else:
+                minus.append(group)
+
     def add_gff(self, gff_file, err_handle, clean=True):
         def clean_and_insert(self, geenuff_handler_groups, clean):
             if clean:
                 # check and correct for errors
-                pass
+                # do so for each strand seperately
+                # all changes should be made by reference
+                for strand_group in split_groups_by_strand(geenuff_handler_groups)
+                    test_and_treat_errors(strand_group)
             # insert handlers
             self.insertion_queues.execute_so_far()
 
@@ -370,16 +383,50 @@ class ImportController(object):
                 geenuff_handler_groups = []
         clean_and_insert(self, geenuff_handler_groups, clean)
 
-    def _mark_erroneous(self):
-        pass
+    def _mk_error_handler(self, coord, start, end, is_plus_strand):
+        # todo logging
+        error_h = FeatureHandler(coord,
+                                 is_plus_strand,
+                                 types.ERROR,
+                                 start=start,
+                                 end=end,
+                                 controller=self)
+        return error_h
 
     def test_and_treat_errors(self, geenuff_handler_groups):
         """Takes a list of OrganizedGeenuffHandlerGroup, which correspond to a list of
         super loci, and looks for errors. Error features may be inserted and handlers be
         removed when deemed necessary.
         """
+        def dist_half_way(sl_h, sl_h_next):
+            assert sl_h.end <= sl_h_next.start
+            dist = sl_h_next.start - sl_h.end
+            return dist // 2
+
         for i, group in enumerate(geenuff_handler_groups):
-            pass
+            # case no transcript for a super locus
+            # solution is to add an error mask that extends halfway to the appending super
+            # loci in the intergenic region as something in this area appears to have gone wrong
+            if not group['transcript_hs']:
+                sl_h = group['super_locus_h']
+                error_start = group['super_locus_h'].start
+                error_end = group['super_locus_h'].end
+                if i > 0:
+                    sl_h_prev = geenuff_handler_groups[i - 1]['super_locus_h']
+                    error_start -= dist_half_way(sl_h_prev, sl_h)
+                if i < len(geenuff_handler_groups) - 1:
+                    sl_h_next = geenuff_handler_groups[i + 1]['super_locus_h']
+                    error_end += dist_half_way(sl_h, sl_h_next)
+                self._mk_error_handler(sl_h.coord,
+                                       sl_h.start,
+                                       sl_h.end,
+                                       sl_h.is_plus_strand)
+
+
+
+
+
+
 
 
 
@@ -460,11 +507,16 @@ class GenomeHandler(handlers.GenomeHandlerBase):
 
 
 class SuperLocusHandler(handlers.SuperLocusHandlerBase, GFFDerived):
-    def __init__(self, gffentry, controller=None):
+    def __init__(self, gffentry, coord=None, is_plus_strand=None, start=-1, end=-1, controller=None):
         super().__init__()
         GFFDerived.__init__(self, gffentry)
         if controller is not None:
             self.id = InsertCounterHolder.super_locus()
+        # not neccessary for insert but helpful for certain error cases
+        self.coord= coord
+        self.is_plus_strand = is_plus_strand
+        self.start = start
+        self.end = end
         self.transcribed_handlers = []
 
     def setup_insertion_ready(self):
@@ -487,7 +539,7 @@ class SuperLocusHandler(handlers.SuperLocusHandlerBase, GFFDerived):
 
 
 class FeatureHandler(handlers.FeatureHandlerBase, GFFDerived):
-    def __init__(self, coord, is_plus_strand, feature_type, sub_type=None, given_name=None, phase=0, score=None, source=None, controller=None):
+    def __init__(self, coord, is_plus_strand, feature_type, sub_type=None, start=-1, end=-1, given_name=None, phase=0, score=None, source=None, controller=None):
         """Initializes a handler for a soon to be inserted geenuff feature.
         As there is no 1to1 relation between a gff entry and a geenuff feature,
         no gff entry is saved or directly used to infer attributes from.
@@ -504,12 +556,12 @@ class FeatureHandler(handlers.FeatureHandlerBase, GFFDerived):
         self.is_plus_strand = is_plus_strand
         self.type = feature_type
         self.sub_type = sub_type  # only used if type is transcribed to save the transcript type
+        # start/end may have to be adapted to geenuff
+        self.start = start
+        self.end = end
         self.phase = phase
         self.score = score
         self.source = source
-        # these will have to be adapted to geenuff
-        self.start = -1
-        self.end = -1
         self.start_is_biological_start = None
         self.end_is_biological_end = None
 
@@ -581,12 +633,7 @@ class FeatureHandler(handlers.FeatureHandlerBase, GFFDerived):
         return feature, feature2pieces, feature2translateds
 
     def set_start_end_from_gff(self, gff_start, gff_end):
-        if self.is_plus_strand:
-            self.start = as_py_start(gff_start)
-            self.end = as_py_end(gff_end)
-        else:
-            self.start = as_py_start(gff_end)
-            self.end = as_py_end(gff_start)
+        self.start, self.end = get_geenuff_start_end(gff_start, gff_end, self.is_plus_strand)
 
     def __repr__(self):
         params = {
