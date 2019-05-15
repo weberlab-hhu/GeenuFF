@@ -4,6 +4,7 @@ import copy
 import logging
 import hashlib
 import itertools
+from pprint import pprint
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
@@ -104,9 +105,9 @@ class OrganizedGeenuffHandlerGroup(object):
         self.controller = controller
         self.err_handle = err_handle
         self.handlers = {'transcript_hs': {}}
-        self.parse_gff_entries(organized_gff_entries)
+        self._parse_gff_entries(organized_gff_entries)
 
-    def parse_gff_entries(self, entries):
+    def _parse_gff_entries(self, entries):
         """Changes the GFF format into the GeenuFF format."""
         # these attr are the same for all geenuff handlers going to be created
         sl = entries['super_locus']
@@ -237,8 +238,66 @@ class OrganizedGFFEntryGroup(object):
                                                              self.coord,
                                                              self.controller,
                                                              self.err_handle)
-        unchecked_handlers = geenuff_handler_group.handlers
-        pass
+        return geenuff_handler_group.handlers
+
+
+
+class GFFErrorHandling(object):
+    """Deal with error detection and handling of the input features. Does the handling
+    in the space of GeenuFF handlers.
+    Assumes all super locus handler groups to be ordered 5p to 3p and of one strand.
+    Works with a list of OrganizedGeenuffHandlerGroup, which correspond to a list of
+    super loci, and looks for errors. Error features may be inserted and handlers be
+    removed when deemed necessary.
+    """
+    def __init__(self, geenuff_handler_groups, is_plus_strand):
+        self.groups = geenuff_handler_groups
+        self.is_plus_strand = is_plus_strand
+
+    def resolve_errors(self):
+        for i, group in enumerate(self.groups):
+            # the case of no transcript for a super locus
+            # solution is to add an error mask that extends halfway to the appending super
+            # loci in the intergenic region as something in this area appears to have gone wrong
+            error_h = None
+            if not group['transcript_hs']:
+                sl_h = group['super_locus_h']
+                error_start = group['super_locus_h'].start
+                error_end = group['super_locus_h'].end
+                if i > 0:
+                    sl_h_prev = geenuff_handler_groups[i - 1]['super_locus_h']
+                    error_start = self.halfway_mark(sl_h_prev, sl_h)
+                if i < len(geenuff_handler_groups) - 1:
+                    sl_h_next = geenuff_handler_groups[i + 1]['super_locus_h']
+                    error_end = self.halfway_mark(sl_h, sl_h_next)
+                error_h = self._get_error_handler(sl_h.coord,
+                                                  error_start,
+                                                  error_end,
+                                                  is_plus_strand)
+            if error_h:
+                group['error_h'].append(error_h)
+
+    def _get_error_handler(self, coord, start, end, is_plus_strand):
+        # todo logging
+        error_h = FeatureHandler(coord,
+                                 is_plus_strand,
+                                 types.ERROR,
+                                 start=start,
+                                 end=end,
+                                 controller=self)
+        return error_h
+
+    def halfway_mark(self, sl_h, sl_h_next):
+        """Calculates the half way point between two super loci, which is to be used for
+        error masks.
+        """
+        if self.is_plus_strand:
+            dist = sl_h_next.start - sl_h.end
+            mark = sl_h.end + dist // 2
+        else:
+            dist = sl_h.end - sl_h_next.start
+            mark = sl_h.end - dist // 2
+        return mark
 
 
 ##### main flow control #####
@@ -346,31 +405,22 @@ class ImportController(object):
         self.latest_genome_handler = None
         self.latest_super_loci = []
 
-    @staticmethod
-    def _split_groups_by_strand(groups):
-        # could potentially be done in a list comprehension one liner
-        plus, minus = [], []
-        for group in groups:
-            if get_strand_direction(group['super_locus_h'].gffentry):
-                plus.append(group)
-            else:
-                minus.append(group)
-
     def add_gff(self, gff_file, err_handle, clean=True):
-        def clean_and_insert(self, geenuff_handler_groups, clean):
+        def clean_and_insert(self, groups, clean):
             if clean:
                 # check and correct for errors
                 # do so for each strand seperately
                 # all changes should be made by reference
-                for strand_group in split_groups_by_strand(geenuff_handler_groups)
-                    test_and_treat_errors(strand_group)
+                plus = [g for g in groups if g['super_locus_h'].is_plus_strand]
+                GFFErrorHandling(plus, True).resolve_errors()
+                # reverse order on minus strand
+                minus = [g for g in groups if not g['super_locus_h'].is_plus_strand]
+                GFFErrorHandling(minus[::-1], False).resolve_errors()
             # insert handlers
             self.insertion_queues.execute_so_far()
 
-        # final prepping of seqid match up
         assert self.latest_genome_handler is not None, 'No recent genome found'
         self.latest_genome_handler.mk_mapper(gff_file)
-
         geenuff_handler_groups = []
         for i, entry_group in enumerate(self.group_gff_by_gene(gff_file)):
             organized_entries = OrganizedGFFEntryGroup(entry_group,
@@ -378,58 +428,10 @@ class ImportController(object):
                                                        self,
                                                        err_handle)
             geenuff_handler_groups.append(organized_entries.get_geenuff_handlers())
-            if not i % 500:
+            if i > 0 and i % 500 == 0:
                 clean_and_insert(self, geenuff_handler_groups, clean)
                 geenuff_handler_groups = []
         clean_and_insert(self, geenuff_handler_groups, clean)
-
-    def _mk_error_handler(self, coord, start, end, is_plus_strand):
-        # todo logging
-        error_h = FeatureHandler(coord,
-                                 is_plus_strand,
-                                 types.ERROR,
-                                 start=start,
-                                 end=end,
-                                 controller=self)
-        return error_h
-
-    def test_and_treat_errors(self, geenuff_handler_groups):
-        """Takes a list of OrganizedGeenuffHandlerGroup, which correspond to a list of
-        super loci, and looks for errors. Error features may be inserted and handlers be
-        removed when deemed necessary.
-        """
-        def dist_half_way(sl_h, sl_h_next):
-            assert sl_h.end <= sl_h_next.start
-            dist = sl_h_next.start - sl_h.end
-            return dist // 2
-
-        for i, group in enumerate(geenuff_handler_groups):
-            # case no transcript for a super locus
-            # solution is to add an error mask that extends halfway to the appending super
-            # loci in the intergenic region as something in this area appears to have gone wrong
-            if not group['transcript_hs']:
-                sl_h = group['super_locus_h']
-                error_start = group['super_locus_h'].start
-                error_end = group['super_locus_h'].end
-                if i > 0:
-                    sl_h_prev = geenuff_handler_groups[i - 1]['super_locus_h']
-                    error_start -= dist_half_way(sl_h_prev, sl_h)
-                if i < len(geenuff_handler_groups) - 1:
-                    sl_h_next = geenuff_handler_groups[i + 1]['super_locus_h']
-                    error_end += dist_half_way(sl_h, sl_h_next)
-                self._mk_error_handler(sl_h.coord,
-                                       sl_h.start,
-                                       sl_h.end,
-                                       sl_h.is_plus_strand)
-
-
-
-
-
-
-
-
-
 
 
 ##### gff parsing subclasses #####
@@ -634,6 +636,14 @@ class FeatureHandler(handlers.FeatureHandlerBase, GFFDerived):
 
     def set_start_end_from_gff(self, gff_start, gff_end):
         self.start, self.end = get_geenuff_start_end(gff_start, gff_end, self.is_plus_strand)
+
+    def pos_cmp_key(self):
+        sortable_start = self.start
+        sortable_end = self.end
+        if not self.is_plus_strand:
+            sortable_start = sortable_start * -1
+            sortable_end = sortable_end * -1
+        return self.coord.seqid, self.is_plus_strand, sortable_start, sortable_end, self.type
 
     def __repr__(self):
         params = {

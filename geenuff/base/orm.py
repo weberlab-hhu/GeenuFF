@@ -184,16 +184,3 @@ class Feature(Base):
                 phase=self.phase, givenid=self.given_name, py_type=type(self)
             )
         return s
-
-    def cmp_key(self):
-        pos_cmp = list(self.pos_cmp_key())
-        pos_cmp.append(self.type)
-        return tuple(pos_cmp)
-
-    def pos_cmp_key(self):
-        sortable_start = self.start
-        sortable_end = self.end
-        if not self.is_plus_strand:
-            sortable_start = sortable_start * -1
-            sortable_end = sortable_end * -1
-        return self.coordinate.seqid, self.is_plus_strand, sortable_start, sortable_end

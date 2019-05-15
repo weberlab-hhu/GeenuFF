@@ -98,12 +98,6 @@ class FeatureHandlerBase(Handler):
     def data_type(self):
         return orm.Feature
 
-    def cmp_key(self):
-        return self.data.cmp_key()
-
-    def pos_cmp_key(self):
-        return self.data.pos_cmp_key()
-
 
 class HandleMaker(object):
     def __init__(self, super_locus_handler):
