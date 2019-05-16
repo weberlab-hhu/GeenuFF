@@ -85,19 +85,18 @@ class OrganizedGeenuffHandlerGroup(object):
 
     handlers = {
         'super_locus_h' = super_locus_handler,
-        'transcript_hs' = {
-            transcript_feature_handler1: {
-                cds_handler1: [intron_handler1, intron_handler2, ..],
-                cds_handler2: [intron_handler1, intron_handler2, ..]
-            },
-            transcript_feature_handler2: {
-                cds_handler1: [intron_handler1, intron_handler2, ..],
-                cds_handler2: [intron_handler1, intron_handler2, ..]
+        'transcript_hs': [
+            {
+                'transcript_h': transcript_handler,
+                'transcript_piece_h: transcript_piece_handler,
+                'transcript_feature_h': transcript_handler,
+                'protein_h': protein_handler,
+                'cds_h': cds_handler,
+                'intron_hs': [intron_handler1, intron_handler2, ..]
             },
             ...
-        },
+        ],
         'error_h' = [error_handler1, error_handler2, ..],
-        'protein_ids' = {protein_id1, protein_id2, ...}
     }
     """
 
@@ -105,11 +104,13 @@ class OrganizedGeenuffHandlerGroup(object):
         self.coord = coord
         self.controller = controller
         self.err_handle = err_handle
-        self.handlers = {'transcript_hs': {}, 'error_h': [], 'protein_ids': set()}
+        self.handlers = {'transcript_hs': [], 'error_h': []}
         self._parse_gff_entries(organized_gff_entries)
 
     def _parse_gff_entries(self, entries):
-        """Changes the GFF format into the GeenuFF format."""
+        """Changes the GFF format into the GeenuFF format. Does all the parsing and
+        also inserts the association tables."""
+
         sl = entries['super_locus']
         # these attr are the same for all geenuff handlers going to be created
         is_plus_strand = get_strand_direction(sl)
@@ -117,66 +118,89 @@ class OrganizedGeenuffHandlerGroup(object):
         source = sl.source
 
         sl_start, sl_end = get_geenuff_start_end(sl.start, sl.end, is_plus_strand)
-        self.handlers['super_locus_h'] = SuperLocusHandler(entry_type=sl.type,
-                                                           given_name=sl.get_ID(),
-                                                           coord=self.coord,
-                                                           is_plus_strand=is_plus_strand,
-                                                           start=sl_start,
-                                                           end=sl_end,
-                                                           controller=self.controller)
+        sl_h = self.handlers['super_locus_h'] = SuperLocusHandler(entry_type=sl.type,
+                                                                  given_name=sl.get_ID(),
+                                                                  coord=self.coord,
+                                                                  is_plus_strand=is_plus_strand,
+                                                                  start=sl_start,
+                                                                  end=sl_end,
+                                                                  controller=self.controller)
         for t, t_entries in entries['transcripts'].items():
+            t_handlers = {}
             # check for multi inheritance and throw NotImplementedError if found
             if len(t.get_Parent()) > 1:
                 raise NotImplementedError
+            t_id = t.get_ID()
+            # create transcript handler
+            t_h = TranscribedHandler(entry_type=t.type,
+                                     given_name=t_id,
+                                     super_locus_id=sl_h.id,
+                                     controller=self.controller)
+            # create transcript piece handler
+            tp_h = TranscribedPieceHandler(given_name=t_id,
+                                           transcript_id=t_h.id,
+                                           position=0,
+                                           controller=self.controller)
             # create transcript feature handler
-            t_h = FeatureHandler(self.coord,
-                                 is_plus_strand,
-                                 types.TRANSCRIBED,
-                                 sub_type=t.type,
-                                 given_name=t.get_ID(),
-                                 score=score,
-                                 source=source,
-                                 controller=self.controller)
-            t_h.set_start_end_from_gff(t.start, t.end)
-            self.handlers['transcript_hs'][t_h] = {}
+            tf_h = FeatureHandler(self.coord,
+                                  is_plus_strand,
+                                  types.TRANSCRIBED,
+                                  sub_type=t.type,
+                                  given_name=t_id,
+                                  score=score,
+                                  source=source,
+                                  controller=self.controller)
+            tf_h.set_start_end_from_gff(t.start, t.end)
 
-            # create coding features from exon limits
-            cds_h = FeatureHandler(self.coord,
-                                   is_plus_strand,
-                                   types.CODING,
-                                   # take the coding phase from the first cds entry in the gff
-                                   phase=t_entries['cds'][0].phase,
-                                   score=score,
-                                   source=source,
-                                   controller=self.controller)
-            gff_start = t_entries['exons'][0].start
-            gff_end = t_entries['exons'][-1].end
-            cds_h.set_start_end_from_gff(gff_start, gff_end)
-            self.handlers['transcript_hs'][t_h][cds_h] = []
+            # insert everything so far into the dict
+            t_handlers['transcript_h'] = t_h
+            t_handlers['transcript_piece_h'] = tp_h
+            t_handlers['transcript_feature_h'] = tf_h
 
-            # create all the introns by traversing the exon entries and insert FeatureHandlers
-            # into the previously created list
-            # the introns should strictly always lie between successive gff exons
-            exons = t_entries['exons']
-            for i in range(len(exons) - 1):
-                intron_h = FeatureHandler(self.coord,
-                                          is_plus_strand,
-                                          types.INTRON,
-                                          score=score,
-                                          source=source,
-                                          controller=self.controller)
-                # the introns are delimited by the surrounding exons
-                # the first base of an intron in right after the last exononic base
-                gff_start = exons[i].end + 1
-                gff_end = exons[i + 1].start - 1
-                intron_h.set_start_end_from_gff(gff_start, gff_end)
-                self.handlers['transcript_hs'][t_h][cds_h].append(intron_h)
+            # if it is not a non-coding gene or something like that
+            if t_entries['cds']:
+                # create protein handler
+                protein_id = self._get_protein_id_from_cds_list(t_entries['cds'])
+                p_h = TranslatedHandler(given_name=protein_id,
+                                        super_locus_id=sl_h.id,
+                                        controller=self.controller)
+                # create coding features from exon limits
+                cds_h = FeatureHandler(self.coord,
+                                       is_plus_strand,
+                                       types.CODING,
+                                       # take the coding phase from the first cds entry in the gff
+                                       phase=t_entries['cds'][0].phase,
+                                       score=score,
+                                       source=source,
+                                       controller=self.controller)
+                gff_start = t_entries['exons'][0].start
+                gff_end = t_entries['exons'][-1].end
+                cds_h.set_start_end_from_gff(gff_start, gff_end)
 
-            # extract the protein ids
-            for cds_entry in t_entries['cds']:
-                protein_id = self._get_protein_id_from_cds_entry(cds_entry)
-                if protein_id:
-                    self.handlers['protein_ids'].add(protein_id)
+                # insert everything so far into the dict
+                t_handlers['protein_h'] = p_h
+                t_handlers['cds_h'] = cds_h
+
+                # create all the introns by traversing the exon entries and insert FeatureHandlers
+                # into the previously created list
+                # the introns should strictly always lie between successive gff exons
+                exons = t_entries['exons']
+                intron_hs = []
+                for i in range(len(exons) - 1):
+                    intron_h = FeatureHandler(self.coord,
+                                              is_plus_strand,
+                                              types.INTRON,
+                                              score=score,
+                                              source=source,
+                                              controller=self.controller)
+                    # the introns are delimited by the surrounding exons
+                    # the first base of an intron in right after the last exononic base
+                    gff_start = exons[i].end + 1
+                    gff_end = exons[i + 1].start - 1
+                    intron_h.set_start_end_from_gff(gff_start, gff_end)
+                    intron_hs.append(intron_h)
+                t_handlers['intron_hs'] = intron_hs
+            self.handlers['transcript_hs'].append(t_handlers)
 
     @staticmethod
     def _get_protein_id_from_cds_entry(cds_entry):
@@ -198,6 +222,19 @@ class OrganizedGeenuffHandlerGroup(object):
         else:
             raise ValueError('indeterminate single protein id {}'.format(protein_id))
         return protein_id
+
+    @staticmethod
+    def _get_protein_id_from_cds_list(cds_entry_list):
+        """Returns the protein id of a list of cds gff entries. If multiple ids or no id at all
+        are found, an error is raised."""
+        protein_ids = set()
+        for cds_entry in cds_entry_list:
+            protein_id = OrganizedGeenuffHandlerGroup._get_protein_id_from_cds_entry(cds_entry)
+            if protein_id:
+                protein_ids.add(protein_id)
+        if len(protein_ids) != 1:
+            raise ValueError('No protein_id or more than one protein_ids for one transcript')
+        return protein_ids.pop()
 
 
 class OrganizedGFFEntryGroup(object):
@@ -284,7 +321,7 @@ class GFFErrorHandling(object):
             # solution is to add an error mask that extends halfway to the appending super
             # loci in the intergenic region as something in this area appears to have gone wrong
             error_h = None
-            if not group['transcript_hs']:
+            if not group['feature_hs']:
                 sl_h = group['super_locus_h']
                 error_start = group['super_locus_h'].start
                 error_end = group['super_locus_h'].end
@@ -437,14 +474,14 @@ class ImportController(object):
             for group in groups:
                 group['super_locus_h'].add_to_queue(self.insertion_queues)
                 # insert all features as well as transcript and protein related entries
-                for t_feature_h in group['transcript_hs']:
+                for t_feature_h in group['feature_hs']:
                     t_h, tp_h = t_feature_h.get_transcript_handlers(group['super_locus_h'])
                     t_h.add_to_queue(self.insertion_queues)
                     tp_h.add_to_queue(self.insertion_queues)
                     t_feature_h.add_to_queue(self.insertion_queues, tp_h)
-                    for cds_h in group['transcript_hs'][t_feature_h]:
+                    for cds_h in group['feature_hs'][t_feature_h]:
                         cds_h.add_to_queue(self.insertion_queues, tp_h)
-                        for intron_h in group['transcript_hs'][t_feature_h][cds_h]:
+                        for intron_h in group['feature_hs'][t_feature_h][cds_h]:
                             intron_h.add_to_queue(self.insertion_queues, tp_h)
                 # insert the errors
                 for e_h in group['error_h']:
@@ -551,10 +588,9 @@ class GenomeHandler(handlers.GenomeHandlerBase):
 
 
 class SuperLocusHandler(handlers.SuperLocusHandlerBase, Insertable):
-    def __init__(self, entry_type, given_name, coord=None, is_plus_strand=None, start=-1, end=-1, controller=None):
+    def __init__(self, entry_type, given_name, controller, coord=None, is_plus_strand=None, start=-1, end=-1):
         super().__init__()
-        if controller is not None:
-            self.id = InsertCounterHolder.super_locus()
+        self.id = InsertCounterHolder.super_locus()
         self.entry_type = entry_type
         self.given_name = given_name
         # not neccessary for insert but helpful for certain error cases
@@ -563,9 +599,9 @@ class SuperLocusHandler(handlers.SuperLocusHandlerBase, Insertable):
         self.start = start
         self.end = end
 
-    def add_to_queue(self, insertion_queues):
+    def add_to_queue(self):
         to_add = {'type': self.entry_type, 'given_name': self.given_name, 'id': self.id}
-        insertion_queues.super_locus.queue.append(to_add)
+        self.controller.insertion_queues.super_locus.queue.append(to_add)
 
     def __repr__(self):
         params = {'id': self.id, 'type': self.entry_type, 'given_name': self.given_name}
@@ -595,7 +631,7 @@ class FeatureHandler(handlers.FeatureHandlerBase, Insertable):
         self.end_is_biological_end = None
         self.controller = controller
 
-    def add_to_queue(self, insertion_queues, transcript_piece_h=None):
+    def add_to_queue(self, transcript_piece_h=None):
         """Adds the feature as well as the many2many association entries if the type is not
         types.ERROR"""
         feature = {
@@ -612,29 +648,23 @@ class FeatureHandler(handlers.FeatureHandlerBase, Insertable):
             'start_is_biological_start': self.start_is_biological_start,
             'end_is_biological_end': self.end_is_biological_end,
         }
-        insertion_queues.feature.queue.append(feature)
+        self.controller.insertion_queues.feature.queue.append(feature)
 
-        if not self.feature_type == types.ERROR:
-            features2pieces = {
-                'feature_id': self.id,
-                'transcribed_piece_id': transcript_piece_h.id,
-            }
-            insertion_queues.association_transcribed_piece_to_feature.queue.append(features2pieces)
+    def insert_feature_piece_association(self, transcript_piece_id):
+        features2pieces = {
+            'feature_id': self.id,
+            'transcribed_piece_id': transcript_piece_id,
+        }
+        self.controller.insertion_queues.association_transcribed_piece_to_feature.\
+            queue.append(features2pieces)
 
-    def get_transcript_handlers(self, super_locus_h):
-        """Returns a TranscribedHandler and TranscribedPieceHandler instance that corresponds
-        to the feature if the type is types.TRANSCRIBED. These can then be inserted.
-        """
-        transcript_h = TranscribedHandler(entry_type=self.sub_type,
-                                          given_name=self.given_name,
-                                          super_locus_id=super_locus_h.id,
-                                          controller=self.controller)
-        transcript_piece_h = TranscribedPieceHandler(given_name=self.given_name,
-                                                     transcript_id=transcript_h.id,
-                                                     position=0,
-                                                     controller=self.controller)
-        return transcript_h, transcript_piece_h
-
+    def insert_feature_protein_association(self, protein_id):
+        features2protein = {
+            'feature_id': self.id,
+            'transcribed_id': protein_id,
+        }
+        self.controller.insertion_queues.association_translated_to_feature.\
+            queue.append(features2protein)
 
     def set_start_end_from_gff(self, gff_start, gff_end):
         self.start, self.end = get_geenuff_start_end(gff_start, gff_end, self.is_plus_strand)
@@ -671,14 +701,14 @@ class TranscribedHandler(handlers.TranscribedHandlerBase, Insertable):
         self.super_locus_id = super_locus_id
         self.controller = controller
 
-    def add_to_queue(self, insertion_queues):
+    def add_to_queue(self):
         transcribed = {
             'type': self.entry_type,
             'given_name': self.given_name,
             'super_locus_id': self.super_locus_id,
             'id': self.id
         }
-        insertion_queues.transcribed.queue.append(transcribed)
+        self.controller.insertion_queues.transcribed.queue.append(transcribed)
 
 
 class TranscribedPieceHandler(handlers.TranscribedPieceHandlerBase, Insertable):
@@ -689,14 +719,14 @@ class TranscribedPieceHandler(handlers.TranscribedPieceHandlerBase, Insertable):
         self.transcript_id = transcript_id
         self.position = position
 
-    def add_to_queue(self, insertion_queues):
+    def add_to_queue(self):
         transcribed_piece = {
             'id': self.id,
             'given_name': self.given_name,
             'transcribed_id': self.transcript_id,
             'position': self.position,
         }
-        insertion_queues.transcribed_piece.queue.append(transcribed_piece)
+        self.controller.insertion_queues.transcribed_piece.queue.append(transcribed_piece)
 
 
 class TranslatedHandler(handlers.TranslatedHandlerBase):
@@ -706,10 +736,10 @@ class TranslatedHandler(handlers.TranslatedHandlerBase):
         self.super_locus_id = super_locus_id
         self.id = InsertCounterHolder.translated()
 
-    def add_to_queue(self, insertion_queues):
+    def add_to_queue(self):
         translated = {
             'id': self.id,
             'given_name': self.given_name,
             'super_locus_id': self.super_locus_id
         }
-        insertion_queues.translated.queue.append(translated)
+        self.controller.insertion_queues.translated.queue.append(translated)
