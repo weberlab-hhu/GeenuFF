@@ -145,7 +145,6 @@ class OrganizedGeenuffHandlerGroup(object):
             tf_h = FeatureHandler(self.coord,
                                   is_plus_strand,
                                   types.TRANSCRIBED,
-                                  sub_type=t.type,
                                   given_name=t_id,
                                   score=score,
                                   source=source,
@@ -472,32 +471,40 @@ class ImportController(object):
             in the correct order.
             """
             for group in groups:
-                group['super_locus_h'].add_to_queue(self.insertion_queues)
+                group['super_locus_h'].add_to_queue()
                 # insert all features as well as transcript and protein related entries
-                for t_feature_h in group['feature_hs']:
-                    t_h, tp_h = t_feature_h.get_transcript_handlers(group['super_locus_h'])
-                    t_h.add_to_queue(self.insertion_queues)
-                    tp_h.add_to_queue(self.insertion_queues)
-                    t_feature_h.add_to_queue(self.insertion_queues, tp_h)
-                    for cds_h in group['feature_hs'][t_feature_h]:
-                        cds_h.add_to_queue(self.insertion_queues, tp_h)
-                        for intron_h in group['feature_hs'][t_feature_h][cds_h]:
-                            intron_h.add_to_queue(self.insertion_queues, tp_h)
+                for transcript_hs in group['transcript_hs']:
+                    # make shortcuts
+                    tp_h = transcript_hs['transcript_piece_h']
+                    tf_h = transcript_hs['transcript_feature_h']
+                    # add transcript handler that are always present
+                    transcript_hs['transcript_h'].add_to_queue()
+                    tp_h.add_to_queue()
+                    tf_h.add_to_queue()
+                    tf_h.insert_feature_piece_association(tp_h.id)
+                    # if coding transcript
+                    if 'protein_h' in transcript_hs:
+                        transcript_hs['protein_h'].add_to_queue()
+                        tf_h.insert_feature_protein_association(transcript_hs['protein_h'].id)
+                        transcript_hs['cds_h'].add_to_queue()
+                        transcript_hs['cds_h'].insert_feature_piece_association(tp_h.id)
+                        for intron_h in transcript_hs['intron_hs']:
+                            intron_h.add_to_queue()
+                            intron_h.insert_feature_piece_association(tp_h.id)
                 # insert the errors
                 for e_h in group['error_h']:
-                    e_h.add_to_queue(self.insertion_queues)
+                    e_h.add_to_queue()
 
         def clean_and_insert(self, groups, clean):
-            import pudb; pudb.set_trace()
             if clean:
                 # check and correct for errors
                 # do so for each strand seperately
                 # all changes should be made by reference
                 plus = [g for g in groups if g['super_locus_h'].is_plus_strand]
-                GFFErrorHandling(plus, True).resolve_errors()
+                # GFFErrorHandling(plus, True).resolve_errors()
                 # reverse order on minus strand
                 minus = [g for g in groups if not g['super_locus_h'].is_plus_strand]
-                GFFErrorHandling(minus[::-1], False).resolve_errors()
+                # GFFErrorHandling(minus[::-1], False).resolve_errors()
             # insert handlers
             insert_handler_groups(self, plus)
             insert_handler_groups(self, minus)
@@ -593,8 +600,9 @@ class SuperLocusHandler(handlers.SuperLocusHandlerBase, Insertable):
         self.id = InsertCounterHolder.super_locus()
         self.entry_type = entry_type
         self.given_name = given_name
+        self.controller = controller
         # not neccessary for insert but helpful for certain error cases
-        self.coord= coord
+        self.coord = coord
         self.is_plus_strand = is_plus_strand
         self.start = start
         self.end = end
@@ -609,18 +617,14 @@ class SuperLocusHandler(handlers.SuperLocusHandlerBase, Insertable):
 
 
 class FeatureHandler(handlers.FeatureHandlerBase, Insertable):
-    def __init__(self, coord, is_plus_strand, feature_type, controller, sub_type=None, start=-1, end=-1, given_name=None, phase=0, score=None, source=None):
-        """Initializes a handler for a soon to be inserted geenuff feature.
-        As there is no 1to1 relation between a gff entry and a geenuff feature,
-        no gff entry is saved or directly used to infer attributes from.
-        """
+    def __init__(self, coord, is_plus_strand, feature_type, controller, start=-1, end=-1, given_name=None, phase=0, score=None, source=None):
+        """Initializes a handler for a soon to be inserted geenuff feature."""
         super().__init__()
         self.id = InsertCounterHolder.feature()
         self.coord = coord
         self.given_name = given_name
         self.is_plus_strand = is_plus_strand
         self.feature_type = feature_type
-        self.sub_type = sub_type  # only used if type is transcribed to save the transcript type
         # start/end may have to be adapted to geenuff
         self.start = start
         self.end = end
@@ -632,8 +636,6 @@ class FeatureHandler(handlers.FeatureHandlerBase, Insertable):
         self.controller = controller
 
     def add_to_queue(self, transcript_piece_h=None):
-        """Adds the feature as well as the many2many association entries if the type is not
-        types.ERROR"""
         feature = {
             'id': self.id,
             'type': self.feature_type,
@@ -661,7 +663,7 @@ class FeatureHandler(handlers.FeatureHandlerBase, Insertable):
     def insert_feature_protein_association(self, protein_id):
         features2protein = {
             'feature_id': self.id,
-            'transcribed_id': protein_id,
+            'translated_id': protein_id,
         }
         self.controller.insertion_queues.association_translated_to_feature.\
             queue.append(features2protein)
@@ -685,8 +687,6 @@ class FeatureHandler(handlers.FeatureHandlerBase, Insertable):
             'is_plus_strand': self.is_plus_strand,
             'phase': self.phase,
         }
-        if self.sub_type:
-            params['sub_type'] = self.sub_type
         if self.given_name:
             params['given_name'] = self.given_name
         return self._get_repr('FeatureHandler', params, str(self.start) + '--' + str(self.end))
@@ -725,6 +725,7 @@ class TranscribedPieceHandler(handlers.TranscribedPieceHandlerBase, Insertable):
         self.given_name = given_name
         self.transcript_id = transcript_id
         self.position = position
+        self.controller = controller
 
     def add_to_queue(self):
         transcribed_piece = self._get_params_dict()
@@ -746,9 +747,10 @@ class TranscribedPieceHandler(handlers.TranscribedPieceHandlerBase, Insertable):
 class TranslatedHandler(handlers.TranslatedHandlerBase):
     def __init__(self, given_name, super_locus_id, controller):
         super().__init__()
+        self.id = InsertCounterHolder.translated()
         self.given_name = given_name
         self.super_locus_id = super_locus_id
-        self.id = InsertCounterHolder.translated()
+        self.controller = controller
 
     def add_to_queue(self):
         translated = self._get_params_dict()
