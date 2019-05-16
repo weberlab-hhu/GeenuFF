@@ -702,13 +702,20 @@ class TranscribedHandler(handlers.TranscribedHandlerBase, Insertable):
         self.controller = controller
 
     def add_to_queue(self):
-        transcribed = {
+        transcribed = self._get_params_dict()
+        self.controller.insertion_queues.transcribed.queue.append(transcribed)
+
+    def _get_params_dict(self):
+        d = {
+            'id': self.id,
             'type': self.entry_type,
             'given_name': self.given_name,
             'super_locus_id': self.super_locus_id,
-            'id': self.id
         }
-        self.controller.insertion_queues.transcribed.queue.append(transcribed)
+        return d
+
+    def __repr__(self):
+        return self._get_repr('TranscriptHandler', self._get_params_dict())
 
 
 class TranscribedPieceHandler(handlers.TranscribedPieceHandlerBase, Insertable):
@@ -720,13 +727,20 @@ class TranscribedPieceHandler(handlers.TranscribedPieceHandlerBase, Insertable):
         self.position = position
 
     def add_to_queue(self):
-        transcribed_piece = {
+        transcribed_piece = self._get_params_dict()
+        self.controller.insertion_queues.transcribed_piece.queue.append(transcribed_piece)
+
+    def _get_params_dict(self):
+        d = {
             'id': self.id,
             'given_name': self.given_name,
             'transcribed_id': self.transcript_id,
             'position': self.position,
         }
-        self.controller.insertion_queues.transcribed_piece.queue.append(transcribed_piece)
+        return d
+
+    def __repr__(self):
+        return self._get_repr('TranscribedPieceHandler', self._get_params_dict())
 
 
 class TranslatedHandler(handlers.TranslatedHandlerBase):
@@ -737,9 +751,16 @@ class TranslatedHandler(handlers.TranslatedHandlerBase):
         self.id = InsertCounterHolder.translated()
 
     def add_to_queue(self):
-        translated = {
+        translated = self._get_params_dict()
+        self.controller.insertion_queues.translated.queue.append(translated)
+
+    def _get_params_dict(self):
+        d = {
             'id': self.id,
             'given_name': self.given_name,
-            'super_locus_id': self.super_locus_id
+            'super_locus_id': self.super_locus_id,
         }
-        self.controller.insertion_queues.translated.queue.append(translated)
+        return d
+
+    def __repr__(self):
+        return self._get_repr('ProteinHandler', self._get_params_dict())
