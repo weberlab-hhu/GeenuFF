@@ -104,7 +104,7 @@ class OrganizedGeenuffHandlerGroup(object):
         self.coord = coord
         self.controller = controller
         self.err_handle = err_handle
-        self.handlers = {'transcript_hs': {}}
+        self.handlers = {'transcript_hs': {}, 'error_h': []}
         self._parse_gff_entries(organized_gff_entries)
 
     def _parse_gff_entries(self, entries):
@@ -132,7 +132,7 @@ class OrganizedGeenuffHandlerGroup(object):
                                  is_plus_strand,
                                  types.TRANSCRIBED,
                                  sub_type=t.type,
-                                 given_name=self.get_given_name(t),
+                                 given_name=t.get_ID(),
                                  score=score,
                                  source=source,
                                  controller=self.controller)
@@ -171,14 +171,6 @@ class OrganizedGeenuffHandlerGroup(object):
                 intron_h.set_start_end_from_gff(gff_start, gff_end)
                 self.handlers['transcript_hs'][t_h][cds_h].append(intron_h)
 
-    def get_given_name(self, gffentry):
-        parents = gffentry.get_Parent()
-        # the simple case
-        if len(parents) == 1:
-            assert self.handlers['super_locus_h'].gffentry.get_ID() == parents[0]
-            return gffentry.get_ID()
-        else:
-            raise NotImplementedError  # todo handle multi inheritance, etc...
 
 class OrganizedGFFEntryGroup(object):
     """Takes an entry group and stores the entries in an orderly fassion.
@@ -416,9 +408,19 @@ class ImportController(object):
             """
             for group in groups:
                 group['super_locus_h'].add_to_queue(self.insertion_queues)
-                for t_h in group['transcript_hs']:
-
-
+                # insert all features as well as transcript and protein related entries
+                for t_feature_h in group['transcript_hs']:
+                    t_h, tp_h = t_feature_h.get_transcript_handlers(group['super_locus_h'])
+                    t_h.add_to_queue(self.insertion_queues)
+                    tp_h.add_to_queue(self.insertion_queues)
+                    t_feature_h.add_to_queue(self.insertion_queues, tp_h)
+                    for cds_h in group['transcript_hs'][t_feature_h]:
+                        cds_h.add_to_queue(self.insertion_queues, tp_h)
+                        for intron_h in group['transcript_hs'][t_feature_h][cds_h]:
+                            intron_h.add_to_queue(self.insertion_queues, tp_h)
+                # insert the errors
+                for e_h in group['error_h']:
+                    e_h.add_to_queue(self.insertion_queues)
 
         def clean_and_insert(self, groups, clean):
             if clean:
@@ -433,6 +435,7 @@ class ImportController(object):
             # insert handlers
             insert_handler_groups(self, plus)
             insert_handler_groups(self, minus)
+            self.insertion_queues.execute_so_far()
 
         assert self.latest_genome_handler is not None, 'No recent genome found'
         self.latest_genome_handler.mk_mapper(gff_file)
@@ -532,7 +535,7 @@ class SuperLocusHandler(handlers.SuperLocusHandlerBase, Insertable):
         self.end = end
 
     def add_to_queue(self, insertion_queues):
-        to_add = {'type': self.entry_type, 'given_name': self.given_name 'id': self.id}
+        to_add = {'type': self.entry_type, 'given_name': self.given_name, 'id': self.id}
         insertion_queues.super_locus.queue.append(to_add)
 
     def __repr__(self):
@@ -541,7 +544,7 @@ class SuperLocusHandler(handlers.SuperLocusHandlerBase, Insertable):
 
 
 class FeatureHandler(handlers.FeatureHandlerBase, Insertable):
-    def __init__(self, coord, is_plus_strand, feature_type, sub_type=None, start=-1, end=-1, given_name=None, phase=0, score=None, source=None, controller):
+    def __init__(self, coord, is_plus_strand, feature_type, controller, sub_type=None, start=-1, end=-1, given_name=None, phase=0, score=None, source=None):
         """Initializes a handler for a soon to be inserted geenuff feature.
         As there is no 1to1 relation between a gff entry and a geenuff feature,
         no gff entry is saved or directly used to infer attributes from.
@@ -551,7 +554,7 @@ class FeatureHandler(handlers.FeatureHandlerBase, Insertable):
         self.coord = coord
         self.given_name = given_name
         self.is_plus_strand = is_plus_strand
-        self.type = feature_type
+        self.feature_type = feature_type
         self.sub_type = sub_type  # only used if type is transcribed to save the transcript type
         # start/end may have to be adapted to geenuff
         self.start = start
@@ -563,9 +566,12 @@ class FeatureHandler(handlers.FeatureHandlerBase, Insertable):
         self.end_is_biological_end = None
         self.controller = controller
 
-    def add_to_queue(self, insertion_queues):
+    def add_to_queue(self, insertion_queues, transcript_piece_h=None):
+        """Adds the feature as well as the many2many association entries if the type is not
+        types.ERROR"""
         feature = {
             'id': self.id,
+            'type': self.feature_type,
             'given_name': self.given_name,
             'coordinate_id': self.coord.id,
             'is_plus_strand': self.is_plus_strand,
@@ -579,14 +585,26 @@ class FeatureHandler(handlers.FeatureHandlerBase, Insertable):
         }
         insertion_queues.feature.queue.append(feature)
 
+        if not self.feature_type == types.ERROR:
+            features2pieces = {
+                'feature_id': self.id,
+                'transcribed_piece_id': transcript_piece_h.id,
+            }
+            insertion_queues.association_transcribed_piece_to_feature.queue.append(features2pieces)
+
     def get_transcript_handlers(self, super_locus_h):
         """Returns a TranscribedHandler and TranscribedPieceHandler instance that corresponds
         to the feature if the type is types.TRANSCRIBED. These can then be inserted.
         """
-        transcript_h = TranscribedHandler(self.controller,
-                                          self.sub_type,
-                                          self.given_name,
-                                          super_locus_h.id)
+        transcript_h = TranscribedHandler(entry_type=self.sub_type,
+                                          given_name=self.given_name,
+                                          super_locus_id=super_locus_h.id,
+                                          controller=self.controller)
+        transcript_piece_h = TranscribedPieceHandler(given_name=self.given_name,
+                                                     transcript_id=transcript_h.id,
+                                                     position=0,
+                                                     controller=self.controller)
+        return transcript_h, transcript_piece_h
 
 
     def set_start_end_from_gff(self, gff_start, gff_end):
@@ -628,7 +646,7 @@ class TranscribedHandler(handlers.TranscribedHandlerBase, Insertable):
         transcribed = {
             'type': self.entry_type,
             'given_name': self.given_name,
-            'super_locus_id': self.super_locus.id,
+            'super_locus_id': self.super_locus_id,
             'id': self.id
         }
         insertion_queues.transcribed.queue.append(transcribed)
@@ -639,15 +657,15 @@ class TranscribedPieceHandler(handlers.TranscribedPieceHandlerBase, Insertable):
         super().__init__()
         self.id = InsertCounterHolder.transcribed_piece()
         self.given_name = given_name
-        self.transcribed_id = transcribed_id
+        self.transcript_id = transcript_id
         self.position = position
 
     def add_to_queue(self, insertion_queues):
         transcribed_piece = {
             'id': self.id,
-            'given_name': given_name,
-            'transcribed_id': self.transcribed_id,
-            'position': position,
+            'given_name': self.given_name,
+            'transcribed_id': self.transcript_id,
+            'position': self.position,
         }
         insertion_queues.transcribed_piece.queue.append(transcribed_piece)
 
