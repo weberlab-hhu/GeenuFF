@@ -96,7 +96,8 @@ class OrganizedGeenuffHandlerGroup(object):
             },
             ...
         },
-        'error_h' = [error_handler1, error_handler2, ..]
+        'error_h' = [error_handler1, error_handler2, ..],
+        'protein_ids' = {protein_id1, protein_id2, ...}
     }
     """
 
@@ -104,13 +105,13 @@ class OrganizedGeenuffHandlerGroup(object):
         self.coord = coord
         self.controller = controller
         self.err_handle = err_handle
-        self.handlers = {'transcript_hs': {}, 'error_h': []}
+        self.handlers = {'transcript_hs': {}, 'error_h': [], 'protein_ids': set()}
         self._parse_gff_entries(organized_gff_entries)
 
     def _parse_gff_entries(self, entries):
         """Changes the GFF format into the GeenuFF format."""
-        # these attr are the same for all geenuff handlers going to be created
         sl = entries['super_locus']
+        # these attr are the same for all geenuff handlers going to be created
         is_plus_strand = get_strand_direction(sl)
         score = sl.score
         source = sl.source
@@ -171,6 +172,33 @@ class OrganizedGeenuffHandlerGroup(object):
                 intron_h.set_start_end_from_gff(gff_start, gff_end)
                 self.handlers['transcript_hs'][t_h][cds_h].append(intron_h)
 
+            # extract the protein ids
+            for cds_entry in t_entries['cds']:
+                protein_id = self._get_protein_id_from_cds_entry(cds_entry)
+                if protein_id:
+                    self.handlers['protein_ids'].add(protein_id)
+
+    @staticmethod
+    def _get_protein_id_from_cds_entry(cds_entry):
+        # check if anything is labeled as protein_id
+        protein_id = cds_entry.attrib_filter(tag='protein_id')
+        # failing that, try and get parent ID (presumably transcript, maybe gene)
+        if not protein_id:
+            protein_id = cds_entry.get_Parent()
+        # hopefully take single hit
+        if len(protein_id) == 1:
+            protein_id = protein_id[0]
+            if isinstance(protein_id, gffhelper.GFFAttribute):
+                protein_id = protein_id.value
+                assert len(protein_id) == 1
+                protein_id = protein_id[0]
+        # or handle other cases
+        elif len(protein_id) == 0:
+            protein_id = None
+        else:
+            raise ValueError('indeterminate single protein id {}'.format(protein_id))
+        return protein_id
+
 
 class OrganizedGFFEntryGroup(object):
     """Takes an entry group and stores the entries in an orderly fassion.
@@ -191,6 +219,7 @@ class OrganizedGFFEntryGroup(object):
                 'cds': [ordered_cds_entry1, ordered_cds_entry2, ..]
             },
             ...
+        }
     }
     """
 
@@ -235,7 +264,6 @@ class OrganizedGFFEntryGroup(object):
                                                              self.controller,
                                                              self.err_handle)
         return geenuff_handler_group.handlers
-
 
 
 class GFFErrorHandling(object):
@@ -423,6 +451,7 @@ class ImportController(object):
                     e_h.add_to_queue(self.insertion_queues)
 
         def clean_and_insert(self, groups, clean):
+            import pudb; pudb.set_trace()
             if clean:
                 # check and correct for errors
                 # do so for each strand seperately
@@ -622,7 +651,7 @@ class FeatureHandler(handlers.FeatureHandlerBase, Insertable):
         params = {
             'id': self.id,
             'coord_id': self.coord.id,
-            'type': self.type,
+            'type': self.feature_type,
             'is_plus_strand': self.is_plus_strand,
             'phase': self.phase,
         }
