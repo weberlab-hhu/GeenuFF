@@ -14,23 +14,7 @@ from .. import orm
 from .. import types
 from .. import handlers
 from .. import helpers
-from ..base.helpers import as_py_start, as_py_end, get_strand_direction, get_geenuff_start_end
-
-
-class IntervalCountError(Exception):
-    pass
-
-
-class NoTranscriptError(Exception):
-    pass
-
-
-class TransSplicingError(Exception):
-    pass
-
-
-class NoGFFEntryError(Exception):
-    pass
+from ..base.helpers import get_strand_direction, get_geenuff_start_end
 
 
 # core queue prep
@@ -72,9 +56,6 @@ class InsertCounterHolder(object):
         InsertCounterHolder.transcribed_piece.sync_with_db(session)
         InsertCounterHolder.genome.sync_with_db(session)
 
-
-# todo remember to check for trans-splicing error in gff entry (see former add_gff_entry_group)
-# todo remember to work in the code that was in _mark_erroneous when handling errors
 
 class OrganizedGeenuffHandlerGroup(object):
     """Stores the Handler object for a super locus in an organized fassion.
@@ -237,8 +218,8 @@ class OrganizedGeenuffHandlerGroup(object):
 
 
 class OrganizedGFFEntryGroup(object):
-    """Takes an entry group and stores the entries in an orderly fassion.
-    Can transform the gff way of gene encoding into a OrganizedGeenuffHandlerGroup.
+    """Takes an entry group (all entries of one super locus) and stores the entries
+    in an orderly fassion. Can then return a corresponding OrganizedGeenuffHandlerGroup.
     Does not perform error checking, which happens later.
 
     The entries are organized in the following way:
@@ -303,6 +284,89 @@ class OrganizedGFFEntryGroup(object):
         return geenuff_handler_group.handlers
 
 
+class OrganizedGFFEntries(object):
+    """Structures the gff entries comming from gffhelper by seqid and gene. Also does some
+    basic gff value cleanup.
+    The entries are organized in the following way:
+
+    organized_entries = {
+        'seqid1': [
+            [gff_entry1_gene1, gff_entry2_gene1, ..],
+            [gff_entry1_gene2, gff_entry2_gene2, ..],
+        ],
+        'seqid2': [
+            [gff_entry1_gene1, gff_entry2_gene1, ..],
+            [gff_entry1_gene2, gff_entry2_gene2, ..],
+        ],
+        ...
+    }
+    """
+    def __init__(self, gff_file):
+        self.gff_file = gff_file
+        self.organized_entries = self._organize_entries()
+
+    def _organize_entries(self):
+        organized = {}
+        gene_level = [x.value for x in types.SuperLocusAll]
+
+        reader = self._useful_gff_entries()
+        first = next(reader)
+        seqid = first.seqid
+        gene_group = [first]
+        organized[seqid] = [gene_group]
+        for entry in reader:
+            if entry.type in gene_level:
+                if entry.seqid != seqid:
+                    organized[entry.seqid] = []
+                    seqid = entry_seqid
+                organized[seqid].append(gene_group)
+                gene_group = [entry]
+            else:
+                gene_group.append(entry)
+        return organized
+
+    def _useful_gff_entries(self):
+        skipable = [x.value for x in types.IgnorableFeatures]
+        reader = self._gff_gen()
+        for entry in reader:
+            if entry.type not in skipable:
+                yield entry
+
+    def _gff_gen(self):
+        known = [x.value for x in types.AllKnown]
+        reader = gffhelper.read_gff_file(self.gff_file)
+        for entry in reader:
+            if entry.type not in known:
+                raise ValueError("unrecognized feature type from gff: {}".format(entry.type))
+            else:
+                self._clean_entry(entry)
+                yield entry
+
+    @staticmethod
+    def _clean_entry(entry):
+        # always present and integers
+        entry.start = int(entry.start)
+        entry.end = int(entry.end)
+        # clean up score
+        if entry.score == '.':
+            entry.score = None
+        else:
+            entry.score = float(entry.score)
+
+        # clean up phase
+        if entry.phase == '.':
+            entry.phase = None
+        else:
+            entry.phase = int(entry.phase)
+        assert entry.phase in [None, 0, 1, 2]
+
+        # clean up strand
+        if entry.strand == '.':
+            entry.strand = None
+        else:
+            assert entry.strand in ['+', '-']
+
+
 class GFFErrorHandling(object):
     """Deal with error detection and handling of the input features. Does the handling
     in the space of GeenuFF handlers.
@@ -338,7 +402,7 @@ class GFFErrorHandling(object):
                         else:
                             mask_direction = '3p'
                     if mask_direction:
-                        error_h = self._get_sl_error_handler(i, mask_direction)
+                        error_h = self._get_overlapping_error_handler(i, mask_direction)
             if error_h:
                 group['error_h'].append(error_h)
 
@@ -352,19 +416,19 @@ class GFFErrorHandling(object):
                                  controller=self.controller)
         return error_h
 
-    def _get_sl_error_handler(self, i, overlap_direction):
+    def _get_overlapping_error_handler(self, i, direction):
         """Constructs an error feature that overlaps halfway to the next super locus
         in the given direction if possible"""
-        assert overlap_direction in ['5p', '3p', 'both']
+        assert direction in ['5p', '3p', 'both']
         sl_h = self.groups[i]['super_locus_h']
         error_start = sl_h.start
         error_end = sl_h.end
-        if overlap_direction in ['5p', 'both'] and i > 0:
+        if direction in ['5p', 'both'] and i > 0:
             sl_h_prev = geenuff_handler_groups[i - 1]['super_locus_h']
-            error_start = self.halfway_mark(sl_h_prev, sl_h)
-        if overlap_direction in ['3p', 'both'] and i < len(self.groups) - 1:
+            error_start = self._halfway_mark(sl_h_prev, sl_h)
+        if direction in ['3p', 'both'] and i < len(self.groups) - 1:
             sl_h_next = geenuff_handler_groups[i + 1]['super_locus_h']
-            error_end = self.halfway_mark(sl_h, sl_h_next)
+            error_end = self._halfway_mark(sl_h, sl_h_next)
         error_h = self._get_error_handler(sl_h.coord,
                                           error_start,
                                           error_end,
@@ -408,60 +472,6 @@ class ImportController(object):
         self.session = sessionmaker(bind=self.engine)()
         if appending_to_db:
             InsertCounterHolder.sync_counters_with_db(self.session)
-
-    def gff_gen(self, gff_file):
-        known = [x.value for x in types.AllKnown]
-        reader = gffhelper.read_gff_file(gff_file)
-        for entry in reader:
-            if entry.type not in known:
-                raise ValueError("unrecognized feature type from gff: {}".format(entry.type))
-            else:
-                self.clean_entry(entry)
-                yield entry
-
-    # todo, this is an awkward place for this
-    @staticmethod
-    def clean_entry(entry):
-        # always present and integers
-        entry.start = int(entry.start)
-        entry.end = int(entry.end)
-        # clean up score
-        if entry.score == '.':
-            entry.score = None
-        else:
-            entry.score = float(entry.score)
-
-        # clean up phase
-        if entry.phase == '.':
-            entry.phase = None
-        else:
-            entry.phase = int(entry.phase)
-        assert entry.phase in [None, 0, 1, 2]
-
-        # clean up strand
-        if entry.strand == '.':
-            entry.strand = None
-        else:
-            assert entry.strand in ['+', '-']
-
-    def useful_gff_entries(self, gff_file):
-        skipable = [x.value for x in types.IgnorableFeatures]
-        reader = self.gff_gen(gff_file)
-        for entry in reader:
-            if entry.type not in skipable:
-                yield entry
-
-    def group_gff_by_gene(self, gff_file):
-        gene_level = [x.value for x in types.SuperLocusAll]
-        reader = self.useful_gff_entries(gff_file)
-        gene_group = [next(reader)]
-        for entry in reader:
-            if entry.type in gene_level:
-                yield gene_group
-                gene_group = [entry]
-            else:
-                gene_group.append(entry)
-        yield gene_group
 
     def make_genome(self, genome_args=None):
         if type(genome_args) == dict:
@@ -536,24 +546,25 @@ class ImportController(object):
 
         assert self.latest_genome_handler is not None, 'No recent genome found'
         self.latest_genome_handler.mk_mapper(gff_file)
+        organized_gff_entries = OrganizedGFFEntries(gff_file).organized_entries
         geenuff_handler_groups = []
-        for i, entry_group in enumerate(self.group_gff_by_gene(gff_file)):
-            organized_entries = OrganizedGFFEntryGroup(entry_group,
-                                                       self.latest_genome_handler,
-                                                       self,
-                                                       err_handle)
-            geenuff_handler_groups.append(organized_entries.get_geenuff_handlers())
-            if i > 0 and i % 500 == 0:
-                clean_and_insert(self, geenuff_handler_groups, clean)
-                geenuff_handler_groups = []
-        clean_and_insert(self, geenuff_handler_groups, clean)
-
+        for seqid in organized_gff_entries.keys():
+            for i, entry_group in enumerate(organized_gff_entries[seqid]):
+                organized_entries = OrganizedGFFEntryGroup(entry_group,
+                                                           self.latest_genome_handler,
+                                                           self,
+                                                           err_handle)
+                geenuff_handler_groups.append(organized_entries.get_geenuff_handlers())
+                if i > 0 and i % 500 == 0:
+                    clean_and_insert(self, geenuff_handler_groups, clean)
+                    geenuff_handler_groups = []
+            # never do error checking across fasta sequence borders
+            clean_and_insert(self, geenuff_handler_groups, clean)
 
 
 class Insertable(ABC):
-
     @abstractmethod
-    def add_to_queue(self, insertion_queues):
+    def add_to_queue(self):
         pass
 
 
