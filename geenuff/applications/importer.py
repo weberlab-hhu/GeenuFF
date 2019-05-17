@@ -58,9 +58,10 @@ class InsertCounterHolder(object):
 
 
 class OrganizedGeenuffHandlerGroup(object):
-    """Stores the Handler object for a super locus in an organized fassion.
+    """Stores the handler objects for a super locus in an organized fassion.
     The format is similar to the one of OrganizedGFFEntryGroup, but it stores objects
-    according to the Geenuff way of saving genomic annotations.
+    according to the Geenuff way of saving genomic annotations. This format can then
+    be checked for errors and changed accordingly before being inserted into the db.
 
     The handlers are organized in the following way:
 
