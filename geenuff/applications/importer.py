@@ -73,7 +73,7 @@ class OrganizedGeenuffHandlerGroup(object):
             },
             ...
         ],
-        'error_h' = [error_handler1, error_handler2, ..],
+        'error_hs' = [error_handler1, error_handler2, ..],
     }
     """
 
@@ -81,7 +81,7 @@ class OrganizedGeenuffHandlerGroup(object):
         self.coord = coord
         self.controller = controller
         self.err_handle = err_handle
-        self.handlers = {'transcript_hs': [], 'error_h': []}
+        self.handlers = {'transcript_hs': [], 'error_hs': []}
         self._parse_gff_entries(organized_gff_entries)
 
     def _parse_gff_entries(self, entries):
@@ -377,29 +377,22 @@ class GFFErrorHandling(object):
 
     def resolve_errors(self):
         for i, group in enumerate(self.groups):
-            error_h = None
             # the case of no transcript for a super locus
             # solution is to add an error mask that extends halfway to the appending super
             # loci in the intergenic region as something in this area appears to have gone wrong
             if not group['transcript_hs']:
-                error_h = self._get_overlapping_error_handler(i, 'both')
+                group['error_hs'] += self._get_overlapping_error_handler(i, None, 'whole')
             # the case of missing of implicit UTR ranges
             # the solution is similar to the one above
             for t_hs in group['transcript_hs']:
                 # if coding transcript
                 if 'cds_h' in t_hs:
-                    mask_direction = ''
                     if t_hs['cds_h'].start == t_hs['transcript_feature_h'].start:
-                        mask_direction = '5p'
+                        start = t_hs['cds_h'].start
+                        group['error_hs'] += self._get_overlapping_error_handler(i, start, '5p')
                     if t_hs['cds_h'].end == t_hs['transcript_feature_h'].end:
-                        if mask_direction:
-                            mask_direction = 'both'
-                        else:
-                            mask_direction = '3p'
-                    if mask_direction:
-                        error_h = self._get_overlapping_error_handler(i, mask_direction)
-            if error_h:
-                group['error_h'].append(error_h)
+                        start = t_hs['cds_h'].end
+                        group['error_hs'] += self._get_overlapping_error_handler(i, start, '3p')
 
     def _get_error_handler(self, coord, start, end, is_plus_strand):
         # todo logging
@@ -411,24 +404,35 @@ class GFFErrorHandling(object):
                                  controller=self.controller)
         return error_h
 
-    def _get_overlapping_error_handler(self, i, direction):
-        """Constructs an error feature that overlaps halfway to the next super locus
-        in the given direction if possible"""
-        assert direction in ['5p', '3p', 'both']
+    def _get_overlapping_error_handler(self, i, start, direction):
+        """Constructs an error features that overlaps halfway to the next super locus
+        in the given direction if possible.
+        The error feature extends in the given direction from the start value on.
+        If the direction is 'whole', the start value is ignored.
+        """
+        assert direction in ['5p', '3p', 'whole']
         sl_h = self.groups[i]['super_locus_h']
-        error_start = sl_h.start
-        error_end = sl_h.end
-        if direction in ['5p', 'both'] and i > 0:
-            sl_h_prev = self.groups[i - 1]['super_locus_h']
+        sl_h_prev = self.groups[i - 1]['super_locus_h']
+        sl_h_next = self.groups[i + 1]['super_locus_h']
+        error_start = -1
+        error_end = -1
+        if direction == '5p' and i > 0:
             error_start = self._halfway_mark(sl_h_prev, sl_h)
-        if direction in ['3p', 'both'] and i < len(self.groups) - 1:
-            sl_h_next = self.groups[i + 1]['super_locus_h']
+            error_end = start
+        elif direction =='3p' and i < len(self.groups) - 1:
+            error_start = start
             error_end = self._halfway_mark(sl_h, sl_h_next)
-        error_h = self._get_error_handler(sl_h.coord,
-                                          error_start,
-                                          error_end,
-                                          self.is_plus_strand)
-        return error_h
+        elif direction == 'whole':
+            error_start = self._halfway_mark(sl_h_prev, sl_h)
+            error_end = self._halfway_mark(sl_h, sl_h_next)
+        if error_start > -1:
+            error_h = self._get_error_handler(sl_h.coord,
+                                              error_start,
+                                              error_end,
+                                              self.is_plus_strand)
+            return [error_h]
+        else:
+            return []
 
     def _halfway_mark(self, sl_h, sl_h_next):
         """Calculates the half way point between two super loci, which is then used for
@@ -521,7 +525,7 @@ class ImportController(object):
                             intron_h.add_to_queue()
                             intron_h.insert_feature_piece_association(tp_h.id)
                 # insert the errors
-                for e_h in group['error_h']:
+                for e_h in group['error_hs']:
                     e_h.add_to_queue()
 
         def clean_and_insert(self, groups, clean):
@@ -534,7 +538,6 @@ class ImportController(object):
                 # reverse order on minus strand
                 minus = [g for g in groups if not g['super_locus_h'].is_plus_strand]
                 GFFErrorHandling(minus[::-1], False, self).resolve_errors()
-            import pudb; pudb.set_trace()
             # insert handlers
             insert_handler_groups(self, plus)
             insert_handler_groups(self, minus)

@@ -26,6 +26,7 @@
 1	manual	gene	600	1000	.	+	.	ID=gene_empty
 #
 # test case 3: non-coding gene
+# should not result in an error
 1	manual	gene	1200	1400	.	+	.	ID=gene_non_coding
 1	manual	mRNA	1200	1400	.	+	.	ID=x;Parent=gene_non_coding
 1	manual	mRNA	1300	1400	.	+	.	ID=y;Parent=gene_non_coding

@@ -1016,12 +1016,14 @@ def test_import_multiple_genomes():
 def test_dummyloci_multiple_errors():
     """Tests if all errors generated for dummyloci_multiple{.gff|.fa} are correct"""
     def error_in_list(error, error_list):
-        """error should be a dict and error list a list of orm objects"""
-        for e in error_list:
-            if (e['coord_id'] == error.coordinate.id and
-                    e['is_plus_strand'] == error.is_plus_strand and
-                    e['start'] == error.start and
-                    e['end'] == error.end):
+        """searches for the error in a list. removes the error if found.
+        error should be a dict and error list a list of orm objects"""
+        for e in error_list[:]:  # make a copy at each iteration so we avoid weird errors
+            if (error['coord_id'] == e.coordinate.id and
+                    error['is_plus_strand'] == e.is_plus_strand and
+                    error['start'] == e.start and
+                    error['end'] == e.end):
+                error_list.remove(e)
                 return True
         return False
 
@@ -1034,10 +1036,14 @@ def test_dummyloci_multiple_errors():
 
     # test case 1 - see gff file for more documentation
     # two identical error bars after cds for aligned exon/cds pair
-    error = {'coord_id': coords[0].id, 'is_plus_strand': True, start: 120, end: 500}
+    error = {'coord_id': coords[0].id, 'is_plus_strand': True, 'start': 120, 'end': 499}
+    assert error_in_list(error, errors)
     assert error_in_list(error, errors)
 
-    # assert len(errors) == 10
+    # test case 2
+    error = {'coord_id': coords[0].id, 'is_plus_strand': True, 'start': 499, 'end': 1099}
+    assert error_in_list(error, errors)
+    assert not errors
 
 
 def test_transcript_interpreter():
