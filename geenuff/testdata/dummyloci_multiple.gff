@@ -1,0 +1,64 @@
+##gff-version 3
+# test case: aligned cds and exon features at the boundaries (no UTR marked implicitely)
+# as well as a missing stop codon
+# 
+# the first transcript has the alignment error at the coding end
+# the second transcript is without errors 
+# the third transcript has the alignment error on both ends as well as no start
+1	manual	gene	1	400	.	+	.	ID=gene0
+1	manual	mRNA	1	120	.	+	.	ID=x;Parent=gene0
+1	manual	exon	1	20	.	+	.	ID=ftr000000;Parent=x
+1	manual	CDS	11	20	.	+	0	ID=ftr000001;Parent=x;protein_id=x.p
+1	manual	exon	111	120	.	+	.	ID=ftr000002;Parent=x
+1	manual	CDS	111	120	.	+	1	ID=ftr000003;Parent=x;protein_id=x.p
+1	manual	mRNA	1	400	.	+	.	ID=y;Parent=gene0
+1	manual	exon	1	20	.	+	.	ID=ftr000004;Parent=y
+1	manual	CDS	11	20	.	+	0	ID=ftr000005;Parent=y;protein_id=y.p
+1	manual	exon	111	120	.	+	.	ID=ftr000006;Parent=y
+1	manual	CDS	111	120	.	+	1	ID=ftr000007;Parent=y;protein_id=y.p
+1	manual	exon	201	400	.	+	.	ID=ftr000008;Parent=y
+1	manual	CDS	201	300	.	+	2	ID=ftr000009;Parent=y;protein_id=y.p
+1	manual	mRNA	111	120	.	+	.	ID=z;Parent=gene0
+1	manual	exon	111	120	.	+	.	ID=ftr000010;Parent=z
+1	manual	CDS	111	120	.	+	0	ID=ftr000011;Parent=z;protein_id=z.p
+# 
+# test case: empty gene
+1	manual	gene	600	1000	.	+	.	ID=gene_empty
+#
+# test case: non-coding gene
+1	manual	gene	1200	1400	.	+	.	ID=gene_non_coding
+1	manual	mRNA	1200	1400	.	+	.	ID=x;Parent=gene_non_coding
+1	manual	mRNA	1300	1400	.	+	.	ID=y;Parent=gene_non_coding
+#
+# test case: no ATG at start
+# the first transcript is without errors
+# the second transcript links to a coding region without ATG at the start
+1	manual	gene	1600	1800	.	+	.	ID=gene_no_ATG
+1	manual	mRNA	1600	1800	.	+	.	ID=x;Parent=gene_no_ATG
+1	manual	exon	1600	1700	.	+	.	ID=e0;Parent=x
+1	manual	CDS	1611	1700	.	+	0	ID=c0;Parent=x
+1	manual	exon	1782	1800	.	+	.	ID=e1;Parent=x
+1	manual	CDS	1782	1800	.	+	0	ID=c1;Parent=x
+1	manual	mRNA	1600	1800	.	+	.	ID=y;Parent=gene_no_ATG
+1	manual	exon	1600	1700	.	+	.	ID=e2;Parent=y
+1	manual	CDS	1620	1700	.	+	0	ID=c2;Parent=y
+1	manual	exon	1782	1800	.	+	.	ID=e3;Parent=y
+1	manual	CDS	1782	1800	.	+	0	ID=c3;Parent=y
+#
+# test case: gene without errors, but with introns of length 0
+# the first transscript contains the exons without a gap in between them
+# the second transcript is without special cases
+2	manual	gene	1	300	.	+	.	ID=gene_intron_len_0
+2	manual	mRNA	1	300	.	+	.	ID=x;Parent=gene_intron_len_0
+2	manual	exon	1	150	.	+	.	ID=e0;Parent=x
+2	manual	CDS	40	150	.	+	0	ID=c0;Parent=x
+2	manual	exon	150	300	.	+	.	ID=e1;Parent=x
+2	manual	CDS	150	181	.	+	2	ID=c1;Parent=x
+2	manual	mRNA	120	280	.	+	.	ID=y;Parent=gene_intron_len_0
+2	manual	exon	120	160	.	+	.	ID=e2;Parent=y
+2	manual	CDS	140	160	.	+	0	ID=c2;Parent=y
+2	manual	exon	239	280	.	+	.	ID=e3;Parent=y
+2	manual	CDS	239	270	.	+	1	ID=c3;Parent=y
+# 
+# test case: 
+
