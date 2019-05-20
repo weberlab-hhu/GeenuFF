@@ -952,7 +952,7 @@ def test_fasta_import():
     assert coord.sequence == 'ATCG' * 25 * 199  # also testing the upper case conversion
 
     # test import of multiple sequences from one file
-    controller = import_fasta('testdata/dummyloci_multiple.fa')
+    controller = import_fasta('testdata/basic_sequences.fa')
     coords = controller.latest_genome_handler.data.coordinates
     assert len(coords) == 3
     assert coords[0].seqid == '1'
