@@ -72,35 +72,37 @@
 2	manual	mRNA	550	750	.	+	.	ID=y;Parent=gene_phase_0_short_intron
 2	manual	exon	500	540	.	+	.	ID=e2;Parent=y
 2	manual	CDS	525	540	.	+	0	ID=c2;Parent=y
-2	manual	exon	580		600	.	+	.	ID=e3;Parent=y
+2	manual	exon	580	600	.	+	.	ID=e3;Parent=y
 2	manual	CDS	580	600	.	+	1	ID=c3;Parent=y
 2	manual	exon	700	750	.	+	.	ID=e4;Parent=y
 2	manual	CDS	700	725	.	+	2	ID=c4;Parent=y
 #
 # test case 7: phase of the last cds does not match sequence length 
-2	manual	gene	950	1350	.	+	.	ID=gene_wrong_phase_last_exon
-2	manual	mRNA	950	1350	.	+	.	ID=x;Parent=gene_wrong_phase_last_exon
-2	manual	exon	950	1000	.	+	.	ID=e0;Parent=x
-2	manual	CDS	975	1000	.	+	0	ID=c0;Parent=x
-2	manual	exon	1200		1220	.	+	.	ID=e1;Parent=x
-2	manual	CDS	1200	1220	.	+	1	ID=c1;Parent=x
-2	manual	exon	1300	1350	.	+	.	ID=e2;Parent=x
-2	manual	CDS	1300	1325	.	+	2	ID=c2_problem;Parent=x
+# gene is on the minus strand
+2	manual	gene	950	1350	.	-	.	ID=gene_wrong_phase_last_exon
+2	manual	mRNA	950	1350	.	-	.	ID=x;Parent=gene_wrong_phase_last_exon
+2	manual	exon	950	1000	.	-	.	ID=e0;Parent=x
+2	manual	CDS	975	1000	.	-	0	ID=c0;Parent=x
+2	manual	exon	1200	1220	.	-	.	ID=e1;Parent=x
+2	manual	CDS	1200	1220	.	-	1	ID=c1;Parent=x
+2	manual	exon	1300	1350	.	-	.	ID=e2;Parent=x
+2	manual	CDS	1300	1325	.	-	2	ID=c2_problem;Parent=x
 # 
 # test case 8: overlapping exons and missing stop codon
+# gene is on the minus strand
 # the first transcript has overlapping exons (the first two) and the end of the last cds region
 # does not link to a stop codon
 # the second transcript is without error
-2	manual	gene	1550	1750	.	+	.	ID=gene_overlapping_exons_missing_stop
-2	manual	mRNA	1550	1750	.	+	.	ID=x;Parent=gene_overlapping_exons_missing_stop	
-2	manual	exon	1550	1600	.	+	.	ID=e0_problem;Parent=x
-2	manual	CDS	1575	1600	.	+	1	ID=c0;Parent=x
-2	manual	exon	1599	1650	.	+	.	ID=e1_problem;Parent=x
-2	manual	CDS	1599	1650	.	+	2	ID=c1;Parent=x
-2	manual	exon	1720	1750	.	+	.	ID=e2_problem;Parent=x
-2	manual	CDS	1720	1725	.	+	1	ID=c2;Parent=x
-2	manual	mRNA	1550	1750	.	+	.	ID=y;Parent=gene_overlapping_exons_missing_stop	
-2	manual	exon	1550	1600	.	+	.	ID=e3;Parent=y
-2	manual	CDS	1575	1600	.	+	1	ID=c3;Parent=y
-2	manual	exon	1720	1750	.	+	.	ID=e4;Parent=y
-2	manual	CDS	1720	1725	.	+	1	ID=c4;Parent=y
+2	manual	gene	1550	1750	.	-	.	ID=gene_overlapping_exons_missing_stop
+2	manual	mRNA	1550	1750	.	-	.	ID=x;Parent=gene_overlapping_exons_missing_stop	
+2	manual	exon	1550	1600	.	-	.	ID=e0_problem;Parent=x
+2	manual	CDS	1575	1600	.	-	1	ID=c0;Parent=x
+2	manual	exon	1599	1650	.	-	.	ID=e1_problem;Parent=x
+2	manual	CDS	1599	1650	.	-	2	ID=c1;Parent=x
+2	manual	exon	1720	1750	.	-	.	ID=e2_problem;Parent=x
+2	manual	CDS	1720	1725	.	-	1	ID=c2;Parent=x
+2	manual	mRNA	1550	1750	.	-	.	ID=y;Parent=gene_overlapping_exons_missing_stop	
+2	manual	exon	1550	1600	.	-	.	ID=e3;Parent=y
+2	manual	CDS	1575	1600	.	-	1	ID=c3;Parent=y
+2	manual	exon	1720	1750	.	-	.	ID=e4;Parent=y
+2	manual	CDS	1720	1725	.	-	1	ID=c4;Parent=y

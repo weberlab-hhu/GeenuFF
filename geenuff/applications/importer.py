@@ -1,4 +1,5 @@
 import os
+from pprint import pprint  # for debugging
 from abc import ABC, abstractmethod
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -306,7 +307,7 @@ class OrganizedGFFEntries(object):
         first = next(reader)
         seqid = first.seqid
         gene_group = [first]
-        organized[seqid] = [gene_group]
+        organized[seqid] = []
         for entry in reader:
             if entry.type in gene_level:
                 organized[seqid].append(gene_group)
@@ -316,6 +317,7 @@ class OrganizedGFFEntries(object):
                     seqid = entry.seqid
             else:
                 gene_group.append(entry)
+        organized[seqid].append(gene_group)
         return organized
 
     def _useful_gff_entries(self):
@@ -380,7 +382,7 @@ class GFFErrorHandling(object):
             # solution is to add an error mask that extends halfway to the appending super
             # loci in the intergenic region as something in this area appears to have gone wrong
             if not group['transcript_hs']:
-                error_h = self._get_sl_error_handler(i, 'both')
+                error_h = self._get_overlapping_error_handler(i, 'both')
             # the case of missing of implicit UTR ranges
             # the solution is similar to the one above
             for t_hs in group['transcript_hs']:
@@ -495,7 +497,7 @@ class ImportController(object):
     def add_gff(self, gff_file, err_handle, clean=True):
         def insert_handler_groups(self, groups):
             """Initiates the calling of the add_to_queue() function of the handlers
-            in the correct order.
+            in the correct order. Also initiates the insert of the many2many rows.
             """
             for group in groups:
                 group['super_locus_h'].add_to_queue()
@@ -532,6 +534,7 @@ class ImportController(object):
                 # reverse order on minus strand
                 minus = [g for g in groups if not g['super_locus_h'].is_plus_strand]
                 GFFErrorHandling(minus[::-1], False, self).resolve_errors()
+            import pudb; pudb.set_trace()
             # insert handlers
             insert_handler_groups(self, plus)
             insert_handler_groups(self, minus)
@@ -553,6 +556,7 @@ class ImportController(object):
                     geenuff_handler_groups = []
             # never do error checking across fasta sequence borders
             clean_and_insert(self, geenuff_handler_groups, clean)
+            geenuff_handler_groups = []
 
 
 class Insertable(ABC):

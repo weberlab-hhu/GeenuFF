@@ -1013,6 +1013,33 @@ def test_import_multiple_genomes():
     assert len(translateds_sl_1) + len(translateds_sl_2) + len(translateds_sl_3) == n_translated
 
 
+def test_dummyloci_multiple_errors():
+    """Tests if all errors generated for dummyloci_multiple{.gff|.fa} are correct"""
+    def error_in_list(error, error_list):
+        """error should be a dict and error list a list of orm objects"""
+        for e in error_list:
+            if (e['coord_id'] == error.coordinate.id and
+                    e['is_plus_strand'] == error.is_plus_strand and
+                    e['start'] == error.start and
+                    e['end'] == error.end):
+                return True
+        return False
+
+    controller = ImportController(database_path='sqlite:///:memory:')
+    controller.add_genome('testdata/dummyloci_multiple.fa',
+                          'testdata/dummyloci_multiple.gff',
+                          clean_gff=True)
+    errors = controller.session.query(orm.Feature).filter(orm.Feature.type == types.ERROR).all()
+    coords = controller.session.query(orm.Coordinate).all()
+
+    # test case 1 - see gff file for more documentation
+    # two identical error bars after cds for aligned exon/cds pair
+    error = {'coord_id': coords[0].id, 'is_plus_strand': True, start: 120, end: 500}
+    assert error_in_list(error, errors)
+
+    # assert len(errors) == 10
+
+
 def test_transcript_interpreter():
     """tests decoding of raw from-gff features via the TranscriptInterpreter class"""
     sl, controller = setup_dummyloci_super_locus()
