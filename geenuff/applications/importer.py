@@ -1,10 +1,4 @@
 import os
-import intervaltree
-import copy
-import logging
-import hashlib
-import itertools
-from pprint import pprint
 from abc import ABC, abstractmethod
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -154,8 +148,8 @@ class OrganizedGeenuffHandlerGroup(object):
                                        score=score,
                                        source=source,
                                        controller=self.controller)
-                gff_start = t_entries['exons'][0].start
-                gff_end = t_entries['exons'][-1].end
+                gff_start = t_entries['cds'][0].start
+                gff_end = t_entries['cds'][-1].end
                 cds_h.set_start_end_from_gff(gff_start, gff_end)
 
                 # insert everything so far into the dict
@@ -319,7 +313,7 @@ class OrganizedGFFEntries(object):
             if entry.type in gene_level:
                 if entry.seqid != seqid:
                     organized[entry.seqid] = []
-                    seqid = entry_seqid
+                    seqid = entry.seqid
                 organized[seqid].append(gene_group)
                 gene_group = [entry]
             else:
@@ -425,10 +419,10 @@ class GFFErrorHandling(object):
         error_start = sl_h.start
         error_end = sl_h.end
         if direction in ['5p', 'both'] and i > 0:
-            sl_h_prev = geenuff_handler_groups[i - 1]['super_locus_h']
+            sl_h_prev = self.groups[i - 1]['super_locus_h']
             error_start = self._halfway_mark(sl_h_prev, sl_h)
         if direction in ['3p', 'both'] and i < len(self.groups) - 1:
-            sl_h_next = geenuff_handler_groups[i + 1]['super_locus_h']
+            sl_h_next = self.groups[i + 1]['super_locus_h']
             error_end = self._halfway_mark(sl_h, sl_h_next)
         error_h = self._get_error_handler(sl_h.coord,
                                           error_start,
@@ -713,7 +707,7 @@ class FeatureHandler(handlers.FeatureHandlerBase, Insertable):
         if not self.is_plus_strand:
             sortable_start = sortable_start * -1
             sortable_end = sortable_end * -1
-        return self.coord.seqid, self.is_plus_strand, sortable_start, sortable_end, self.type
+        return self.coord.seqid, self.is_plus_strand, sortable_start, sortable_end, self.feature_type
 
     def __repr__(self):
         params = {
