@@ -38,12 +38,12 @@
 1	manual	exon	1600	1700	.	+	.	ID=e0;Parent=x
 1	manual	CDS	1611	1700	.	+	0	ID=c0;Parent=x
 1	manual	exon	1782	1800	.	+	.	ID=e1;Parent=x
-1	manual	CDS	1782	1800	.	+	0	ID=c1;Parent=x
+1	manual	CDS	1782	1795	.	+	0	ID=c1;Parent=x
 1	manual	mRNA	1600	1800	.	+	.	ID=y;Parent=gene_no_ATG
 1	manual	exon	1600	1700	.	+	.	ID=e2;Parent=y
 1	manual	CDS	1620	1700	.	+	0	ID=c2_problem;Parent=y
 1	manual	exon	1782	1800	.	+	.	ID=e3;Parent=y
-1	manual	CDS	1782	1800	.	+	0	ID=c3;Parent=y
+1	manual	CDS	1782	1795	.	+	0	ID=c3;Parent=y
 #
 # test case 5: gene without errors, but with introns of length 0
 # the first transscript contains the exons without a gap in between them
