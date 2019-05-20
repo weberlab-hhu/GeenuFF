@@ -84,9 +84,7 @@ class OrganizedGeenuffHandlerGroup(object):
         self._parse_gff_entries(organized_gff_entries)
 
     def _parse_gff_entries(self, entries):
-        """Changes the GFF format into the GeenuFF format. Does all the parsing and
-        also inserts the association tables."""
-
+        """Changes the GFF format into the GeenuFF format. Does all the parsing."""
         sl = entries['super_locus']
         # these attr are the same for all geenuff handlers going to be created
         is_plus_strand = get_strand_direction(sl)
@@ -311,11 +309,11 @@ class OrganizedGFFEntries(object):
         organized[seqid] = [gene_group]
         for entry in reader:
             if entry.type in gene_level:
+                organized[seqid].append(gene_group)
+                gene_group = [entry]
                 if entry.seqid != seqid:
                     organized[entry.seqid] = []
                     seqid = entry.seqid
-                organized[seqid].append(gene_group)
-                gene_group = [entry]
             else:
                 gene_group.append(entry)
         return organized
@@ -665,7 +663,7 @@ class FeatureHandler(handlers.FeatureHandlerBase, Insertable):
         self.end_is_biological_end = None
         self.controller = controller
 
-    def add_to_queue(self, transcript_piece_h=None):
+    def add_to_queue(self):
         feature = {
             'id': self.id,
             'type': self.feature_type,
