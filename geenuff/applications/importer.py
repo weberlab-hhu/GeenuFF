@@ -140,11 +140,17 @@ class OrganizedGeenuffHandlerGroup(object):
                                         super_locus_id=sl_h.id,
                                         controller=self.controller)
                 # create coding features from exon limits
+                if is_plus_strand:
+                    phase_5p = t_entries['cds'][0].phase
+                    phase_3p = t_entries['cds'][-1].phase
+                else:
+                    phase_5p = t_entries['cds'][-1].phase
+                    phase_3p = t_entries['cds'][0].phase
                 cds_h = FeatureHandler(self.coord,
                                        is_plus_strand,
                                        types.CODING,
-                                       # take the coding phase from the first cds entry in the gff
-                                       phase=t_entries['cds'][0].phase,
+                                       phase_5p=phase_5p,
+                                       phase_3p=phase_3p,
                                        score=score,
                                        source=source,
                                        controller=self.controller)
@@ -410,6 +416,23 @@ class GFFErrorHandling(object):
                         start = cds.end
                         error_hs.append(self._get_overlapping_err_h(i, start, '3p',
                                                                     types.MISSING_STOP_CODON))
+                    # the case of wrong phases
+                    if cds.phase_5p != 0:
+                        start = cds.start
+                        error_hs.append(self._get_overlapping_err_h(i, start, '5p',
+                                                                    types.WRONG_STARTING_PHASE))
+
+                    # if cds.phase_3p !=
+
+    def _get_coding_length(self, t_hs):
+        """Calculates the total length of all previously distince cds regions"""
+        total_intron_len = 0
+        for intron in t_hs['intron_hs']:
+            total_intron_len += abs(intron.start - intron.end)
+        cds_len = abs(t_hs['cds_h'].start - t_hs['cds_h'].end)
+        assert total_intron_len < cds_len
+        return cds_len - total_intron_len
+
 
     def _get_error_handler(self, coord, start, end, is_plus_strand, error_type):
         # todo logging
@@ -686,7 +709,7 @@ class SuperLocusHandler(handlers.SuperLocusHandlerBase, Insertable):
 
 
 class FeatureHandler(handlers.FeatureHandlerBase, Insertable):
-    def __init__(self, coord, is_plus_strand, feature_type, controller, start=-1, end=-1, given_name=None, phase=0, score=None, source=None):
+    def __init__(self, coord, is_plus_strand, feature_type, controller, start=-1, end=-1, given_name=None, phase_5p=0, phase_3p=0, score=None, source=None):
         """Initializes a handler for a soon to be inserted geenuff feature."""
         super().__init__()
         self.id = InsertCounterHolder.feature()
@@ -697,7 +720,8 @@ class FeatureHandler(handlers.FeatureHandlerBase, Insertable):
         # start/end may have to be adapted to geenuff
         self.start = start
         self.end = end
-        self.phase = phase
+        self.phase_5p = phase_5p
+        self.phase_3p = phase_3p  # only used for error checking
         self.score = score
         self.source = source
         self.start_is_biological_start = None
@@ -713,7 +737,7 @@ class FeatureHandler(handlers.FeatureHandlerBase, Insertable):
             'is_plus_strand': self.is_plus_strand,
             'score': self.score,
             'source': self.source,
-            'phase': self.phase,
+            'phase': self.phase_5p,
             'start': self.start,
             'end': self.end,
             'start_is_biological_start': self.start_is_biological_start,
