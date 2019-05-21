@@ -166,14 +166,16 @@ class Feature(Base):
                                back_populates='features')
 
     __table_args__ = (
+        # going to fail for identical error features that come from different error cases
         UniqueConstraint('coordinate_id', 'type', 'start', 'end', 'is_plus_strand',
                          name='unique_feature'),
-        CheckConstraint(end >= -1, name='check_end_minus1plus'),
-        CheckConstraint(start >= 0, name="check_start_0plus"),
-        CheckConstraint(phase >= 0, name='check_phase_not_negative'),
-        CheckConstraint(phase < 3, name='check_phase_less_three'),
+        CheckConstraint('start >= 0 and end >= -1 and phase >= 0 and phase < 3',
+                        name='check_start_end_phase'),
         # if start_is_biological_start is True, phase has to be 0
-        CheckConstraint('not start_is_biological_start or phase = 0', name='check_phase_bio_start')
+        CheckConstraint('not start_is_biological_start or phase = 0', name='check_phase_bio_start'),
+        # check start/end order depending on is_plus_strand
+        CheckConstraint('(is_plus_strand and start <= end) or (not is_plus_strand and end <= start)',
+                        name='start_end_order')
     )
 
     def __repr__(self):
