@@ -1022,7 +1022,8 @@ def test_dummyloci_multiple_errors():
             if (error['coord_id'] == e.coordinate.id and
                     error['is_plus_strand'] == e.is_plus_strand and
                     error['start'] == e.start and
-                    error['end'] == e.end):
+                    error['end'] == e.end and
+                    error['type'] == e.type.value):
                 error_list.remove(e)
                 return True
         return False
@@ -1031,19 +1032,44 @@ def test_dummyloci_multiple_errors():
     controller.add_genome('testdata/dummyloci_multiple.fa',
                           'testdata/dummyloci_multiple.gff',
                           clean_gff=True)
-    errors = controller.session.query(orm.Feature).filter(orm.Feature.type == types.ERROR).all()
+    error_types = [t.value for t in types.Errors]
+    errors = controller.session.query(orm.Feature).filter(orm.Feature.type.in_(error_types)).all()
     coords = controller.session.query(orm.Coordinate).all()
 
     # test case 1 - see gff file for more documentation
     # two identical error bars after cds for aligned exon/cds pair
-    error = {'coord_id': coords[0].id, 'is_plus_strand': True, 'start': 120, 'end': 499}
+    error = {
+        'coord_id': coords[0].id,
+        'is_plus_strand': True,
+        'start': 120,
+        'end': 499,
+        'type': types.MISSING_UTR_3P
+    }
     assert error_in_list(error, errors)
+    assert error_in_list(error, errors)
+    error = {
+        'coord_id': coords[0].id,
+        'is_plus_strand': True,
+        'start': 0,
+        'end': 110,
+        'type': types.MISSING_UTR_5P
+    }
     assert error_in_list(error, errors)
 
     # test case 2
-    error = {'coord_id': coords[0].id, 'is_plus_strand': True, 'start': 499, 'end': 1099}
+    error = {
+        'coord_id': coords[0].id,
+        'is_plus_strand': True,
+        'start': 499,
+        'end': 1099,
+        'type': types.EMPTY_SUPER_LOCUS
+    }
     assert error_in_list(error, errors)
+
+
     assert not errors
+
+    # test case 4 (test case 3 is without errors)
 
 
 def test_transcript_interpreter():

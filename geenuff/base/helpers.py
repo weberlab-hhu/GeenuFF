@@ -180,6 +180,53 @@ def to_exclusive_end(end, is_plus_strand):
         return end - 1
 
 
+##### Reverse complement #####
+
+def mk_rc_key():
+    fw = "ACGTMRWSYKVHDBN"
+    rv = "TGCAKYWSRMBDHVN"
+    key = {}
+    for f, r in zip(fw, rv):
+        key[f] = r
+    return key
+
+
+# so one doesn't recalculate it for every call of revers_complement
+REV_COMPLEMENT_KEY = mk_rc_key()
+
+
+def reverse_complement(seq):
+    key = REV_COMPLEMENT_KEY
+    rc_seq = []
+    for base in reversed(seq):
+        try:
+            rc_seq.append(key[base])
+        except KeyError as e:
+            raise KeyError('{} caused by non DNA character {}'.format(e, base))
+    return rc_seq
+
+
+##### Start/Stop codon detection #####
+
+START_CODON = 'ATG'
+START_CODON_COMP = reverse_complement(START_CODON)
+STOP_CODONS = ['TAG', 'TGA', 'TAA']
+STOP_CODONS_COMP = [reverse_complement(c) for c in STOP_CODONS]
+
+
+def has_start_codon(seq, pos, is_plus_strand):
+    if is_plus_strand:
+        return seq[pos:pos+3] == START_CODON
+    else:
+        return seq[pos:pos-3] == START_CODON_COMP
+
+
+def has_stop_codon(seq, pos, is_plus_strand):
+    if is_plus_strand:
+        return seq[pos:pos+3] in STOP_CODONS
+    else:
+        return seq[pos:pos-3] in STOP_CODONS_COMP
+
 ##### SQL alchemy core queue control #####
 
 class Counter(object):

@@ -9,7 +9,8 @@ from .. import orm
 from .. import types
 from .. import handlers
 from .. import helpers
-from ..base.helpers import get_strand_direction, get_geenuff_start_end
+from ..base.helpers import (get_strand_direction, get_geenuff_start_end,
+                            has_start_codon, has_stop_codon)
 
 
 # core queue prep
@@ -370,9 +371,10 @@ class GFFErrorHandling(object):
     super loci, and looks for errors. Error features may be inserted and handlers be
     removed when deemed necessary.
     """
-    def __init__(self, geenuff_handler_groups, is_plus_strand, controller):
+    def __init__(self, geenuff_handler_groups, controller):
         self.groups = geenuff_handler_groups
-        self.is_plus_strand = is_plus_strand
+        if self.groups:
+            self.is_plus_strand = self.groups[0]['super_locus_h'].is_plus_strand
         self.controller = controller
 
     def resolve_errors(self):
@@ -380,59 +382,92 @@ class GFFErrorHandling(object):
             # the case of no transcript for a super locus
             # solution is to add an error mask that extends halfway to the appending super
             # loci in the intergenic region as something in this area appears to have gone wrong
+            error_hs = group['error_hs']
             if not group['transcript_hs']:
-                group['error_hs'] += self._get_overlapping_error_handler(i, None, 'whole')
-            # the case of missing of implicit UTR ranges
-            # the solution is similar to the one above
+                error_hs.append(self._get_overlapping_err_h(i, None, 'whole',
+                                                            types.EMPTY_SUPER_LOCUS))
+
+            # other cases
             for t_hs in group['transcript_hs']:
                 # if coding transcript
                 if 'cds_h' in t_hs:
-                    if t_hs['cds_h'].start == t_hs['transcript_feature_h'].start:
-                        start = t_hs['cds_h'].start
-                        group['error_hs'] += self._get_overlapping_error_handler(i, start, '5p')
-                    if t_hs['cds_h'].end == t_hs['transcript_feature_h'].end:
-                        start = t_hs['cds_h'].end
-                        group['error_hs'] += self._get_overlapping_error_handler(i, start, '3p')
+                    # the case of missing of implicit UTR ranges
+                    # the solution is similar to the one above
+                    cds = t_hs['cds_h']
+                    if cds.start == t_hs['transcript_feature_h'].start:
+                        start = cds.start
+                        error_hs.append(self._get_overlapping_err_h(i, start, '5p',
+                                                                    types.MISSING_UTR_5P))
+                    if cds.end == t_hs['transcript_feature_h'].end:
+                        start = cds.end
+                        error_hs.append(self._get_overlapping_err_h(i, start, '3p',
+                                                                    types.MISSING_UTR_3P))
+                    # the case of missing start/stop codon
+                    if not has_start_codon(cds.coord.sequence, cds.start, self.is_plus_strand):
+                        start = cds.start
+                        error_hs.append(self._get_overlapping_err_h(i, start, '5p',
+                                                                    types.MISSING_START_CODON))
+                    if not has_stop_codon(cds.coord.sequence, cds.end, self.is_plus_strand):
+                        start = cds.end
+                        error_hs.append(self._get_overlapping_err_h(i, start, '3p',
+                                                                    types.MISSING_STOP_CODON))
 
-    def _get_error_handler(self, coord, start, end, is_plus_strand):
+    def _get_error_handler(self, coord, start, end, is_plus_strand, error_type):
         # todo logging
         error_h = FeatureHandler(coord,
                                  is_plus_strand,
-                                 types.ERROR,
+                                 error_type,
                                  start=start,
                                  end=end,
                                  controller=self.controller)
         return error_h
 
-    def _get_overlapping_error_handler(self, i, start, direction):
+    def _get_overlapping_err_h(self, i, start, direction, error_type):
         """Constructs an error features that overlaps halfway to the next super locus
-        in the given direction if possible.
+        in the given direction if possible. Otherwise mark until the end.
         The error feature extends in the given direction from the start value on.
         If the direction is 'whole', the start value is ignored.
         """
         assert direction in ['5p', '3p', 'whole']
         sl_h = self.groups[i]['super_locus_h']
-        sl_h_prev = self.groups[i - 1]['super_locus_h']
-        sl_h_next = self.groups[i + 1]['super_locus_h']
-        error_start = -1
-        error_end = -1
-        if direction == '5p' and i > 0:
-            error_start = self._halfway_mark(sl_h_prev, sl_h)
+
+        # set correct upstream error starting point
+        if direction in ['5p', 'whole']:
+            if i > 0:
+                sl_h_prev = self.groups[i - 1]['super_locus_h']
+                anker_5p = self._halfway_mark(sl_h_prev, sl_h)
+            else:
+                if self.is_plus_strand:
+                    anker_5p = 0
+                else:
+                    anker_5p = sl_h.end - 1
+
+        # set correct downstream error end point
+        if direction in ['3p', 'whole']:
+            if i < len(self.groups) -1:
+                sl_h_next = self.groups[i + 1]['super_locus_h']
+                anker_3p = self._halfway_mark(sl_h, sl_h_next)
+            else:
+                if self.is_plus_strand:
+                    anker_3p = sl_h.end
+                else:
+                    anker_3p = -1
+
+        if direction == '5p':
+            error_start = anker_5p
             error_end = start
-        elif direction =='3p' and i < len(self.groups) - 1:
+        elif direction =='3p':
             error_start = start
-            error_end = self._halfway_mark(sl_h, sl_h_next)
+            error_end = anker_3p
         elif direction == 'whole':
-            error_start = self._halfway_mark(sl_h_prev, sl_h)
-            error_end = self._halfway_mark(sl_h, sl_h_next)
-        if error_start > -1:
-            error_h = self._get_error_handler(sl_h.coord,
-                                              error_start,
-                                              error_end,
-                                              self.is_plus_strand)
-            return [error_h]
-        else:
-            return []
+            error_start = anker_5p
+            error_end = anker_3p
+        error_h = self._get_error_handler(sl_h.coord,
+                                          error_start,
+                                          error_end,
+                                          self.is_plus_strand,
+                                          error_type)
+        return error_h
 
     def _halfway_mark(self, sl_h, sl_h_next):
         """Calculates the half way point between two super loci, which is then used for
@@ -529,15 +564,15 @@ class ImportController(object):
                     e_h.add_to_queue()
 
         def clean_and_insert(self, groups, clean):
+            plus = [g for g in groups if g['super_locus_h'].is_plus_strand]
+            minus = [g for g in groups if not g['super_locus_h'].is_plus_strand]
             if clean:
                 # check and correct for errors
                 # do so for each strand seperately
                 # all changes should be made by reference
-                plus = [g for g in groups if g['super_locus_h'].is_plus_strand]
-                GFFErrorHandling(plus, True, self).resolve_errors()
+                GFFErrorHandling(plus, self).resolve_errors()
                 # reverse order on minus strand
-                minus = [g for g in groups if not g['super_locus_h'].is_plus_strand]
-                GFFErrorHandling(minus[::-1], False, self).resolve_errors()
+                GFFErrorHandling(minus[::-1], self).resolve_errors()
             # insert handlers
             insert_handler_groups(self, plus)
             insert_handler_groups(self, minus)
