@@ -214,18 +214,20 @@ STOP_CODONS = ['TAG', 'TGA', 'TAA']
 STOP_CODONS_COMP = [reverse_complement(c) for c in STOP_CODONS]
 
 
-def has_start_codon(seq, pos, is_plus_strand):
+def has_start_codon(seq, start, is_plus_strand):
     if is_plus_strand:
-        return seq[pos:pos+3] == START_CODON
+        return seq[start:start+3] == START_CODON
     else:
-        return seq[pos:pos-3] == START_CODON_COMP
+        return seq[start-2:start+1] == START_CODON_COMP
 
 
-def has_stop_codon(seq, pos, is_plus_strand):
+def has_stop_codon(seq, end, is_plus_strand):
     if is_plus_strand:
-        return seq[pos:pos+3] in STOP_CODONS
+        # end is exclusive
+        return seq[end-3:end] in STOP_CODONS
     else:
-        return seq[pos:pos-3] in STOP_CODONS_COMP
+        # end is inclusive
+        return seq[end+1:end+4] in STOP_CODONS_COMP
 
 ##### SQL alchemy core queue control #####
 

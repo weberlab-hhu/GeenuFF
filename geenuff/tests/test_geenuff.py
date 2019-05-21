@@ -1067,6 +1067,7 @@ def test_dummyloci_multiple_errors():
     assert error_in_list(error, errors)
 
 
+    import pudb; pudb.set_trace()
     assert not errors
 
     # test case 4 (test case 3 is without errors)

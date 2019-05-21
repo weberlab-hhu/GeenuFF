@@ -1,10 +1,10 @@
 ##gff-version 3
 # test case 1: aligned cds and exon features at the boundaries (no UTR marked implicitely)
-# as well as a missing stop codon
+# as well as a missing start codon
 # 
 # the first transcript has the alignment error at the coding end
 # the second transcript is without errors 
-# the third transcript has the alignment error on both ends as well as no start
+# the third transcript has the alignment error on both ends as well as no start codon
 1	manual	gene	1	400	.	+	.	ID=gene0
 1	manual	mRNA	1	120	.	+	.	ID=x;Parent=gene0
 1	manual	exon	1	20	.	+	.	ID=ftr000000;Parent=x
