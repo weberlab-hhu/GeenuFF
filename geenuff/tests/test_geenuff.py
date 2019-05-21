@@ -1055,6 +1055,14 @@ def test_dummyloci_multiple_errors():
         'type': types.MISSING_UTR_5P
     }
     assert error_in_list(error, errors)
+    error = {
+        'coord_id': coords[0].id,
+        'is_plus_strand': True,
+        'start': 0,
+        'end': 110,
+        'type': types.MISSING_START_CODON
+    }
+    assert error_in_list(error, errors)
 
     # test case 2
     error = {
@@ -1067,10 +1075,38 @@ def test_dummyloci_multiple_errors():
     assert error_in_list(error, errors)
 
 
-    import pudb; pudb.set_trace()
+    # test case 4 (test case 3 is without errors)
+    error = {
+        'coord_id': coords[0].id,
+        'is_plus_strand': True,
+        'start': 1499,
+        'end': 1619,
+        'type': types.MISSING_START_CODON
+    }
+    assert error_in_list(error, errors)
+
+    # test case 7
+    error = {
+        'coord_id': coords[1].id,
+        'is_plus_strand': False,
+        'start': 948,
+        'end': -1,
+        'type': types.MISSING_UTR_3P
+    }
+    assert error_in_list(error, errors)
+
+    # test case 8
+    error = {
+        'coord_id': coords[1].id,
+        'is_plus_strand': False,
+        'start': 1749,  # inclusive start of the minus strand
+        'end': 1724,  # exclusive end of intergenic region
+        'type': types.MISSING_START_CODON
+    }
+
+    assert error_in_list(error, errors)
     assert not errors
 
-    # test case 4 (test case 3 is without errors)
 
 
 def test_transcript_interpreter():

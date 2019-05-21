@@ -209,25 +209,31 @@ def reverse_complement(seq):
 ##### Start/Stop codon detection #####
 
 START_CODON = 'ATG'
-START_CODON_COMP = reverse_complement(START_CODON)
+START_CODON_COMP = ''.join(reverse_complement(START_CODON))
 STOP_CODONS = ['TAG', 'TGA', 'TAA']
-STOP_CODONS_COMP = [reverse_complement(c) for c in STOP_CODONS]
+STOP_CODONS_COMP = [''.join(reverse_complement(c)) for c in STOP_CODONS]
+
+
+def substr_seq(seq, start, end, is_plus_strand):
+    """returns a substring of sequence according to geenuff coordinates and strand type"""
+    if is_plus_strand:
+        return seq[start:end]
+    else:
+        return seq[end+1:start+1]
 
 
 def has_start_codon(seq, start, is_plus_strand):
     if is_plus_strand:
-        return seq[start:start+3] == START_CODON
+        return substr_seq(seq, start, start + 3, is_plus_strand) == START_CODON
     else:
-        return seq[start-2:start+1] == START_CODON_COMP
+        return substr_seq(seq, start, start - 3, is_plus_strand) == START_CODON_COMP
 
 
 def has_stop_codon(seq, end, is_plus_strand):
     if is_plus_strand:
-        # end is exclusive
-        return seq[end-3:end] in STOP_CODONS
+        return substr_seq(seq, end - 3, end, is_plus_strand) in STOP_CODONS
     else:
-        # end is inclusive
-        return seq[end+1:end+4] in STOP_CODONS_COMP
+        return substr_seq(seq, end + 3, end, is_plus_strand) in STOP_CODONS_COMP
 
 ##### SQL alchemy core queue control #####
 

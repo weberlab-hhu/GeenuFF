@@ -265,11 +265,10 @@ class OrganizedGFFEntryGroup(object):
         # set the coordinate
         self.coord = self.genome_h.gffid_to_coords[self.entries['super_locus'].seqid]
 
-        # order exon and cds lists by start value with regards to strand
-        is_plus_strand = get_strand_direction(self.entries['super_locus'])
+        # order exon and cds lists by start value (disregard strand for now)
         for _, value_dict in self.entries['transcripts'].items():
             for key in ['exons', 'cds']:
-                value_dict[key].sort(key=lambda e:e.start, reverse=not is_plus_strand)
+                value_dict[key].sort(key=lambda e:e.start)
 
     def get_geenuff_handlers(self):
         geenuff_handler_group = OrganizedGeenuffHandlerGroup(self.entries,
@@ -440,7 +439,7 @@ class GFFErrorHandling(object):
                 if self.is_plus_strand:
                     anker_5p = 0
                 else:
-                    anker_5p = sl_h.end - 1
+                    anker_5p = sl_h.start
 
         # set correct downstream error end point
         if direction in ['3p', 'whole']:
