@@ -426,14 +426,24 @@ class GFFErrorHandling(object):
                         error_hs.append(self._get_overlapping_err_h(i, start, '5p',
                                                                     types.WRONG_STARTING_PHASE))
                     if introns:
-                        if not self.is_plus_strand:
-                            import pudb; pudb.set_trace()
                         len_3p_exon = abs(cds.end - t_hs['intron_hs'][-1].end)
                         # can't think of a better way to check 3p phase
                         if cds.phase_3p != (3 - len_3p_exon % 3) % 3:
                             start = cds.end
                             error_hs.append(self._get_overlapping_err_h(i, start, '3p',
                                                                         types.MISMATCHED_ENDING_PHASE))
+                        # the case of a too short intron
+                        for intron in introns:
+                            # todo put this in a config somewhere
+                            if abs(intron.end - intron.start) < 60:
+                                coord = self.groups[i]['super_locus_h'].coord
+                                error_h = self._get_error_handler(coord,
+                                                                  intron.start,
+                                                                  intron.end,
+                                                                  self.is_plus_strand,
+                                                                  types.TOO_SHORT_INTRON)
+                                error_hs.append(error_h)
+
 
     def _get_error_handler(self, coord, start, end, is_plus_strand, error_type):
         # todo logging
@@ -463,7 +473,7 @@ class GFFErrorHandling(object):
                 if self.is_plus_strand:
                     anker_5p = 0
                 else:
-                    anker_5p = sl_h.start
+                    anker_5p = sl_h.coord.end
 
         # set correct downstream error end point
         if direction in ['3p', 'whole']:
@@ -472,7 +482,7 @@ class GFFErrorHandling(object):
                 anker_3p = self._halfway_mark(sl_h, sl_h_next)
             else:
                 if self.is_plus_strand:
-                    anker_3p = sl_h.end
+                    anker_3p = sl_h.coord.end
                 else:
                     anker_3p = -1
 

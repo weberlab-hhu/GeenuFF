@@ -1074,7 +1074,6 @@ def test_dummyloci_multiple_errors():
     }
     assert error_in_list(error, errors)
 
-
     # test case 4 (test case 3 is without errors)
     error = {
         'coord_id': coords[0].id,
@@ -1085,13 +1084,41 @@ def test_dummyloci_multiple_errors():
     }
     assert error_in_list(error, errors)
 
+    #### Coordinate 1 ####
+
+    # test case 6
+    error = {
+        'coord_id': coords[1].id,
+        'is_plus_strand': True,
+        'start': 424,
+        'end': 524,
+        'type': types.WRONG_STARTING_PHASE
+    }
+    assert error_in_list(error, errors)
+    error = {
+        'coord_id': coords[1].id,
+        'is_plus_strand': True,
+        'start': 540,
+        'end': 579,
+        'type': types.TOO_SHORT_INTRON
+    }
+    assert error_in_list(error, errors)
+
     # test case 7
     error = {
         'coord_id': coords[1].id,
         'is_plus_strand': False,
-        'start': 948,
+        'start': 1449,
+        'end': 1349,
+        'type': types.MISSING_UTR_5P
+    }
+    assert error_in_list(error, errors)
+    error = {
+        'coord_id': coords[1].id,
+        'is_plus_strand': False,
+        'start': 973,
         'end': -1,
-        'type': types.MISSING_UTR_3P
+        'type': types.MISMATCHED_ENDING_PHASE
     }
     assert error_in_list(error, errors)
 
@@ -1099,12 +1126,15 @@ def test_dummyloci_multiple_errors():
     error = {
         'coord_id': coords[1].id,
         'is_plus_strand': False,
-        'start': 1749,  # inclusive start of the minus strand
+        # inclusive start of the minus strand from beginning of the sequence
+        'start': 1755,
         'end': 1724,  # exclusive end of intergenic region
         'type': types.MISSING_START_CODON
     }
 
     assert error_in_list(error, errors)
+
+    import pudb; pudb.set_trace()
     assert not errors
 
 
