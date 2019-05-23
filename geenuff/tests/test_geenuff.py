@@ -12,7 +12,6 @@ from ..applications import importer
 from ..applications.importer import ImportController
 from .. import types
 from .. import handlers
-from ..base.transcript_interp import Range, TranscriptCoordinate, TranscriptInterpBase
 from .. import helpers
 
 
@@ -1092,7 +1091,7 @@ def test_dummyloci_multiple_errors():
         'is_plus_strand': True,
         'start': 424,
         'end': 524,
-        'type': types.WRONG_STARTING_PHASE
+        'type': types.WRONG_PHASE_5P
     }
     assert error_in_list(error, errors)
     error = {
@@ -1118,7 +1117,7 @@ def test_dummyloci_multiple_errors():
         'is_plus_strand': False,
         'start': 973,
         'end': -1,
-        'type': types.MISMATCHED_ENDING_PHASE
+        'type': types.MISMATCHED_PHASE_3P
     }
     assert error_in_list(error, errors)
 
@@ -1136,13 +1135,13 @@ def test_dummyloci_multiple_errors():
         'coord_id': coords[1].id,
         'is_plus_strand': False,
         'start': 1649,
-        'end': 1573,
+        'end': 1548,
         'type': types.OVERLAPPING_EXONS
     }
     assert error_in_list(error, errors)
 
+    # test that we don't have any errors we don't expect
     assert not errors
-
 
 
 def test_transcript_interpreter():

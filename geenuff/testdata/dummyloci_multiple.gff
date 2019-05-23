@@ -99,7 +99,7 @@
 # the second transcript is without errors
 2	manual	gene	1550	1750	.	-	.	ID=gene_overlapping_exons_missing_start
 2	manual	mRNA	1550	1750	.	-	.	ID=x;Parent=gene_overlapping_exons_missing_start	
-2	manual	exon	1550	1600	.	-	.	ID=e0_problem;Parent=x
+2	manual	exon	1550	1600	.	-	.	ID=e0;Parent=x
 2	manual	CDS	1575	1600	.	-	1	ID=c0_problem;Parent=x
 2	manual	exon	1599	1650	.	-	.	ID=e1;Parent=x
 2	manual	CDS	1599	1650	.	-	2	ID=c1_problem;Parent=x

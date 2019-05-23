@@ -113,13 +113,13 @@ MISSING_UTR_3P = 'missing_utr_3p'
 EMPTY_SUPER_LOCUS = 'empty_super_locus'
 MISSING_START_CODON = 'missing_start_codon'
 MISSING_STOP_CODON = 'missing_stop_codon'
-WRONG_STARTING_PHASE = 'wrong_starting_phase'
-MISMATCHED_ENDING_PHASE = 'mismatched_ending_phase'
+WRONG_PHASE_5P = 'wrong_starting_phase'
+MISMATCHED_PHASE_3P = 'mismatched_ending_phase'
 OVERLAPPING_EXONS = 'overlapping_exons'
 TOO_SHORT_INTRON = 'too_short_intron'
 Errors = make_enum('Errors', MISSING_UTR_5P, MISSING_UTR_3P, EMPTY_SUPER_LOCUS, MISSING_START_CODON,
-                   MISSING_STOP_CODON, WRONG_STARTING_PHASE, MISMATCHED_ENDING_PHASE,
-                   OVERLAPPING_EXONS, TOO_SHORT_INTRON)
+                   MISSING_STOP_CODON, WRONG_PHASE_5P, MISMATCHED_PHASE_3P, OVERLAPPING_EXONS,
+                   TOO_SHORT_INTRON)
 
 # bearings
 START = 'start'

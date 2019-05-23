@@ -393,11 +393,9 @@ class GFFErrorHandling(object):
             # the case of no transcript for a super locus
             # solution is to add an error mask that extends halfway to the appending super
             # loci in the intergenic region as something in this area appears to have gone wrong
-            error_hs = group['error_hs']
+            self.error_hs = group['error_hs']
             if not group['transcript_hs']:
-                error_hs.append(self._get_overlapping_err_h(i, None, 'whole',
-                                                            types.EMPTY_SUPER_LOCUS))
-
+                self._add_overlapping_err_h(i, None, 'whole', types.EMPTY_SUPER_LOCUS)
             # other cases
             for t_hs in group['transcript_hs']:
                 # if coding transcript
@@ -408,34 +406,28 @@ class GFFErrorHandling(object):
                     introns = t_hs['intron_hs']
                     if cds.start == t_hs['transcript_feature_h'].start:
                         start = cds.start
-                        error_hs.append(self._get_overlapping_err_h(i, start, '5p',
-                                                                    types.MISSING_UTR_5P))
+                        self._add_overlapping_err_h(i, cds.start, '5p', types.MISSING_UTR_5P)
                     if cds.end == t_hs['transcript_feature_h'].end:
                         start = cds.end
-                        error_hs.append(self._get_overlapping_err_h(i, start, '3p',
-                                                                    types.MISSING_UTR_3P))
+                        self._add_overlapping_err_h(i, start, '3p', types.MISSING_UTR_3P)
                     # the case of missing start/stop codon
                     if not has_start_codon(cds.coord.sequence, cds.start, self.is_plus_strand):
                         start = cds.start
-                        error_hs.append(self._get_overlapping_err_h(i, start, '5p',
-                                                                    types.MISSING_START_CODON))
+                        self._add_overlapping_err_h(i, start, '5p', types.MISSING_START_CODON)
                     if not has_stop_codon(cds.coord.sequence, cds.end, self.is_plus_strand):
                         start = cds.end
-                        error_hs.append(self._get_overlapping_err_h(i, start, '3p',
-                                                                    types.MISSING_STOP_CODON))
+                        self._add_overlapping_err_h(i, start, '3p', types.MISSING_STOP_CODON)
                     # the case of wrong 5p phase
                     if cds.phase_5p != 0:
                         start = cds.start
-                        error_hs.append(self._get_overlapping_err_h(i, start, '5p',
-                                                                    types.WRONG_STARTING_PHASE))
+                        self._add_overlapping_err_h(i, start, '5p', types.WRONG_PHASE_5P)
                     if introns:
                         # the case of wrong 3p phase
                         len_3p_exon = abs(cds.end - t_hs['intron_hs'][-1].end)
                         # can't think of a better way to check 3p phase
                         if cds.phase_3p != (3 - len_3p_exon % 3) % 3:
                             start = cds.end
-                            error_hs.append(self._get_overlapping_err_h(i, start, '3p',
-                                                                        types.MISMATCHED_ENDING_PHASE))
+                            self._add_overlapping_err_h(i, start, '3p', types.MISMATCHED_PHASE_3P)
                         for j, intron in enumerate(introns):
                             # the case of overlapping exons
                             if ((self.is_plus_strand and intron.end < intron.start) or
@@ -449,23 +441,16 @@ class GFFErrorHandling(object):
                                     error_end = introns[j + 1].start
                                 else:
                                     error_end = t_hs['transcript_feature_h'].end
-                                error_h = self._get_error_handler(error_start,
-                                                                  error_end,
-                                                                  self.is_plus_strand,
-                                                                  types.OVERLAPPING_EXONS)
-                                error_hs.append(error_h)
+                                self._add_error_handler(error_start, error_end, self.is_plus_strand,
+                                                        types.OVERLAPPING_EXONS)
                             # the case of a too short intron
                             # todo put the minimum length in a config somewhere
                             elif abs(intron.end - intron.start) < 60:
-                                error_h = self._get_error_handler(intron.start,
-                                                                  intron.end,
-                                                                  self.is_plus_strand,
-                                                                  types.TOO_SHORT_INTRON)
-                                error_hs.append(error_h)
+                                self._add_error_handler(intron.start, intron.end,
+                                                        self.is_plus_strand, types.TOO_SHORT_INTRON)
 
 
-
-    def _get_error_handler(self, start, end, is_plus_strand, error_type):
+    def _add_error_handler(self, start, end, is_plus_strand, error_type):
         # todo logging
         error_h = FeatureHandler(self.coord,
                                  is_plus_strand,
@@ -473,9 +458,9 @@ class GFFErrorHandling(object):
                                  start=start,
                                  end=end,
                                  controller=self.controller)
-        return error_h
+        self.error_hs.append(error_h)
 
-    def _get_overlapping_err_h(self, i, start, direction, error_type):
+    def _add_overlapping_err_h(self, i, start, direction, error_type):
         """Constructs an error features that overlaps halfway to the next super locus
         in the given direction if possible. Otherwise mark until the end.
         The error feature extends in the given direction from the start value on.
@@ -515,7 +500,7 @@ class GFFErrorHandling(object):
         elif direction == 'whole':
             error_5p = anchor_5p
             error_3p = anchor_3p
-        error_h = self._get_error_handler(error_5p,
+        error_h = self._add_error_handler(error_5p,
                                           error_3p,
                                           self.is_plus_strand,
                                           error_type)
