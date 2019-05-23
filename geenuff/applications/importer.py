@@ -178,8 +178,10 @@ class OrganizedGeenuffHandlerGroup(object):
                     # the first base of an intron in right after the last exononic base
                     gff_start = exons[i].end + 1
                     gff_end = exons[i + 1].start - 1
-                    intron_h.set_start_end_from_gff(gff_start, gff_end)
-                    intron_hs.append(intron_h)
+                    # ignore introns that would come from directly adjacent exons
+                    if gff_start - gff_end != 1:
+                        intron_h.set_start_end_from_gff(gff_start, gff_end)
+                        intron_hs.append(intron_h)
                 if is_plus_strand:
                     t_handlers['intron_hs'] = intron_hs
                 else:
@@ -383,6 +385,7 @@ class GFFErrorHandling(object):
         self.groups = geenuff_handler_groups
         if self.groups:
             self.is_plus_strand = self.groups[0]['super_locus_h'].is_plus_strand
+            self.coord = self.groups[0]['super_locus_h'].coord
         self.controller = controller
 
     def resolve_errors(self):
@@ -420,34 +423,55 @@ class GFFErrorHandling(object):
                         start = cds.end
                         error_hs.append(self._get_overlapping_err_h(i, start, '3p',
                                                                     types.MISSING_STOP_CODON))
-                    # the case of wrong phases
+                    # the case of wrong 5p phase
                     if cds.phase_5p != 0:
                         start = cds.start
                         error_hs.append(self._get_overlapping_err_h(i, start, '5p',
                                                                     types.WRONG_STARTING_PHASE))
                     if introns:
+                        # the case of wrong 3p phase
                         len_3p_exon = abs(cds.end - t_hs['intron_hs'][-1].end)
                         # can't think of a better way to check 3p phase
                         if cds.phase_3p != (3 - len_3p_exon % 3) % 3:
                             start = cds.end
                             error_hs.append(self._get_overlapping_err_h(i, start, '3p',
                                                                         types.MISMATCHED_ENDING_PHASE))
-                        # the case of a too short intron
-                        for intron in introns:
-                            # todo put this in a config somewhere
-                            if abs(intron.end - intron.start) < 60:
-                                coord = self.groups[i]['super_locus_h'].coord
-                                error_h = self._get_error_handler(coord,
-                                                                  intron.start,
+                        for j, intron in enumerate(introns):
+                            # the case of overlapping exons
+                            if ((self.is_plus_strand and intron.end < intron.start) or
+                                    (not self.is_plus_strand and intron.end > intron.start)):
+                                # mark the overlapping cds regions as errors
+                                if j > 0:
+                                    error_start = introns[j - 1].end
+                                else:
+                                    error_start = cds.start
+                                if j < len(introns) - 1:
+                                    error_end = introns[j + 1].start
+                                    if self.is_plus_strand:
+                                        error_end -= 1
+                                    else:
+                                        error_end += 1
+                                else:
+                                    error_end = cds.end
+                                error_h = self._get_error_handler(error_start,
+                                                                  error_end,
+                                                                  self.is_plus_strand,
+                                                                  types.OVERLAPPING_EXONS)
+                                error_hs.append(error_h)
+                            # the case of a too short intron
+                            # todo put the minimum length in a config somewhere
+                            elif abs(intron.end - intron.start) < 60:
+                                error_h = self._get_error_handler(intron.start,
                                                                   intron.end,
                                                                   self.is_plus_strand,
                                                                   types.TOO_SHORT_INTRON)
                                 error_hs.append(error_h)
 
 
-    def _get_error_handler(self, coord, start, end, is_plus_strand, error_type):
+
+    def _get_error_handler(self, start, end, is_plus_strand, error_type):
         # todo logging
-        error_h = FeatureHandler(coord,
+        error_h = FeatureHandler(self.coord,
                                  is_plus_strand,
                                  error_type,
                                  start=start,
@@ -495,8 +519,7 @@ class GFFErrorHandling(object):
         elif direction == 'whole':
             error_start = anker_5p
             error_end = anker_3p
-        error_h = self._get_error_handler(sl_h.coord,
-                                          error_start,
+        error_h = self._get_error_handler(error_start,
                                           error_end,
                                           self.is_plus_strand,
                                           error_type)

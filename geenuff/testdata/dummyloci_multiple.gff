@@ -53,8 +53,8 @@
 2	manual	mRNA	1	300	.	+	.	ID=x;Parent=gene_intron_len_0
 2	manual	exon	1	150	.	+	.	ID=e0;Parent=x
 2	manual	CDS	40	150	.	+	0	ID=c0;Parent=x
-2	manual	exon	150	300	.	+	.	ID=e1;Parent=x
-2	manual	CDS	150	181	.	+	1	ID=c1;Parent=x
+2	manual	exon	151	300	.	+	.	ID=e1;Parent=x
+2	manual	CDS	151	181	.	+	0	ID=c1;Parent=x
 2	manual	mRNA	120	280	.	+	.	ID=y;Parent=gene_intron_len_0
 2	manual	exon	120	160	.	+	.	ID=e2;Parent=y
 2	manual	CDS	140	160	.	+	0	ID=c2;Parent=y

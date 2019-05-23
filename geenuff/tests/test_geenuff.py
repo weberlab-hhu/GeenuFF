@@ -1131,10 +1131,16 @@ def test_dummyloci_multiple_errors():
         'end': 1724,  # exclusive end of intergenic region
         'type': types.MISSING_START_CODON
     }
-
+    assert error_in_list(error, errors)
+    error = {
+        'coord_id': coords[1].id,
+        'is_plus_strand': False,
+        'start': 1649,
+        'end': 1573,
+        'type': types.OVERLAPPING_EXONS
+    }
     assert error_in_list(error, errors)
 
-    import pudb; pudb.set_trace()
     assert not errors
 
 
