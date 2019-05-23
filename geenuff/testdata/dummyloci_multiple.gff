@@ -83,11 +83,11 @@
 2	manual	gene	950	1350	.	-	.	ID=gene_wrong_phase_last_exon
 2	manual	mRNA	950	1350	.	-	.	ID=x;Parent=gene_wrong_phase_last_exon
 2	manual	exon	950	1000	.	-	.	ID=e0;Parent=x
-2	manual	CDS	950	1000	.	-	2	ID=c0_problem;Parent=x
+2	manual	CDS	975	1000	.	-	0	ID=c0_problem;Parent=x
 2	manual	exon	1200	1220	.	-	.	ID=e1;Parent=x
 2	manual	CDS	1200	1220	.	-	1	ID=c1;Parent=x
 2	manual	exon	1300	1350	.	-	.	ID=e2;Parent=x
-2	manual	CDS	1300	1325	.	-	0	ID=c2_problem;Parent=x
+2	manual	CDS	1300	1350	.	-	0	ID=c2_problem;Parent=x
 # 
 # test case 8: overlapping exons and missing stop codon
 # gene is on the minus strand

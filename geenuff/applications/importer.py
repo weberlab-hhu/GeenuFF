@@ -180,7 +180,10 @@ class OrganizedGeenuffHandlerGroup(object):
                     gff_end = exons[i + 1].start - 1
                     intron_h.set_start_end_from_gff(gff_start, gff_end)
                     intron_hs.append(intron_h)
-                t_handlers['intron_hs'] = intron_hs
+                if is_plus_strand:
+                    t_handlers['intron_hs'] = intron_hs
+                else:
+                    t_handlers['intron_hs'] = intron_hs[::-1]
             self.handlers['transcript_hs'].append(t_handlers)
 
     @staticmethod
@@ -399,6 +402,7 @@ class GFFErrorHandling(object):
                     # the case of missing of implicit UTR ranges
                     # the solution is similar to the one above
                     cds = t_hs['cds_h']
+                    introns = t_hs['intron_hs']
                     if cds.start == t_hs['transcript_feature_h'].start:
                         start = cds.start
                         error_hs.append(self._get_overlapping_err_h(i, start, '5p',
@@ -421,18 +425,15 @@ class GFFErrorHandling(object):
                         start = cds.start
                         error_hs.append(self._get_overlapping_err_h(i, start, '5p',
                                                                     types.WRONG_STARTING_PHASE))
-
-                    # if cds.phase_3p !=
-
-    def _get_coding_length(self, t_hs):
-        """Calculates the total length of all previously distince cds regions"""
-        total_intron_len = 0
-        for intron in t_hs['intron_hs']:
-            total_intron_len += abs(intron.start - intron.end)
-        cds_len = abs(t_hs['cds_h'].start - t_hs['cds_h'].end)
-        assert total_intron_len < cds_len
-        return cds_len - total_intron_len
-
+                    if introns:
+                        if not self.is_plus_strand:
+                            import pudb; pudb.set_trace()
+                        len_3p_exon = abs(cds.end - t_hs['intron_hs'][-1].end)
+                        # can't think of a better way to check 3p phase
+                        if cds.phase_3p != (3 - len_3p_exon % 3) % 3:
+                            start = cds.end
+                            error_hs.append(self._get_overlapping_err_h(i, start, '3p',
+                                                                        types.MISMATCHED_ENDING_PHASE))
 
     def _get_error_handler(self, coord, start, end, is_plus_strand, error_type):
         # todo logging
@@ -778,7 +779,7 @@ class FeatureHandler(handlers.FeatureHandlerBase, Insertable):
             'coord_id': self.coord.id,
             'type': self.feature_type,
             'is_plus_strand': self.is_plus_strand,
-            'phase': self.phase,
+            'phase': self.phase_5p,
         }
         if self.given_name:
             params['given_name'] = self.given_name
