@@ -444,15 +444,11 @@ class GFFErrorHandling(object):
                                 if j > 0:
                                     error_start = introns[j - 1].end
                                 else:
-                                    error_start = cds.start
+                                    error_start = t_hs['transcript_feature_h'].start
                                 if j < len(introns) - 1:
                                     error_end = introns[j + 1].start
-                                    if self.is_plus_strand:
-                                        error_end -= 1
-                                    else:
-                                        error_end += 1
                                 else:
-                                    error_end = cds.end
+                                    error_end = t_hs['transcript_feature_h'].end
                                 error_h = self._get_error_handler(error_start,
                                                                   error_end,
                                                                   self.is_plus_strand,
@@ -492,35 +488,35 @@ class GFFErrorHandling(object):
         if direction in ['5p', 'whole']:
             if i > 0:
                 sl_h_prev = self.groups[i - 1]['super_locus_h']
-                anker_5p = self._halfway_mark(sl_h_prev, sl_h)
+                anchor_5p = self._halfway_mark(sl_h_prev, sl_h)
             else:
                 if self.is_plus_strand:
-                    anker_5p = 0
+                    anchor_5p = 0
                 else:
-                    anker_5p = sl_h.coord.end
+                    anchor_5p = sl_h.coord.end
 
         # set correct downstream error end point
         if direction in ['3p', 'whole']:
             if i < len(self.groups) -1:
                 sl_h_next = self.groups[i + 1]['super_locus_h']
-                anker_3p = self._halfway_mark(sl_h, sl_h_next)
+                anchor_3p = self._halfway_mark(sl_h, sl_h_next)
             else:
                 if self.is_plus_strand:
-                    anker_3p = sl_h.coord.end
+                    anchor_3p = sl_h.coord.end
                 else:
-                    anker_3p = -1
+                    anchor_3p = -1
 
         if direction == '5p':
-            error_start = anker_5p
-            error_end = start
+            error_5p = anchor_5p
+            error_3p = start
         elif direction =='3p':
-            error_start = start
-            error_end = anker_3p
+            error_5p = start
+            error_3p = anchor_3p
         elif direction == 'whole':
-            error_start = anker_5p
-            error_end = anker_3p
-        error_h = self._get_error_handler(error_start,
-                                          error_end,
+            error_5p = anchor_5p
+            error_3p = anchor_3p
+        error_h = self._get_error_handler(error_5p,
+                                          error_3p,
                                           self.is_plus_strand,
                                           error_type)
         return error_h
@@ -645,9 +641,6 @@ class ImportController(object):
                                                            self,
                                                            err_handle)
                 geenuff_handler_groups.append(organized_entries.get_geenuff_handlers())
-                if i > 0 and i % 500 == 0:
-                    clean_and_insert(self, geenuff_handler_groups, clean)
-                    geenuff_handler_groups = []
             # never do error checking across fasta sequence borders
             clean_and_insert(self, geenuff_handler_groups, clean)
             geenuff_handler_groups = []

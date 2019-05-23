@@ -29,7 +29,10 @@
 # should not result in an error
 1	manual	gene	1200	1400	.	+	.	ID=gene_non_coding
 1	manual	mRNA	1200	1400	.	+	.	ID=x;Parent=gene_non_coding
+1	manual	exon	1200	1400	.	+	.	ID=e0;Parent=x
 1	manual	mRNA	1300	1400	.	+	.	ID=y;Parent=gene_non_coding
+1	manual	exon	1300	1305	.	+	.	ID=e1;Parent=y
+1	manual	exon	1370	1400	.	+	.	ID=e2;Parent=y
 #
 # test case 4: no ATG at start
 # the first transcript is without errors
@@ -72,9 +75,9 @@
 2	manual	CDS	700	725	.	+	1	ID=c1;Parent=x
 2	manual	mRNA	550	750	.	+	.	ID=y;Parent=gene_phase_0_short_intron
 2	manual	exon	500	540	.	+	.	ID=e2;Parent=y
-2	manual	CDS	525	540	.	+	0	ID=c2;Parent=y
+2	manual	CDS	525	540	.	+	0	ID=c2_problem;Parent=y
 2	manual	exon	580	600	.	+	.	ID=e3;Parent=y
-2	manual	CDS	580	600	.	+	1	ID=c3;Parent=y
+2	manual	CDS	580	600	.	+	1	ID=c3_problem;Parent=y
 2	manual	exon	700	750	.	+	.	ID=e4;Parent=y
 2	manual	CDS	700	725	.	+	1	ID=c4;Parent=y
 #
@@ -89,7 +92,7 @@
 2	manual	exon	1300	1350	.	-	.	ID=e2;Parent=x
 2	manual	CDS	1300	1350	.	-	0	ID=c2_problem;Parent=x
 # 
-# test case 8: overlapping exons and missing stop codon
+# test case 8: overlapping exons and missing start codon
 # gene is on the minus strand
 # the first transcript has overlapping exons (the first two) and the end of the last cds region
 # does not link to a start codon
@@ -97,10 +100,10 @@
 2	manual	gene	1550	1750	.	-	.	ID=gene_overlapping_exons_missing_start
 2	manual	mRNA	1550	1750	.	-	.	ID=x;Parent=gene_overlapping_exons_missing_start	
 2	manual	exon	1550	1600	.	-	.	ID=e0_problem;Parent=x
-2	manual	CDS	1575	1600	.	-	1	ID=c0;Parent=x
-2	manual	exon	1599	1650	.	-	.	ID=e1_problem;Parent=x
-2	manual	CDS	1599	1650	.	-	2	ID=c1;Parent=x
-2	manual	exon	1720	1750	.	-	.	ID=e2_problem;Parent=x
+2	manual	CDS	1575	1600	.	-	1	ID=c0_problem;Parent=x
+2	manual	exon	1599	1650	.	-	.	ID=e1;Parent=x
+2	manual	CDS	1599	1650	.	-	2	ID=c1_problem;Parent=x
+2	manual	exon	1720	1750	.	-	.	ID=e2;Parent=x
 2	manual	CDS	1720	1725	.	-	0	ID=c2;Parent=x
 2	manual	mRNA	1550	1750	.	-	.	ID=y;Parent=gene_overlapping_exons_missing_start	
 2	manual	exon	1550	1600	.	-	.	ID=e3;Parent=y
