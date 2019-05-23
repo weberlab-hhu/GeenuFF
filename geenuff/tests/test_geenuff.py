@@ -1031,6 +1031,7 @@ def test_dummyloci_multiple_errors():
     controller.add_genome('testdata/dummyloci_multiple.fa',
                           'testdata/dummyloci_multiple.gff',
                           clean_gff=True)
+    import pudb; pudb.set_trace()
     error_types = [t.value for t in types.Errors]
     errors = controller.session.query(orm.Feature).filter(orm.Feature.type.in_(error_types)).all()
     coords = controller.session.query(orm.Coordinate).all()

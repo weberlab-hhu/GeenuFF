@@ -400,34 +400,33 @@ class GFFErrorHandling(object):
             for t_hs in group['transcript_hs']:
                 # if coding transcript
                 if 'cds_h' in t_hs:
-                    # the case of missing of implicit UTR ranges
-                    # the solution is similar to the one above
                     cds = t_hs['cds_h']
                     introns = t_hs['intron_hs']
+
+                    # the case of missing of implicit UTR ranges
+                    # the solution is similar to the one above
                     if cds.start == t_hs['transcript_feature_h'].start:
-                        start = cds.start
-                        self._add_overlapping_err_h(i, cds.start, '5p', types.MISSING_UTR_5P)
+                        self._add_overlapping_err_h(i, cds, '5p', types.MISSING_UTR_5P)
                     if cds.end == t_hs['transcript_feature_h'].end:
-                        start = cds.end
-                        self._add_overlapping_err_h(i, start, '3p', types.MISSING_UTR_3P)
+                        self._add_overlapping_err_h(i, cds, '3p', types.MISSING_UTR_3P)
+
                     # the case of missing start/stop codon
                     if not has_start_codon(cds.coord.sequence, cds.start, self.is_plus_strand):
-                        start = cds.start
-                        self._add_overlapping_err_h(i, start, '5p', types.MISSING_START_CODON)
+                        self._add_overlapping_err_h(i, cds, '5p', types.MISSING_START_CODON)
                     if not has_stop_codon(cds.coord.sequence, cds.end, self.is_plus_strand):
-                        start = cds.end
-                        self._add_overlapping_err_h(i, start, '3p', types.MISSING_STOP_CODON)
+                        self._add_overlapping_err_h(i, cds, '3p', types.MISSING_STOP_CODON)
+
                     # the case of wrong 5p phase
                     if cds.phase_5p != 0:
-                        start = cds.start
-                        self._add_overlapping_err_h(i, start, '5p', types.WRONG_PHASE_5P)
+                        self._add_overlapping_err_h(i, cds, '5p', types.WRONG_PHASE_5P)
+
                     if introns:
                         # the case of wrong 3p phase
                         len_3p_exon = abs(cds.end - t_hs['intron_hs'][-1].end)
                         # can't think of a better way to check 3p phase
                         if cds.phase_3p != (3 - len_3p_exon % 3) % 3:
-                            start = cds.end
-                            self._add_overlapping_err_h(i, start, '3p', types.MISMATCHED_PHASE_3P)
+                            self._add_overlapping_err_h(i, cds, '3p', types.MISMATCHED_PHASE_3P)
+
                         for j, intron in enumerate(introns):
                             # the case of overlapping exons
                             if ((self.is_plus_strand and intron.end < intron.start) or
@@ -449,7 +448,6 @@ class GFFErrorHandling(object):
                                 self._add_error_handler(intron.start, intron.end,
                                                         self.is_plus_strand, types.TOO_SHORT_INTRON)
 
-
     def _add_error_handler(self, start, end, is_plus_strand, error_type):
         # todo logging
         error_h = FeatureHandler(self.coord,
@@ -460,11 +458,12 @@ class GFFErrorHandling(object):
                                  controller=self.controller)
         self.error_hs.append(error_h)
 
-    def _add_overlapping_err_h(self, i, start, direction, error_type):
+    def _add_overlapping_err_h(self, i, handler, direction, error_type):
         """Constructs an error features that overlaps halfway to the next super locus
-        in the given direction if possible. Otherwise mark until the end.
-        The error feature extends in the given direction from the start value on.
-        If the direction is 'whole', the start value is ignored.
+        in the given direction from the given handler if possible. Otherwise mark until the end.
+        If the direction is 'whole', the handler parameter is ignored.
+
+        Also sets handler.start_is_biological_start=False (or the end).
         """
         assert direction in ['5p', '3p', 'whole']
         sl_h = self.groups[i]['super_locus_h']
@@ -493,10 +492,12 @@ class GFFErrorHandling(object):
 
         if direction == '5p':
             error_5p = anchor_5p
-            error_3p = start
+            error_3p = handler.start
+            handler.start_is_biological_start = False
         elif direction =='3p':
-            error_5p = start
+            error_5p = handler.end
             error_3p = anchor_3p
+            handler.end_is_biological_end = False
         elif direction == 'whole':
             error_5p = anchor_5p
             error_3p = anchor_3p
@@ -620,7 +621,7 @@ class ImportController(object):
         organized_gff_entries = OrganizedGFFEntries(gff_file).organized_entries
         geenuff_handler_groups = []
         for seqid in organized_gff_entries.keys():
-            for i, entry_group in enumerate(organized_gff_entries[seqid]):
+            for entry_group in organized_gff_entries[seqid]:
                 organized_entries = OrganizedGFFEntryGroup(entry_group,
                                                            self.latest_genome_handler,
                                                            self,
@@ -736,8 +737,8 @@ class FeatureHandler(handlers.FeatureHandlerBase, Insertable):
         self.phase_3p = phase_3p  # only used for error checking
         self.score = score
         self.source = source
-        self.start_is_biological_start = None
-        self.end_is_biological_end = None
+        self.start_is_biological_start = True
+        self.end_is_biological_end = True
         self.controller = controller
 
     def add_to_queue(self):
