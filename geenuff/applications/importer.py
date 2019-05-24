@@ -246,8 +246,8 @@ class OrganizedGFFEntryGroup(object):
     }
     """
 
-    def __init__(self, gff_entry_group, genome_h, controller, err_handle):
-        self.genome_h = genome_h
+    def __init__(self, gff_entry_group, fasta_importer, controller, err_handle):
+        self.fasta_importer = fasta_importer
         self.controller = controller
         self.err_handle = err_handle
         self.entries = {'transcripts': {}}
@@ -274,7 +274,7 @@ class OrganizedGFFEntryGroup(object):
                 raise ValueError("problem handling entry of type {}".format(entry.type))
 
         # set the coordinate
-        self.coord = self.genome_h.gffid_to_coords[self.entries['super_locus'].seqid]
+        self.coord = self.fasta_importer.gffid_to_coords[self.entries['super_locus'].seqid]
 
         # order exon and cds lists by start value (disregard strand for now)
         for _, value_dict in self.entries['transcripts'].items():
@@ -576,22 +576,22 @@ class ImportController(object):
                 # insert all features as well as transcript and protein related entries
                 for transcripts in group['transcripts']:
                     # make shortcuts
-                    tp_h = transcripts['transcript_piece']
-                    tf_h = transcripts['transcript_feature']
+                    tp = transcripts['transcript_piece']
+                    tf = transcripts['transcript_feature']
                     # add transcript handler that are always present
                     transcripts['transcript'].add_to_queue()
-                    tp_h.add_to_queue()
-                    tf_h.add_to_queue()
-                    tf_h.insert_feature_piece_association(tp_h.id)
+                    tp.add_to_queue()
+                    tf.add_to_queue()
+                    tf.insert_feature_piece_association(tp.id)
                     # if coding transcript
                     if 'protein' in transcripts:
                         transcripts['protein'].add_to_queue()
-                        tf_h.insert_feature_protein_association(transcripts['protein'].id)
+                        tf.insert_feature_protein_association(transcripts['protein'].id)
                         transcripts['cds'].add_to_queue()
-                        transcripts['cds'].insert_feature_piece_association(tp_h.id)
-                        for intron_h in transcripts['introns']:
-                            intron_h.add_to_queue()
-                            intron_h.insert_feature_piece_association(tp_h.id)
+                        transcripts['cds'].insert_feature_piece_association(tp.id)
+                        for intron in transcripts['introns']:
+                            intron.add_to_queue()
+                            intron.insert_feature_piece_association(tp.id)
                 # insert the errors
                 for error in group['errors']:
                     error.add_to_queue()
