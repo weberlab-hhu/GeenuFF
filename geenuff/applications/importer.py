@@ -168,18 +168,18 @@ class OrganizedGeenuffImporterGroup(object):
                 exons = t_entries['exons']
                 introns = []
                 for i in range(len(exons) - 1):
-                    intron_i = FeatureImporter(self.coord,
-                                               is_plus_strand,
-                                               types.INTRON,
-                                               score=score,
-                                               source=source,
-                                               controller=self.controller)
                     # the introns are delimited by the surrounding exons
                     # the first base of an intron in right after the last exononic base
                     gff_start = exons[i].end + 1
                     gff_end = exons[i + 1].start - 1
                     # ignore introns that would come from directly adjacent exons
                     if gff_start - gff_end != 1:
+                        intron_i = FeatureImporter(self.coord,
+                                                   is_plus_strand,
+                                                   types.INTRON,
+                                                   score=score,
+                                                   source=source,
+                                                   controller=self.controller)
                         intron_i.set_start_end_from_gff(gff_start, gff_end)
                         introns.append(intron_i)
                 if is_plus_strand:

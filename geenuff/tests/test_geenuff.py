@@ -15,7 +15,7 @@ from ..base.orm import (Genome, Feature, Coordinate, Transcribed, TranscribedPie
                         Translated)
 from ..base.handlers import SuperLocusHandlerBase, TranscribedHandlerBase
 from ..applications import importer
-from ..applications.importer import ImportController, OrganizedGFFEntries
+from ..applications.importer import ImportController, InsertCounterHolder, OrganizedGFFEntries
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -627,13 +627,16 @@ def test_fasta_import():
 
 def test_import_multiple_genomes():
     controller = ImportController(database_path='sqlite:///:memory:')
+    InsertCounterHolder.sync_counters_with_db(controller.session)
     controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff', clean_gff=True)
     query = controller.session.query
 
     n_features_1 = query(Feature).count()
     n_coords_1 = query(Coordinate).count()
     n_genomes_1 = query(Genome).count()
+
     max_id_1 = query(func.max(Feature.id)).one()[0]
+    assert max_id_1 == n_features_1
 
     # add two more genomes
     controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff', clean_gff=True)
