@@ -39,7 +39,8 @@ def setup_data_handler(handler_type, data_type, **kwargs):
 def setup_dummyloci_super_locus(db_path='sqlite:///:memory:'):
     controller = ImportController(database_path=db_path)
     controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff3', clean_gff=False)
-    return controller.latest_super_loci[0], controller
+    sl = controller.session.query(orm.SuperLocus).one()
+    return sl, controller
 
 
 def cleaned_commited_features(sess):

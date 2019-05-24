@@ -40,7 +40,7 @@ class Coordinate(Base):
     )
 
     def __repr__(self):
-        return '<Coordinate {}, {}:{}-{}>'.format(self.id, self.seqid, self.start, self.end)
+        return '<Coordinate {}, {}:{}--{}>'.format(self.id, self.seqid, self.start, self.end)
 
 
 class SuperLocus(Base):
@@ -108,13 +108,8 @@ class TranscribedPiece(Base):
     )
 
     def __repr__(self):
-        features = [(x.id, x.start, x.end, x.given_name) for x in self.features]
         return ('<TranscribedPiece, {}: for transcribed {} '
-                'in position {} with features {}>').format(self.id,
-                                                           self.transcribed_id,
-                                                           self.position,
-                                                           features)
-
+                'in position {}>').format(self.id, self.transcribed_id, self.position)
 
 
 class Translated(Base):
@@ -177,10 +172,11 @@ class Feature(Base):
             end_caveat = '?'
         elif self.end_is_biological_end is False:
             end_caveat = '*'
-        s = '<{py_type}, {pk}: {givenid} of type: {type} @({start}{start_caveat} -> {end}{end_caveat}) on {coor}, ' \
-            'is_plus: {plus}, phase: {phase}>'.format(
+        s = ('<Feature, id: {pk}, given_name: \'{givenid}\', type: {type}, '
+             '{start}{start_caveat}--{end}{end_caveat}, on {coor}, '
+             'is_plus: {plus}, phase: {phase}>').format(
                 pk=self.id, start_caveat=start_caveat, end_caveat=end_caveat,
-                type=self.type, start=self.start, end=self.end, coor=self.coordinate, plus=self.is_plus_strand,
-                phase=self.phase, givenid=self.given_name, py_type=type(self)
+                type=self.type.value, start=self.start, end=self.end, coor=self.coordinate,
+                plus=self.is_plus_strand, phase=self.phase, givenid=self.given_name
             )
         return s
