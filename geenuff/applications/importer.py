@@ -554,7 +554,7 @@ class ImportController(object):
         self.add_gff(gff_path, err_handle, clean=clean_gff)
         err_handle.close()
 
-    def add_sequences(self, seq_path, genome_args=None):
+    def add_sequences(self, seq_path, genome_args={}):
         if self.latest_genome is None:
             self.make_genome(genome_args)
 
@@ -636,7 +636,7 @@ class Insertable(ABC):
 
 class FastaImporter(object):
     def __init__(self, genome):
-        self.genome=genome
+        self.genome = genome
         self.mapper = None
         self._coords_by_seqid = None
         self._gffid_to_coords = None

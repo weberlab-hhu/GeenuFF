@@ -11,7 +11,8 @@ from .. import orm
 from .. import types
 from .. import handlers
 from .. import helpers
-from ..base.orm import Feature, Coordinate, Transcribed, TranscribedPiece, SuperLocus, Translated
+from ..base.orm import (Genome, Feature, Coordinate, Transcribed, TranscribedPiece, SuperLocus,
+                        Translated)
 from ..base.handlers import SuperLocusHandlerBase, TranscribedHandlerBase
 from ..applications import importer
 from ..applications.importer import ImportController, OrganizedGFFEntries
@@ -40,13 +41,13 @@ def setup_data_handler(handler_type, data_type, **kwargs):
 
 def setup_dummyloci_super_locus(db_path='sqlite:///:memory:'):
     controller = ImportController(database_path=db_path)
-    controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff3')
-    sl = controller.session.query(orm.SuperLocus).one()
+    controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff')
+    sl = controller.session.query(SuperLocus).one()
     return sl, controller
 
 
 def cleaned_commited_features(sess):
-    all_features = sess.query(orm.Feature).all()
+    all_features = sess.query(Feature).all()
     allowed_types = [types.TRANSCRIBED, types.CODING, types.INTRON, types.TRANS_INTRON, types.ERROR]
     clean_datas = [x for x in all_features if x.type.value in allowed_types]
     return clean_datas
@@ -58,8 +59,8 @@ def test_annogenome2coordinate_relation():
     to the db. Also check for correct deletion behavior.
     """
     sess = mk_memory_session()
-    g = orm.Genome(species='Athaliana', version='1.2', acquired_from='Phytozome12')
-    coord = orm.Coordinate(start=0, end=30, seqid='abc', genome=g)
+    g = Genome(species='Athaliana', version='1.2', acquired_from='Phytozome12')
+    coord = Coordinate(start=0, end=30, seqid='abc', genome=g)
     assert g is coord.genome
     # actually put everything in db
     sess.add(coord)
@@ -86,18 +87,18 @@ def test_annogenome2coordinate_relation():
 def test_coordinate_constraints():
     """Check the coordinate constraints"""
     sess = mk_memory_session()
-    g = orm.Genome()
+    g = Genome()
 
     # should be ok
-    coors = orm.Coordinate(start=0, end=30, seqid='abc', genome=g)
-    coors2 = orm.Coordinate(start=0, end=1, seqid='abcd', genome=g)
+    coors = Coordinate(start=0, end=30, seqid='abc', genome=g)
+    coors2 = Coordinate(start=0, end=1, seqid='abcd', genome=g)
     sess.add_all([coors, coors2])
     sess.commit()
 
     # start/end constraints
-    coors_bad1 = orm.Coordinate(start=-12, end=30, seqid='abc', genome=g)
-    coors_bad2 = orm.Coordinate(start=100, end=30, seqid='abcd', genome=g)
-    coors_bad3 = orm.Coordinate(start=1, end=30, genome=g)
+    coors_bad1 = Coordinate(start=-12, end=30, seqid='abc', genome=g)
+    coors_bad2 = Coordinate(start=100, end=30, seqid='abcd', genome=g)
+    coors_bad3 = Coordinate(start=1, end=30, genome=g)
     with pytest.raises(IntegrityError):
         sess.add(coors_bad1)  # start below 1
         sess.commit()
@@ -114,12 +115,12 @@ def test_coordinate_constraints():
 def test_coordinate_insert():
     """Test what happens when we insert two coordinates"""
     sess = mk_memory_session()
-    g = orm.Genome()
-    coords = orm.Coordinate(start=1, end=30, seqid='abc', genome=g)
-    coords2 = orm.Coordinate(start=11, end=330, seqid='def', genome=g)
-    sl = orm.SuperLocus()
-    f0 = orm.Feature(coordinate=coords)
-    f1 = orm.Feature(coordinate=coords2)
+    g = Genome()
+    coords = Coordinate(start=1, end=30, seqid='abc', genome=g)
+    coords2 = Coordinate(start=11, end=330, seqid='def', genome=g)
+    sl = SuperLocus()
+    f0 = Feature(coordinate=coords)
+    f1 = Feature(coordinate=coords2)
     # should be ok
     sess.add_all([g, sl, coords, coords2, f0, f1])
     assert f0.coordinate.start == 1
@@ -130,18 +131,18 @@ def test_many2many_with_features():
     """Test the many2many tables association_transcribed_piece_to_feature and
     association_translated_to_feature
     """
-    sl = orm.SuperLocus()
+    sl = SuperLocus()
     # one transcript, multiple proteins
-    piece0 = orm.TranscribedPiece()
-    scribed0 = orm.Transcribed(super_locus=sl, transcribed_pieces=[piece0])
-    slated0 = orm.Translated(super_locus=sl)
-    slated1 = orm.Translated(super_locus=sl)
+    piece0 = TranscribedPiece()
+    scribed0 = Transcribed(super_locus=sl, transcribed_pieces=[piece0])
+    slated0 = Translated(super_locus=sl)
+    slated1 = Translated(super_locus=sl)
     # features representing alternative start codon for proteins on one transcript
-    feat0_tss = orm.Feature(transcribed_pieces=[piece0])
-    feat1_tss = orm.Feature(transcribed_pieces=[piece0])
-    feat2_stop = orm.Feature(translateds=[slated0, slated1])
-    feat3_start = orm.Feature(translateds=[slated0])
-    feat4_start = orm.Feature(translateds=[slated1])
+    feat0_tss = Feature(transcribed_pieces=[piece0])
+    feat1_tss = Feature(transcribed_pieces=[piece0])
+    feat2_stop = Feature(translateds=[slated0, slated1])
+    feat3_start = Feature(translateds=[slated0])
+    feat4_start = Feature(translateds=[slated1])
     # test multi features per translated worked
     assert len(slated0.features) == 2
     # test mutli translated per feature worked
@@ -154,9 +155,9 @@ def test_feature_has_its_things():
     """Test if properties of Feature table are correct and constraints are enforced"""
     sess = mk_memory_session()
     # test feature with nothing much set
-    g = orm.Genome()
-    c = orm.Coordinate(start=1, end=30, seqid='abc', genome=g)
-    f = orm.Feature(coordinate=c)
+    g = Genome()
+    c = Coordinate(start=1, end=30, seqid='abc', genome=g)
+    f = Feature(coordinate=c)
     sess.add_all([f, c])
     sess.commit()
 
@@ -164,29 +165,29 @@ def test_feature_has_its_things():
     assert f.source is None
     assert f.score is None
     # test feature with
-    f1 = orm.Feature(is_plus_strand=False, start=3, end=-1, coordinate=c)
+    f1 = Feature(is_plus_strand=False, start=3, end=-1, coordinate=c)
     assert not f1.is_plus_strand
     assert f1.start == 3
     assert f1.end == -1
     sess.add(f1)
     sess.commit()
     # test too low of start / end coordinates raise an error
-    f_should_fail = orm.Feature(is_plus_strand=True, start=-5, end=10, coordinate=c)
+    f_should_fail = Feature(is_plus_strand=True, start=-5, end=10, coordinate=c)
     sess.add(f_should_fail)
     with pytest.raises(sqlalchemy.exc.IntegrityError):
         sess.commit()
     sess.rollback()
 
-    f_should_fail = orm.Feature(is_plus_strand=False, start=5, end=-2, coordinate=c)
+    f_should_fail = Feature(is_plus_strand=False, start=5, end=-2, coordinate=c)
     sess.add(f_should_fail)
     with pytest.raises(sqlalchemy.exc.IntegrityError):
         sess.commit()
     sess.rollback()
     # test wrong class as parameter
     with pytest.raises(KeyError):
-        f2 = orm.Feature(coordinate=f)
+        f2 = Feature(coordinate=f)
 
-    f2 = orm.Feature(is_plus_strand=-1)  # note that 0, and 1 are accepted
+    f2 = Feature(is_plus_strand=-1)  # note that 0, and 1 are accepted
     sess.add(f2)
     with pytest.raises(sqlalchemy.exc.StatementError):
         sess.commit()
@@ -198,10 +199,10 @@ def test_partially_remove_coordinate():
     up valid.
     """
     sess = mk_memory_session()
-    g = orm.Genome()
-    place_holder = orm.Genome()
-    coord0 = orm.Coordinate(start=1, end=30, seqid='abc', genome=g)
-    coord1 = orm.Coordinate(start=11, end=330, seqid='def', genome=g)
+    g = Genome()
+    place_holder = Genome()
+    coord0 = Coordinate(start=1, end=30, seqid='abc', genome=g)
+    coord1 = Coordinate(start=11, end=330, seqid='def', genome=g)
     sess.add_all([g, coord0, coord1])
     sess.commit()
     assert len(g.coordinates) == 2
@@ -211,7 +212,7 @@ def test_partially_remove_coordinate():
     # removed from g
     assert len(g.coordinates) == 1
     # but still in table
-    assert len(sess.query(orm.Coordinate).all()) == 2
+    assert len(sess.query(Coordinate).all()) == 2
 
 
 # section: api
@@ -220,23 +221,23 @@ def test_transcribed_piece_unique_constraints():
     valid outcomes.
     """
     sess = mk_memory_session()
-    sl = orm.SuperLocus()
-    transcribed0 = orm.Transcribed(super_locus=sl)
-    transcribed1 = orm.Transcribed(super_locus=sl)
+    sl = SuperLocus()
+    transcribed0 = Transcribed(super_locus=sl)
+    transcribed1 = Transcribed(super_locus=sl)
 
     # test if same position for different transcribed_id goes through
-    piece_tr0_pos0 = orm.TranscribedPiece(transcribed=transcribed0, position=0)
-    piece_tr1_pos0 = orm.TranscribedPiece(transcribed=transcribed1, position=0)
+    piece_tr0_pos0 = TranscribedPiece(transcribed=transcribed0, position=0)
+    piece_tr1_pos0 = TranscribedPiece(transcribed=transcribed1, position=0)
     sess.add_all([transcribed0, piece_tr0_pos0, piece_tr1_pos0])
     sess.commit()
 
     # same transcibed_id but different position
-    piece_tr0_pos1 = orm.TranscribedPiece(transcribed=transcribed0, position=1)
+    piece_tr0_pos1 = TranscribedPiece(transcribed=transcribed0, position=1)
     sess.add(piece_tr0_pos1)
     sess.commit()
 
     # test if unique constraint works
-    piece_tr0_pos1_2nd = orm.TranscribedPiece(transcribed=transcribed0, position=1)
+    piece_tr0_pos1_2nd = TranscribedPiece(transcribed=transcribed0, position=1)
     sess.add(piece_tr0_pos1_2nd)
     with pytest.raises(IntegrityError):
         sess.commit()
@@ -248,12 +249,12 @@ def test_order_pieces():
     position property instead of db insertion order.
     """
     sess = mk_memory_session()
-    g = orm.Genome(species='Athaliana', version='1.2', acquired_from='Phytozome12')
-    coor = orm.Coordinate(seqid='a', start=1, end=1000, genome=g)
+    g = Genome(species='Athaliana', version='1.2', acquired_from='Phytozome12')
+    coor = Coordinate(seqid='a', start=1, end=1000, genome=g)
     sess.add_all([g, coor])
     sess.commit()
     # setup one transcribed handler with pieces
-    sl, sl_h = setup_data_handler(SuperLocusHandlerBase, orm.SuperLocus)
+    sl, sl_h = setup_data_handler(SuperLocusHandlerBase, SuperLocus)
     t, t_h = setup_data_handler(TranscribedHandlerBase, Transcribed, super_locus=sl)
     # insert in wrong order
     piece1 = TranscribedPiece(position=1)
@@ -263,30 +264,30 @@ def test_order_pieces():
     sess.add_all([t, piece1, piece0, piece2])
     sess.commit()
     # setup some features on different pieces
-    feature0u = orm.Feature(transcribed_pieces=[piece0],
-                            coordinate=coor,
-                            start=100,
-                            end=200,
-                            given_name='0u',
-                            is_plus_strand=True)
-    feature1d = orm.Feature(transcribed_pieces=[piece1],
-                            coordinate=coor,
-                            start=1,
-                            end=3,
-                            given_name='1d',
-                            is_plus_strand=True)
-    feature1u = orm.Feature(transcribed_pieces=[piece1],
-                            coordinate=coor,
-                            start=100,
-                            end=200,
-                            given_name='1u',
-                            is_plus_strand=True)
-    feature2d = orm.Feature(transcribed_pieces=[piece2],
-                            coordinate=coor,
-                            start=1,
-                            end=3,
-                            given_name='2d',
-                            is_plus_strand=True)
+    feature0u = Feature(transcribed_pieces=[piece0],
+                        coordinate=coor,
+                        start=100,
+                        end=200,
+                        given_name='0u',
+                        is_plus_strand=True)
+    feature1d = Feature(transcribed_pieces=[piece1],
+                        coordinate=coor,
+                        start=1,
+                        end=3,
+                        given_name='1d',
+                        is_plus_strand=True)
+    feature1u = Feature(transcribed_pieces=[piece1],
+                        coordinate=coor,
+                        start=100,
+                        end=200,
+                        given_name='1u',
+                        is_plus_strand=True)
+    feature2d = Feature(transcribed_pieces=[piece2],
+                        coordinate=coor,
+                        start=1,
+                        end=3,
+                        given_name='2d',
+                        is_plus_strand=True)
     # see if they can be ordered as expected overall
     op = ti.sorted_pieces()
     print([piece0, piece1, piece2], 'expected')
@@ -297,12 +298,12 @@ def test_order_pieces():
     expected = [[feature0u], [feature1d, feature1u], [feature2d]]
     assert fully_sorted == expected
     # test assertion of matching strand
-    feature_neg = orm.Feature(transcribed_pieces=[piece2],
-                              coordinate=coor,
-                              start=5,
-                              end=10,
-                              given_name='neg',
-                              is_plus_strand=False)
+    feature_neg = Feature(transcribed_pieces=[piece2],
+                          coordinate=coor,
+                          start=5,
+                          end=10,
+                          given_name='neg',
+                          is_plus_strand=False)
     sess.add(feature_neg)
     sess.commit()
     with pytest.raises(AssertionError):
@@ -311,21 +312,20 @@ def test_order_pieces():
 
 class BiointerpDemoDataCoding(object):
     def __init__(self, sess, is_plus_strand):
-        self.sl, self.sl_handler = setup_data_handler(handlers.SuperLocusHandlerBase,
-                                                      orm.SuperLocus)
+        self.sl, self.sl_handler = setup_data_handler(handlers.SuperLocusHandlerBase, SuperLocus)
         self.scribed, self.scribed_handler = setup_data_handler(handlers.TranscribedHandlerBase,
-                                                                orm.Transcribed,
+                                                                Transcribed,
                                                                 super_locus=self.sl)
 
-        self.piece = orm.TranscribedPiece(position=0, transcribed=self.scribed)
+        self.piece = TranscribedPiece(position=0, transcribed=self.scribed)
 
         self.ti = TranscriptInterpBase(transcript=self.scribed_handler,
                                        super_locus=self.sl,
                                        session=sess)
 
-        self.g = orm.Genome()
+        self.g = Genome()
         # setup ranges for a two-exon coding gene
-        self.coordinate = orm.Coordinate(seqid='a', start=1, end=2000, genome=self.g)
+        self.coordinate = Coordinate(seqid='a', start=1, end=2000, genome=self.g)
         transcribed_start, transcribed_end = 100, 900
         coding_start, coding_end = 200, 800
         intron_start, intron_end = 300, 700
@@ -336,29 +336,29 @@ class BiointerpDemoDataCoding(object):
             intron_end, intron_start = intron_start, intron_end
 
         # transcribed:
-        self.transcribed_feature = orm.Feature(coordinate=self.coordinate,
-                                               is_plus_strand=is_plus_strand,
-                                               start=transcribed_start,
-                                               end=transcribed_end,
-                                               start_is_biological_start=True,
-                                               end_is_biological_end=True,
-                                               type=types.TRANSCRIBED)
+        self.transcribed_feature = Feature(coordinate=self.coordinate,
+                                           is_plus_strand=is_plus_strand,
+                                           start=transcribed_start,
+                                           end=transcribed_end,
+                                           start_is_biological_start=True,
+                                           end_is_biological_end=True,
+                                           type=types.TRANSCRIBED)
         # coding:
-        self.coding_feature = orm.Feature(coordinate=self.coordinate,
-                                          is_plus_strand=is_plus_strand,
-                                          start=coding_start,
-                                          end=coding_end,
-                                          start_is_biological_start=True,
-                                          end_is_biological_end=True,
-                                          type=types.CODING)
+        self.coding_feature = Feature(coordinate=self.coordinate,
+                                      is_plus_strand=is_plus_strand,
+                                      start=coding_start,
+                                      end=coding_end,
+                                      start_is_biological_start=True,
+                                      end_is_biological_end=True,
+                                      type=types.CODING)
         # intron:
-        self.intron_feature = orm.Feature(coordinate=self.coordinate,
-                                          is_plus_strand=is_plus_strand,
-                                          start=intron_start,
-                                          end=intron_end,
-                                          start_is_biological_start=True,
-                                          end_is_biological_end=True,
-                                          type=types.INTRON)
+        self.intron_feature = Feature(coordinate=self.coordinate,
+                                      is_plus_strand=is_plus_strand,
+                                      start=intron_start,
+                                      end=intron_end,
+                                      start_is_biological_start=True,
+                                      end_is_biological_end=True,
+                                      type=types.INTRON)
 
         self.piece.features = [self.transcribed_feature, self.coding_feature, self.intron_feature]
 
@@ -368,21 +368,20 @@ class BiointerpDemoDataCoding(object):
 
 class BiointerpDemoDataPartial(object):
     def __init__(self, sess, is_plus_strand):
-        self.sl, self.sl_handler = setup_data_handler(handlers.SuperLocusHandlerBase,
-                                                      orm.SuperLocus)
+        self.sl, self.sl_handler = setup_data_handler(handlers.SuperLocusHandlerBase, SuperLocus)
         self.scribed, self.scribed_handler = setup_data_handler(handlers.TranscribedHandlerBase,
-                                                                orm.Transcribed,
+                                                                Transcribed,
                                                                 super_locus=self.sl)
 
-        self.piece = orm.TranscribedPiece(position=0, transcribed=self.scribed)
+        self.piece = TranscribedPiece(position=0, transcribed=self.scribed)
 
         self.ti = TranscriptInterpBase(transcript=self.scribed_handler,
                                        super_locus=self.sl,
                                        session=sess)
 
-        self.ag = orm.Genome()
+        self.ag = Genome()
         # setup ranges for a two-exon coding gene
-        self.coordinates = orm.Coordinate(seqid='a', start=1, end=2000, genome=self.ag)
+        self.coordinates = Coordinate(seqid='a', start=1, end=2000, genome=self.ag)
         transcribed_start, transcribed_end = 100, 500
         error_start, error_end = 499, 600
         transcription_bearings = (True, False)
@@ -392,21 +391,21 @@ class BiointerpDemoDataPartial(object):
             error_end, error_start = error_start, error_end
             transcription_bearings = (False, True)
 
-        self.transcribed_feature = orm.Feature(coordinate=self.coordinates,
-                                               is_plus_strand=is_plus_strand,
-                                               start=transcribed_start,
-                                               end=transcribed_end,
-                                               start_is_biological_start=transcription_bearings[0],
-                                               end_is_biological_end=transcription_bearings[1],
-                                               type=types.TRANSCRIBED)
+        self.transcribed_feature = Feature(coordinate=self.coordinates,
+                                           is_plus_strand=is_plus_strand,
+                                           start=transcribed_start,
+                                           end=transcribed_end,
+                                           start_is_biological_start=transcription_bearings[0],
+                                           end_is_biological_end=transcription_bearings[1],
+                                           type=types.TRANSCRIBED)
 
-        self.error_feature = orm.Feature(coordinate=self.coordinates,
-                                         is_plus_strand=is_plus_strand,
-                                         start=error_start,
-                                         end=error_end,
-                                         start_is_biological_start=True,
-                                         end_is_biological_end=True,
-                                         type=types.ERROR)
+        self.error_feature = Feature(coordinate=self.coordinates,
+                                     is_plus_strand=is_plus_strand,
+                                     start=error_start,
+                                     end=error_end,
+                                     start_is_biological_start=True,
+                                     end_is_biological_end=True,
+                                     type=types.ERROR)
 
         self.piece.features = [self.transcribed_feature, self.error_feature]
         sess.add_all([self.ag, self.sl])
@@ -498,8 +497,8 @@ def test_data_frm_gffentry():
     controller = ImportController(database_path='sqlite:///:memory:', err_path=None)
 
     sess = controller.session
-    g, gh = setup_data_handler(importer.GenomeHandler, orm.Genome)
-    coords = orm.Coordinate(start=1, end=100000, seqid='NC_015438.2', genome=g)
+    g, gh = setup_data_handler(importer.GenomeHandler, Genome)
+    coords = Coordinate(start=1, end=100000, seqid='NC_015438.2', genome=g)
 
     sess.add_all([g, coords])
     sess.commit()
@@ -609,7 +608,7 @@ def test_fasta_import():
 
     # test import of multiple sequences from one file
     controller = import_fasta('testdata/basic_sequences.fa')
-    coords = controller.latest_genome_handler.data.coordinates
+    coords = controller.session.query(Coordinate).all()
     assert len(coords) == 3
     assert coords[0].seqid == '1'
     assert coords[0].start == 0
@@ -628,69 +627,73 @@ def test_fasta_import():
 
 def test_import_multiple_genomes():
     controller = ImportController(database_path='sqlite:///:memory:')
-    controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff3', clean_gff=True)
+    controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff', clean_gff=True)
     query = controller.session.query
 
-    n_features_1 = query(orm.Feature).count()
-    n_coords_1 = query(orm.Coordinate).count()
-    n_genomes_1 = query(orm.Genome).count()
-    max_id_1 = query(func.max(orm.Feature.id)).one()[0]
+    n_features_1 = query(Feature).count()
+    n_coords_1 = query(Coordinate).count()
+    n_genomes_1 = query(Genome).count()
+    max_id_1 = query(func.max(Feature.id)).one()[0]
 
     # add two more genomes
-    controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff3', clean_gff=True)
-    controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff3', clean_gff=True)
+    controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff', clean_gff=True)
+    controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff', clean_gff=True)
 
-    n_features_3 = query(orm.Feature).count()
-    n_coords_3 = query(orm.Coordinate).count()
-    n_genomes_3 = query(orm.Genome).count()
+    n_features_3 = query(Feature).count()
+    n_coords_3 = query(Coordinate).count()
+    n_genomes_3 = query(Genome).count()
     assert n_features_1 * 3 == n_features_3
     assert n_coords_1 * 3 == n_coords_3
     assert n_genomes_1 * 3 == n_genomes_3
 
-    max_id_3 = query(func.max(orm.Feature.id)).one()[0]
+    max_id_3 = query(func.max(Feature.id)).one()[0]
     assert max_id_1 * 3 == max_id_3
 
-    # test transcribed and super locus relation
-    transcribeds_sl_1 = query(orm.SuperLocus).filter(orm.SuperLocus.id == 1).one().transcribeds
-    transcribeds_sl_2 = query(orm.SuperLocus).filter(orm.SuperLocus.id == 2).one().transcribeds
-    transcribeds_sl_3 = query(orm.SuperLocus).filter(orm.SuperLocus.id == 3).one().transcribeds
+    # test transcribed and super locus relation for a super loci on the plus strand
+    # we have 8 super loci in each genome
+    transcribeds_sl_1 = query(SuperLocus).filter(SuperLocus.id == 1).one().transcribeds
+    transcribeds_sl_2 = query(SuperLocus).filter(SuperLocus.id == 9).one().transcribeds
+    transcribeds_sl_3 = query(SuperLocus).filter(SuperLocus.id == 17).one().transcribeds
     assert len(transcribeds_sl_1) == len(transcribeds_sl_2) == len(transcribeds_sl_3)
 
-    n_transcribed = query(orm.Transcribed).count()
-    assert len(transcribeds_sl_1) + len(transcribeds_sl_2) + len(transcribeds_sl_3) == n_transcribed
-
     # test translated and super locus relation
-    translateds_sl_1 = query(orm.SuperLocus).filter(orm.SuperLocus.id == 1).one().translateds
-    translateds_sl_2 = query(orm.SuperLocus).filter(orm.SuperLocus.id == 2).one().translateds
-    translateds_sl_3 = query(orm.SuperLocus).filter(orm.SuperLocus.id == 3).one().translateds
+    translateds_sl_1 = query(SuperLocus).filter(SuperLocus.id == 1).one().translateds
+    translateds_sl_2 = query(SuperLocus).filter(SuperLocus.id == 9).one().translateds
+    translateds_sl_3 = query(SuperLocus).filter(SuperLocus.id == 17).one().translateds
     assert len(translateds_sl_1) == len(translateds_sl_2) == len(translateds_sl_3)
 
-    n_translated = query(orm.Transcribed).count()
-    assert len(translateds_sl_1) + len(translateds_sl_2) + len(translateds_sl_3) == n_translated
+    # test transcribed and super locus relation for a super loci on the minus strand
+    transcribeds_sl_1 = query(SuperLocus).filter(SuperLocus.id == 6).one().transcribeds
+    transcribeds_sl_2 = query(SuperLocus).filter(SuperLocus.id == 14).one().transcribeds
+    transcribeds_sl_3 = query(SuperLocus).filter(SuperLocus.id == 22).one().transcribeds
+    assert len(transcribeds_sl_1) == len(transcribeds_sl_2) == len(transcribeds_sl_3)
+
+    # test translated and super locus relation
+    translateds_sl_1 = query(SuperLocus).filter(SuperLocus.id == 6).one().translateds
+    translateds_sl_2 = query(SuperLocus).filter(SuperLocus.id == 14).one().translateds
+    translateds_sl_3 = query(SuperLocus).filter(SuperLocus.id == 22).one().translateds
+    assert len(translateds_sl_1) == len(translateds_sl_2) == len(translateds_sl_3)
 
 
 def test_dummyloci_multiple_errors():
     """Tests if all errors generated for dummyloci{.gff|.fa} are correct"""
+
     def error_in_list(error, error_list):
         """searches for the error in a list. removes the error if found.
         error should be a dict and error list a list of orm objects"""
         for e in error_list[:]:  # make a copy at each iteration so we avoid weird errors
-            if (error['coord_id'] == e.coordinate.id and
-                    error['is_plus_strand'] == e.is_plus_strand and
-                    error['start'] == e.start and
-                    error['end'] == e.end and
-                    error['type'] == e.type.value):
+            if (error['coord_id'] == e.coordinate.id and error['is_plus_strand'] == e.is_plus_strand
+                    and error['start'] == e.start and error['end'] == e.end
+                    and error['type'] == e.type.value):
                 error_list.remove(e)
                 return True
         return False
 
     controller = ImportController(database_path='sqlite:///:memory:')
-    controller.add_genome('testdata/dummyloci.fa',
-                          'testdata/dummyloci.gff',
-                          clean_gff=True)
+    controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff', clean_gff=True)
     error_types = [t.value for t in types.Errors]
-    errors = controller.session.query(orm.Feature).filter(orm.Feature.type.in_(error_types)).all()
-    coords = controller.session.query(orm.Coordinate).all()
+    errors = controller.session.query(Feature).filter(Feature.type.in_(error_types)).all()
+    coords = controller.session.query(Coordinate).all()
 
     # test case 1 - see gff file for more documentation
     # two identical error bars after cds for aligned exon/cds pair
@@ -800,9 +803,11 @@ def test_dummyloci_multiple_errors():
     # test that we don't have any errors we don't expect
     assert not errors
 
+
 # TODO
 # make one huge testcase where every single orm object is fully tested for two super loci
 # on plus and minus strand
+
 
 def test_gff_gen():
     gff_organizer = OrganizedGFFEntries('testdata/testerSl.gff3')
@@ -835,7 +840,7 @@ def test_enum_non_inheritance():
     allknown = [x.name for x in list(types.AllKnown)]
     allnice = [x.name for x in list(types.AllKeepable)]
     # check that some random bits made it in to all
-    assert 'error' in allknown
+    assert 'missing_utr_3p' in allknown
     assert 'region' in allknown
 
     # check that some annoying bits are not in nice set
