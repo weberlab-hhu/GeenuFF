@@ -394,7 +394,7 @@ class GFFErrorHandling(object):
             # loci in the intergenic region as something in this area appears to have gone wrong
             self.errors = group['errors']
             if not group['transcripts']:
-                self.add_overlapping_error(i, None, 'whole', types.EMPTY_SUPER_LOCUS)
+                self._add_overlapping_error(i, None, 'whole', types.EMPTY_SUPER_LOCUS)
             # other cases
             for transcript in group['transcripts']:
                 # if coding transcript
@@ -405,26 +405,26 @@ class GFFErrorHandling(object):
                     # the case of missing of implicit UTR ranges
                     # the solution is similar to the one above
                     if cds.start == transcript['transcript_feature'].start:
-                        self.add_overlapping_error(i, cds, '5p', types.MISSING_UTR_5P)
+                        self._add_overlapping_error(i, cds, '5p', types.MISSING_UTR_5P)
                     if cds.end == transcript['transcript_feature'].end:
-                        self.add_overlapping_error(i, cds, '3p', types.MISSING_UTR_3P)
+                        self._add_overlapping_error(i, cds, '3p', types.MISSING_UTR_3P)
 
                     # the case of missing start/stop codon
                     if not has_start_codon(cds.coord.sequence, cds.start, self.is_plus_strand):
-                        self.add_overlapping_error(i, cds, '5p', types.MISSING_START_CODON)
+                        self._add_overlapping_error(i, cds, '5p', types.MISSING_START_CODON)
                     if not has_stop_codon(cds.coord.sequence, cds.end, self.is_plus_strand):
-                        self.add_overlapping_error(i, cds, '3p', types.MISSING_STOP_CODON)
+                        self._add_overlapping_error(i, cds, '3p', types.MISSING_STOP_CODON)
 
                     # the case of wrong 5p phase
                     if cds.phase_5p != 0:
-                        self.add_overlapping_error(i, cds, '5p', types.WRONG_PHASE_5P)
+                        self._add_overlapping_error(i, cds, '5p', types.WRONG_PHASE_5P)
 
                     if introns:
                         # the case of wrong 3p phase
                         len_3p_exon = abs(cds.end - transcript['introns'][-1].end)
                         # can't think of a better way to check 3p phase
                         if cds.phase_3p != (3 - len_3p_exon % 3) % 3:
-                            self.add_overlapping_error(i, cds, '3p', types.MISMATCHED_PHASE_3P)
+                            self._add_overlapping_error(i, cds, '3p', types.MISMATCHED_PHASE_3P)
 
                         for j, intron in enumerate(introns):
                             # the case of overlapping exons
@@ -440,12 +440,12 @@ class GFFErrorHandling(object):
                                 else:
                                     error_end = transcript['transcript_feature'].end
                                 self._add_error(error_start, error_end, self.is_plus_strand,
-                                                        types.OVERLAPPING_EXONS)
+                                                types.OVERLAPPING_EXONS)
                             # the case of a too short intron
                             # todo put the minimum length in a config somewhere
                             elif abs(intron.end - intron.start) < 60:
-                                self._add_error(intron.start, intron.end,
-                                                        self.is_plus_strand, types.TOO_SHORT_INTRON)
+                                self._add_error(intron.start, intron.end, self.is_plus_strand,
+                                                types.TOO_SHORT_INTRON)
 
     def _add_error(self, start, end, is_plus_strand, error_type):
         # todo logging
@@ -457,7 +457,7 @@ class GFFErrorHandling(object):
                                   controller=self.controller)
         self.errors.append(error_i)
 
-    def add_overlapping_error(self, i, handler, direction, error_type):
+    def _add_overlapping_error(self, i, handler, direction, error_type):
         """Constructs an error features that overlaps halfway to the next super locus
         in the given direction from the given handler if possible. Otherwise mark until the end.
         If the direction is 'whole', the handler parameter is ignored.

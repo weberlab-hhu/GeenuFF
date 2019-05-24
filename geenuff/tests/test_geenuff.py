@@ -8,11 +8,13 @@ from sqlalchemy.exc import IntegrityError
 import sqlalchemy
 
 from .. import orm
-from ..applications import importer
-from ..applications.importer import ImportController
 from .. import types
 from .. import handlers
 from .. import helpers
+from ..base.orm import Feature, Coordinate, Transcribed, TranscribedPiece, SuperLocus, Translated
+from ..base.handlers import SuperLocusHandlerBase, TranscribedHandlerBase
+from ..applications import importer
+from ..applications.importer import ImportController, OrganizedGFFEntries
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -251,17 +253,14 @@ def test_order_pieces():
     sess.add_all([g, coor])
     sess.commit()
     # setup one transcribed handler with pieces
-    sl, slh = setup_data_handler(handlers.SuperLocusHandlerBase, orm.SuperLocus)
-    scribed, scribedh = setup_data_handler(handlers.TranscribedHandlerBase,
-                                           orm.Transcribed,
-                                           super_locus=sl)
-    ti = TranscriptInterpBase(transcript=scribedh, super_locus=sl, session=sess)
-    # wrong order
-    piece1 = orm.TranscribedPiece(position=1)
-    piece0 = orm.TranscribedPiece(position=0)
-    piece2 = orm.TranscribedPiece(position=2)
-    scribed.transcribed_pieces = [piece0, piece1, piece2]
-    sess.add_all([scribed, piece1, piece0, piece2])
+    sl, sl_h = setup_data_handler(SuperLocusHandlerBase, orm.SuperLocus)
+    t, t_h = setup_data_handler(TranscribedHandlerBase, Transcribed, super_locus=sl)
+    # insert in wrong order
+    piece1 = TranscribedPiece(position=1)
+    piece0 = TranscribedPiece(position=0)
+    piece2 = TranscribedPiece(position=2)
+    t.transcribed_pieces = [piece0, piece1, piece2]
+    sess.add_all([t, piece1, piece0, piece2])
     sess.commit()
     # setup some features on different pieces
     feature0u = orm.Feature(transcribed_pieces=[piece0],
@@ -308,153 +307,6 @@ def test_order_pieces():
     sess.commit()
     with pytest.raises(AssertionError):
         ti.sorted_features(piece2)
-
-
-class TransspliceDemoData(object):
-    """Setup of a rather complex transplicing scenario."""
-
-    def __init__(self, sess):
-        # setup two transitions:
-        # 1) scribed [-> ABC][-> FED]
-        #  transcribed A [  (               )  ]   D [  (                 ) ]
-        #       coding B [          (       )* ]   E [ *(             )     ]
-        # trans_intron C [               (  )* ]   F [ *(     )             ]
-
-        # 2) scribedflip [-> ABC][<- FpEpDp]
-        #  transcribed A [  (               )  ]   Dp[ (                 )  ]
-        #       coding B [          (       )* ]   Ep[     (             )* ]
-        # trans_intron C [               (  )* ]   Fp[             (     )* ]
-
-        g = orm.Genome()
-        self.old_coor = orm.Coordinate(seqid='a', start=1, end=2000, genome=g)
-        self.sl, self.slh = setup_data_handler(handlers.SuperLocusHandlerBase, orm.SuperLocus)
-        self.scribed, self.scribedh = setup_data_handler(handlers.TranscribedHandlerBase,
-                                                         orm.Transcribed,
-                                                         super_locus=self.sl)
-        self.scribedflip, self.scribedfliph = setup_data_handler(handlers.TranscribedHandlerBase,
-                                                                 orm.Transcribed,
-                                                                 super_locus=self.sl)
-        self.ti = TranscriptInterpBase(transcript=self.scribedh, super_locus=self.sl, session=sess)
-        self.tiflip = TranscriptInterpBase(transcript=self.scribedfliph,
-                                           super_locus=self.sl,
-                                           session=sess)
-
-        self.pieceA2C = orm.TranscribedPiece(position=0, transcribed=self.scribed)
-        self.pieceD2F = orm.TranscribedPiece(position=1, transcribed=self.scribed)
-        self.pieceA2C_prime = orm.TranscribedPiece(position=0, transcribed=self.scribedflip)
-        self.pieceD2F_prime = orm.TranscribedPiece(position=1, transcribed=self.scribedflip)
-        self.scribed.transcribed_pieces = [self.pieceA2C, self.pieceD2F]
-        self.scribedflip.transcribed_pieces = [self.pieceA2C_prime, self.pieceD2F_prime]
-        # pieceA2C features
-        self.fA = orm.Feature(coordinate=self.old_coor,
-                              start=10,
-                              end=40,
-                              given_name='A',
-                              start_is_biological_start=True,
-                              end_is_biological_end=True,
-                              is_plus_strand=True,
-                              type=types.TRANSCRIBED)
-
-        self.fB = orm.Feature(coordinate=self.old_coor,
-                              start=20,
-                              end=40,
-                              given_name='B',
-                              start_is_biological_start=True,
-                              end_is_biological_end=False,
-                              is_plus_strand=True,
-                              type=types.CODING)
-
-        self.fC = orm.Feature(coordinate=self.old_coor,
-                              start=30,
-                              end=40,
-                              given_name='C',
-                              start_is_biological_start=True,
-                              end_is_biological_end=False,
-                              is_plus_strand=True,
-                              type=types.TRANS_INTRON)
-
-        # pieceD2F features
-        self.fD = orm.Feature(coordinate=self.old_coor,
-                              start=910,
-                              end=940,
-                              given_name='D',
-                              start_is_biological_start=True,
-                              end_is_biological_end=True,
-                              is_plus_strand=True,
-                              type=types.TRANSCRIBED)
-
-        self.fE = orm.Feature(coordinate=self.old_coor,
-                              start=910,
-                              end=930,
-                              given_name='E',
-                              start_is_biological_start=False,
-                              end_is_biological_end=True,
-                              is_plus_strand=True,
-                              type=types.CODING)
-
-        self.fF = orm.Feature(coordinate=self.old_coor,
-                              start=910,
-                              end=920,
-                              given_name='F',
-                              start_is_biological_start=False,
-                              end_is_biological_end=True,
-                              is_plus_strand=True,
-                              type=types.TRANS_INTRON)
-
-        # pieceD2F_prime features
-        self.fDp = orm.Feature(coordinate=self.old_coor,
-                               start=940,
-                               end=910,
-                               given_name='Dp',
-                               start_is_biological_start=True,
-                               end_is_biological_end=True,
-                               is_plus_strand=False,
-                               type=types.TRANSCRIBED)
-        self.fEp = orm.Feature(coordinate=self.old_coor,
-                               start=940,
-                               end=920,
-                               given_name='Ep',
-                               start_is_biological_start=False,
-                               end_is_biological_end=True,
-                               is_plus_strand=False,
-                               type=types.CODING)
-        self.fFp = orm.Feature(coordinate=self.old_coor,
-                               start=940,
-                               end=930,
-                               given_name='Fp',
-                               start_is_biological_start=False,
-                               end_is_biological_end=True,
-                               is_plus_strand=False,
-                               type=types.TRANS_INTRON)
-
-        self.pieceA2C.features = [self.fA, self.fB, self.fC]
-        self.pieceA2C_prime.features = [self.fA, self.fB, self.fC]
-        self.pieceD2F.features = [self.fD, self.fE, self.fF]
-        self.pieceD2F_prime.features = [self.fDp, self.fEp, self.fFp]
-        sess.add(self.sl)
-        sess.commit()
-
-    def make_all_handlers(self):
-        self.slh.make_all_handlers()
-
-
-def test_transition_transsplice():
-    """Test if the transsplicing scenario of TransspliceDemoData is interpreted correctly by
-    transition_5p_to_3p() of TranscriptInterpBase.
-    """
-    sess = mk_memory_session()
-    d = TransspliceDemoData(sess)  # setup _d_ata
-    d.make_all_handlers()
-    # forward pass, same sequence, two pieces
-    ti_transitions = list(d.ti.transition_5p_to_3p())
-    # expect (start, end) of features to be sorted 5'-3' within pieces
-    # from transition gen: 0 -> aligned_features, 1 -> piece
-    assert [set(x[0]) for x in ti_transitions] == [{d.fA}, {d.fB}, {d.fC}, {d.fF}, {d.fE}, {d.fD}]
-
-    # forward, then backward pass, same sequence, two pieces
-    ti_transitions = list(d.tiflip.transition_5p_to_3p())
-    assert [set(x[0]) for x in ti_transitions] == [{d.fA}, {d.fB}, {d.fC}, {d.fFp}, {d.fEp},
-                                                   {d.fDp}]
 
 
 class BiointerpDemoDataCoding(object):
@@ -511,76 +363,6 @@ class BiointerpDemoDataCoding(object):
         self.piece.features = [self.transcribed_feature, self.coding_feature, self.intron_feature]
 
         sess.add(self.sl)
-        sess.commit()
-
-
-class BioInterpDemodataTranssplice(object):
-    def __init__(self, sess, is_plus_strand_piece0, is_plus_strand_piece1):
-        self.sl, self.sl_handler = setup_data_handler(handlers.SuperLocusHandlerBase,
-                                                      orm.SuperLocus)
-        self.scribed, self.scribed_handler = setup_data_handler(handlers.TranscribedHandlerBase,
-                                                                orm.Transcribed,
-                                                                super_locus=self.sl)
-
-        self.piece0 = orm.TranscribedPiece(position=0, transcribed=self.scribed)
-        self.piece1 = orm.TranscribedPiece(position=1, transcribed=self.scribed)
-        self.ti = TranscriptInterpBase(transcript=self.scribed_handler,
-                                       super_locus=self.sl,
-                                       session=sess)
-
-        # setup ranges for a two-exon coding gene
-        self.ag = orm.Genome()
-        self.coordinates = orm.Coordinate(seqid='a', start=1, end=2000, genome=self.ag)
-
-        t0_start, t0_end = 500, 700
-        t1_start, t1_end = 100, 300
-
-        if not is_plus_strand_piece0:
-            t0_start, t0_end = t0_end, t0_start
-        if not is_plus_strand_piece1:
-            t1_start, t1_end = t1_end, t1_start
-
-        trans_donor_splice, trans_intron_close = 600, t0_end
-        trans_acceptor_splice, trans_intron_open = 200, t1_start
-
-        # piece 0
-        self.transcribed0_feature = orm.Feature(coordinate=self.coordinates,
-                                                is_plus_strand=is_plus_strand_piece0,
-                                                start=t0_start,
-                                                end=t0_end,
-                                                start_is_biological_start=True,
-                                                end_is_biological_end=True,
-                                                type=types.TRANSCRIBED)
-
-        self.trans_intron0_feature = orm.Feature(coordinate=self.coordinates,
-                                                 is_plus_strand=is_plus_strand_piece0,
-                                                 start=trans_donor_splice,
-                                                 end=trans_intron_close,
-                                                 start_is_biological_start=True,
-                                                 end_is_biological_end=False,
-                                                 type=types.TRANS_INTRON)
-
-        # piece 1
-        self.transcribed1_feature = orm.Feature(coordinate=self.coordinates,
-                                                is_plus_strand=is_plus_strand_piece1,
-                                                start=t1_start,
-                                                end=t1_end,
-                                                start_is_biological_start=True,
-                                                end_is_biological_end=True,
-                                                type=types.TRANSCRIBED)
-
-        self.trans_intron1_feature = orm.Feature(coordinate=self.coordinates,
-                                                 is_plus_strand=is_plus_strand_piece1,
-                                                 start=trans_intron_open,
-                                                 end=trans_acceptor_splice,
-                                                 start_is_biological_start=False,
-                                                 end_is_biological_end=True,
-                                                 type=types.TRANS_INTRON)
-
-        self.piece0.features = [self.transcribed0_feature, self.trans_intron0_feature]
-        self.piece1.features = [self.transcribed1_feature, self.trans_intron1_feature]
-
-        sess.add_all([self.ag, self.sl])
         sess.commit()
 
 
@@ -688,34 +470,6 @@ def test_biointerp_features_as_ranges():
     ]
 
 
-def test_biointerp_features_as_ranges_transsplice():
-    """checks biological interpretation for ranges from db for non-coding, trans-spliced (from same chromosome) gene"""
-    sess = mk_memory_session()
-    fw = BioInterpDemodataTranssplice(sess, is_plus_strand_piece0=True, is_plus_strand_piece1=True)
-
-    assert fw.ti.transcribed_ranges() == [
-        Range(coordinate_id=1, is_plus_strand=True, piece_position=0, start=500, end=700),
-        Range(coordinate_id=1, is_plus_strand=True, piece_position=1, start=100, end=300)
-    ]
-
-    assert fw.ti.trans_intronic_ranges() == [
-        Range(coordinate_id=1, is_plus_strand=True, piece_position=0, start=600, end=700),
-        Range(coordinate_id=1, is_plus_strand=True, piece_position=1, start=100, end=200)
-    ]
-
-    rev = BioInterpDemodataTranssplice(sess,
-                                       is_plus_strand_piece0=False,
-                                       is_plus_strand_piece1=True)
-    assert rev.ti.transcribed_ranges() == [
-        Range(coordinate_id=2, is_plus_strand=False, piece_position=0, start=700, end=500),
-        Range(coordinate_id=2, is_plus_strand=True, piece_position=1, start=100, end=300)
-    ]
-    assert rev.ti.trans_intronic_ranges() == [
-        Range(coordinate_id=2, is_plus_strand=False, piece_position=0, start=600, end=500),
-        Range(coordinate_id=2, is_plus_strand=True, piece_position=1, start=100, end=200)
-    ]
-
-
 def test_biointerp_features_as_ranges_partial():
     """check biological interpretation for ranges from non-coding transcribed fragment"""
     sess = mk_memory_session()
@@ -738,83 +492,6 @@ def test_biointerp_features_as_ranges_partial():
     ]
 
 
-def test_biointerp_features_as_transitions():
-    """checks biological interpretation for sites from db for simple, spliced, coding gene"""
-    sess = mk_memory_session()
-    fw = BiointerpDemoDataCoding(sess, is_plus_strand=True)
-    assert fw.ti.transcription_start_sites() == [
-        TranscriptCoordinate(coordinate_id=1, is_plus_strand=True, piece_position=0, start=100)
-    ]
-    assert fw.ti.transcription_end_sites() == [
-        TranscriptCoordinate(coordinate_id=1, is_plus_strand=True, piece_position=0, start=900)
-    ]
-    assert fw.ti.translation_start_sites() == [
-        TranscriptCoordinate(coordinate_id=1, is_plus_strand=True, piece_position=0, start=200)
-    ]
-    assert fw.ti.translation_end_sites() == [
-        TranscriptCoordinate(coordinate_id=1, is_plus_strand=True, piece_position=0, start=800)
-    ]
-    assert fw.ti.intron_start_sites() == [
-        TranscriptCoordinate(coordinate_id=1, is_plus_strand=True, piece_position=0, start=300)
-    ]
-    assert fw.ti.intron_end_sites() == [
-        TranscriptCoordinate(coordinate_id=1, is_plus_strand=True, piece_position=0, start=700)
-    ]
-    # and minus strand
-    rev = BiointerpDemoDataCoding(sess, is_plus_strand=False)
-    assert rev.ti.transcription_start_sites() == [
-        TranscriptCoordinate(coordinate_id=2, is_plus_strand=False, piece_position=0, start=900)
-    ]
-    assert rev.ti.transcription_end_sites() == [
-        TranscriptCoordinate(coordinate_id=2, is_plus_strand=False, piece_position=0, start=100)
-    ]
-    assert rev.ti.translation_start_sites() == [
-        TranscriptCoordinate(coordinate_id=2, is_plus_strand=False, piece_position=0, start=800)
-    ]
-    assert rev.ti.translation_end_sites() == [
-        TranscriptCoordinate(coordinate_id=2, is_plus_strand=False, piece_position=0, start=200)
-    ]
-    assert rev.ti.intron_start_sites() == [
-        TranscriptCoordinate(coordinate_id=2, is_plus_strand=False, piece_position=0, start=700)
-    ]
-    assert rev.ti.intron_end_sites() == [
-        TranscriptCoordinate(coordinate_id=2, is_plus_strand=False, piece_position=0, start=300)
-    ]
-
-    # trans-splicing
-    trans = BioInterpDemodataTranssplice(sess,
-                                         is_plus_strand_piece0=True,
-                                         is_plus_strand_piece1=False)
-    assert trans.ti.transcription_start_sites() == [
-        TranscriptCoordinate(coordinate_id=3, is_plus_strand=True, piece_position=0, start=500),
-        TranscriptCoordinate(coordinate_id=3, is_plus_strand=False, piece_position=1, start=300)
-    ]
-    assert trans.ti.transcription_end_sites() == [
-        TranscriptCoordinate(coordinate_id=3, is_plus_strand=True, piece_position=0, start=700),
-        TranscriptCoordinate(coordinate_id=3, is_plus_strand=False, piece_position=1, start=100)
-    ]
-
-    assert trans.ti.trans_intron_start_sites() == [
-        TranscriptCoordinate(coordinate_id=3, is_plus_strand=True, piece_position=0, start=600)
-    ]
-    assert trans.ti.trans_intron_end_sites() == [
-        TranscriptCoordinate(coordinate_id=3, is_plus_strand=False, piece_position=1, start=200)
-    ]
-
-    # partial
-    partial = BiointerpDemoDataPartial(sess, is_plus_strand=True)
-    assert partial.ti.transcription_start_sites() == [
-        TranscriptCoordinate(coordinate_id=4, is_plus_strand=True, piece_position=0, start=100)
-    ]
-    assert partial.ti.transcription_end_sites() == []
-
-    partial_rev = BiointerpDemoDataPartial(sess, is_plus_strand=False)
-    assert partial_rev.ti.transcription_end_sites() == [
-        TranscriptCoordinate(coordinate_id=5, is_plus_strand=False, piece_position=0, start=100)
-    ]
-    assert partial_rev.ti.transcription_start_sites() == []
-
-
 # section: importer
 def test_data_frm_gffentry():
     """Test the interpretation and transformation of raw GFF entries."""
@@ -826,7 +503,7 @@ def test_data_frm_gffentry():
 
     sess.add_all([g, coords])
     sess.commit()
-    gh.mk_mapper()  # todo, why doesn't this work WAS HERE
+    gh.mk_mapper()
     gene_string = 'NC_015438.2\tGnomon\tgene\t4343\t5685\t.\t+\t.\tID=gene0;Dbxref=GeneID:104645797;Name=LOC10'
     mrna_string = 'NC_015438.2\tBestRefSeq\tmRNA\t13024\t15024\t.\t+\t.\tID=rna0;Parent=gene0;Dbxref=GeneID:'
     exon_string = 'NC_015438.2\tGnomon\texon\t4343\t4809\t.\t+\t.\tID=id1;Parent=rna0;Dbxref=GeneID:104645797'
@@ -923,33 +600,12 @@ def test_possible_types():
 
 
 def test_fasta_import():
-    """Import and test coordinate information from two dummy fasta files"""
+    """Import and test coordinate information from fasta files"""
 
     def import_fasta(path):
         controller = ImportController(database_path='sqlite:///:memory:')
         controller.add_sequences(path)
         return controller
-
-    # test very short dummyloci file
-    controller = import_fasta('testdata/dummyloci.fa')
-    coords = controller.latest_genome_handler.data.coordinates
-    assert len(coords) == 1
-    coord = coords[0]
-    assert coord.seqid == '1'
-    assert coord.start == 0
-    assert coord.end == 405
-    assert coord.sha1 == 'dc6f3ba2b0c08f7d08053837b810f86cbaa06f38'
-    assert coord.sequence == 'N' * 405
-
-    # test slightly longer biointerp file
-    controller = import_fasta('testdata/biointerp_loci.fa')
-    coords = controller.latest_genome_handler.data.coordinates
-    assert len(coords) == 1
-    coord = coords[0]
-    assert coord.seqid == 'a'
-    assert coord.start == 0
-    assert coord.end == 199 * 100
-    assert coord.sequence == 'ATCG' * 25 * 199  # also testing the upper case conversion
 
     # test import of multiple sequences from one file
     controller = import_fasta('testdata/basic_sequences.fa')
@@ -1014,7 +670,7 @@ def test_import_multiple_genomes():
 
 
 def test_dummyloci_multiple_errors():
-    """Tests if all errors generated for dummyloci_multiple{.gff|.fa} are correct"""
+    """Tests if all errors generated for dummyloci{.gff|.fa} are correct"""
     def error_in_list(error, error_list):
         """searches for the error in a list. removes the error if found.
         error should be a dict and error list a list of orm objects"""
@@ -1029,8 +685,8 @@ def test_dummyloci_multiple_errors():
         return False
 
     controller = ImportController(database_path='sqlite:///:memory:')
-    controller.add_genome('testdata/dummyloci_multiple.fa',
-                          'testdata/dummyloci_multiple.gff',
+    controller.add_genome('testdata/dummyloci.fa',
+                          'testdata/dummyloci.gff',
                           clean_gff=True)
     error_types = [t.value for t in types.Errors]
     errors = controller.session.query(orm.Feature).filter(orm.Feature.type.in_(error_types)).all()
@@ -1144,573 +800,34 @@ def test_dummyloci_multiple_errors():
     # test that we don't have any errors we don't expect
     assert not errors
 
-
-def test_transcript_interpreter():
-    """tests decoding of raw from-gff features via the TranscriptInterpreter class"""
-    sl, controller = setup_dummyloci_super_locus()
-    transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
-    # change so that there are implicit UTRs
-    t_interp = importer.TranscriptInterpreter(transcript_handler,
-                                              super_locus=sl,
-                                              controller=controller)
-    t_interp.decode_raw_features()
-    # has all standard features
-    controller.session.commit()
-    controller.insertion_queues.execute_so_far()
-    controller.session.commit()
-    features = cleaned_commited_features(controller.session)
-
-    types_out = set([x.type.value for x in features])
-    assert types_out == {types.CODING, types.TRANSCRIBED, types.INTRON}
-    bearings_out = set([x.start_is_biological_start
-                        for x in features] + [x.end_is_biological_end for x in features])
-
-    assert bearings_out == {True}
-
-    transcribeds = [x for x in features if x.type.value == types.TRANSCRIBED]
-    assert len(transcribeds) == 1
-    assert transcribeds[0].end == 400
-    assert transcribeds[0].start == 0
-
-
-def test_transcript_interpreter_minus_strand():
-    """Tests transcript interpreter also generally works in reverse direction"""
-    sl, controller = setup_dummyloci_super_locus()
-    for transcript_handler in sl.transcribed_handlers:
-        for feature in transcript_handler.feature_handlers:
-            feature.gffentry.strand = '-'
-            feature.add_shortcuts_from_gffentry()
-            print(feature.gffentry)
-
-    for transcript_handler in sl.transcribed_handlers:
-        t_interp = importer.TranscriptInterpreter(transcript_handler,
-                                                  super_locus=sl,
-                                                  controller=controller)
-        t_interp.decode_raw_features()
-    controller.insertion_queues.execute_so_far()
-    features = cleaned_commited_features(controller.session)
-    for f in features:
-        assert not f.is_plus_strand
-        assert f.start > f.end
-
-    errors = [x for x in features if x.type.value == types.ERROR]
-
-    # one for x, two for z bc truncated, and one for y, bc of phase on the new "first" exon
-    assert len(errors) == 4
-    assert set([e.start for e in errors]) == {110, 404}
-    expected_n_features = {
-        'y': 5,  # transcribed, coding, 2 introns, error
-        'z': 4,  # transcribed, coding, intron, error
-        'x': 4
-    }  # transcribed, coding, 2 errors
-    for t_id in expected_n_features:
-
-        transcribed = controller.session.query(
-            orm.Transcribed).filter(orm.Transcribed.given_name == t_id).first()
-        features = [f for piece in transcribed.transcribed_pieces for f in piece.features]
-        assert len(features) == expected_n_features[t_id]
-
-
-def test_transcript_get_first():
-    # plus strand
-    sl, controller = setup_dummyloci_super_locus()
-    transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
-    t_interp = importer.TranscriptInterpreter(transcript_handler,
-                                              super_locus=sl,
-                                              controller=controller)
-    sorted_intervals = t_interp.intervals_5to3(plus_strand=True)
-    i0 = sorted_intervals[0]
-    for intv in sorted_intervals:
-        print(intv)
-    t_interp.interpret_first_pos(i0)
-    controller.session.commit()
-    controller.insertion_queues.execute_so_far()
-    features = cleaned_commited_features(controller.session)
-    status = t_interp.status
-    assert len(features) == 1
-    f0 = features[0]
-    assert f0.start == 0
-    assert status.is_5p_utr()
-    assert f0.phase is None
-    assert f0.is_plus_strand
-
-
-def test_transcript_get_first_minus_strand():
-    # minus strand
-    sl, controller = setup_dummyloci_super_locus()
-    for transcript_handler in sl.transcribed_handlers:
-        for feature in transcript_handler.feature_handlers:
-            feature.gffentry.strand = '-'
-            feature.add_shortcuts_from_gffentry()
-
-    transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
-
-    t_interp = importer.TranscriptInterpreter(transcript_handler,
-                                              super_locus=sl,
-                                              controller=controller)
-    sorted_intervals = t_interp.intervals_5to3(plus_strand=False)
-
-    i0 = sorted_intervals[0]
-    t_interp.interpret_first_pos(i0, plus_strand=False)
-    controller.session.commit()
-    controller.insertion_queues.execute_so_far()
-    features = cleaned_commited_features(controller.session)
-    print(features)
-    features = [f for f in features if not f.is_plus_strand]
-    status = t_interp.status
-    assert len(features) == 1
-    f0 = features[0]
-    print(f0)
-    print(status)
-    print(f0.type)
-    assert f0.start == 399
-    assert status.is_5p_utr()
-    assert f0.phase is None
-
-
-def test_transcript_get_first_without_UTR():
-    # minus strand
-    sl, controller = setup_dummyloci_super_locus()
-    for transcript_handler in sl.transcribed_handlers:
-        for feature in transcript_handler.feature_handlers:
-            feature.gffentry.strand = '-'
-            feature.add_shortcuts_from_gffentry()
-
-    transcript_handler = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'x'][0]
-
-    t_interp = importer.TranscriptInterpreter(transcript_handler,
-                                              super_locus=sl,
-                                              controller=controller)
-    # test without UTR (x doesn't have last exon, and therefore will end in CDS); remember, flipped it to minus strand
-    prefeatures = transcript_handler.feature_handlers
-    print('prefeatures', prefeatures)
-    print([x.gffentry for x in prefeatures])
-    i0 = t_interp.intervals_5to3(plus_strand=False)[0]
-    t_interp.interpret_first_pos(i0, plus_strand=False)
-    controller.session.commit()
-    controller.insertion_queues.execute_so_far()
-    print('??=\n', controller.session.query(orm.Feature).all())
-    features = cleaned_commited_features(controller.session)
-    print('features ====>\n', features)
-    status = t_interp.status
-    assert len(features) == 3
-    f_err = [f for f in features if f.type.value == types.ERROR][0]
-    f_coding = [f for f in features if f.type.value == types.CODING][0]
-    f_transcribed = [f for f in features if f.type.value == types.TRANSCRIBED][0]
-
-    # should get status instead of a start codon and tss
-    assert f_coding.start == 119
-    assert not f_coding.start_is_biological_start
-    assert f_transcribed.start == 119
-    assert not f_transcribed.start_is_biological_start
-
-    assert not f_coding.is_plus_strand
-    # region beyond exon should be marked erroneous
-    assert not f_err.is_plus_strand
-    assert f_err.start == 404
-    assert f_err.end == 118  # so that err overlaps 1bp with the coding status checked above
-    assert status.is_coding()
-    assert status.coding_tracker.seen_start
-    assert status.transcribed_tracker.in_region
-
-
-def test_transcript_transition_from_5p_to_end():
-    slh, controller = setup_dummyloci_super_locus()
-    transcript_handler = [x for x in slh.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
-    t_interp = importer.TranscriptInterpreter(transcript_handler,
-                                              super_locus=slh,
-                                              controller=controller)
-    ivals_sets = t_interp.intervals_5to3(plus_strand=True)
-    t_interp.interpret_first_pos(ivals_sets[0])
-    # hit start codon
-    t_interp.interpret_transition(ivals_before=ivals_sets[0],
-                                  ivals_after=ivals_sets[1],
-                                  plus_strand=True)
-
-    features = controller.insertion_queues.feature.queue
-    coding_feature = features[-1]
-    assert coding_feature["type"] == types.CODING
-    assert coding_feature["start_is_biological_start"]
-    assert coding_feature["start"] == 10
-    assert coding_feature["end"] is None
-    # hit splice site
-    t_interp.interpret_transition(ivals_before=ivals_sets[1],
-                                  ivals_after=ivals_sets[2],
-                                  plus_strand=True)
-
-    intron_feature0 = features[-1]
-    assert intron_feature0["type"] == types.INTRON
-    assert intron_feature0["end"] == 110
-    assert intron_feature0["start"] == 100  # splice from
-    assert t_interp.status.is_coding()
-    # hit splice site
-    t_interp.interpret_transition(ivals_before=ivals_sets[2],
-                                  ivals_after=ivals_sets[3],
-                                  plus_strand=True)
-
-    intron_feature1 = features[-1]
-    assert intron_feature1["type"] == types.INTRON
-    assert intron_feature1["start"] == 120  # splice from
-    assert intron_feature1["end"] == 200  # splice to
-    # hit stop codon
-    t_interp.interpret_transition(ivals_before=ivals_sets[3],
-                                  ivals_after=ivals_sets[4],
-                                  plus_strand=True)
-
-    # end should be added now
-    assert coding_feature["end"] == 300
-    assert coding_feature["end_is_biological_end"]
-    # hit transcription termination site
-    t_interp.interpret_last_pos(ivals_sets[4], plus_strand=True)
-    controller.session.commit()
-    controller.insertion_queues.execute_so_far()
-    # spot check transcribed_feature after database entry
-    fin_features = cleaned_commited_features(controller.session)
-    transcribed_features = [x for x in fin_features if x.type.value == types.TRANSCRIBED]
-    assert len(transcribed_features) == 1
-    assert transcribed_features[0].start == 0
-    assert transcribed_features[0].end == 400
-    assert transcribed_features[0].start_is_biological_start
-    assert transcribed_features[0].end_is_biological_end
-    assert transcribed_features[0].is_plus_strand
-
-    # test transition_5p_to_3p, originally done for Helixer
-    # the transcript needs to query for as the handlers in slh.transcribed_handlers
-    # do not contain an Transcribed orm instance due to core insert
-    # (the same is true for super_locus
-    super_locus = controller.session.query(orm.SuperLocus).\
-                      filter(orm.SuperLocus.given_name == slh.gffentry.get_ID()).one()
-    slh.add_data(super_locus)
-    transcript = [x for x in slh.data.transcribeds if x.given_name == 'y'][0]
-    t_interp.transcript.add_data(transcript)
-    transitions = list(t_interp.transition_5p_to_3p())
-    assert len(transitions) == 4
-    pieces = [x[1] for x in transitions]
-    features = [x[0][0] for x in transitions]
-    #ordered_starts = [0, 10, 100, 110, 120, 200, 300, 400]
-    ordered_starts = [0, 10, 100, 120]
-    assert [x.start for x in features] == ordered_starts
-    expected_types = [types.TRANSCRIBED, types.CODING, types.INTRON, types.INTRON]
-    assert [x.type.value for x in features] == expected_types
-    assert all([x.position == 0 for x in pieces])
-
-
-def test_non_coding_transitions():
-    slh, controller = setup_dummyloci_super_locus()
-    transcript_handler = [x for x in slh.transcribed_handlers if x.gffentry.get_ID() == 'z'][0]
-    piece = transcript_handler.one_piece()
-    t_interp = importer.TranscriptInterpreter(transcript_handler,
-                                              super_locus=slh,
-                                              controller=controller)
-    # get single-exon no-CDS transcript
-    # delete CDS feature
-    features = transcript_handler.feature_handlers
-    for i in range(len(features) - 1, -1, -1):
-        print(i)
-        if features[i].gffentry.type == types.CDS:
-            del features[i]
-    # check we just setup TSS then TTS in that order
-    ivals_sets = t_interp.intervals_5to3(plus_strand=True)
-    assert len(ivals_sets) == 1
-    t_interp.interpret_first_pos(ivals_sets[0])
-
-    features = controller.insertion_queues.feature.queue
-    transcribed_feature = features[-1]
-    assert transcribed_feature["type"] == types.TRANSCRIBED
-    assert transcribed_feature["start_is_biological_start"]
-    assert transcribed_feature["start"] == 110
-    assert transcribed_feature["end"] is None
-    assert transcribed_feature["end_is_biological_end"] is None
-
-    t_interp.interpret_last_pos(ivals_sets[0], plus_strand=True)
-
-    assert transcribed_feature["start"] == 110  # no change expected
-    assert transcribed_feature["end"] == 120
-    assert transcribed_feature["end_is_biological_end"]
-    assert len(features) == 1
-
-
-def test_errors_not_lost():
-    slh, controller = setup_dummyloci_super_locus()
-    s = "1\tGnomon\tgene\t20\t405\t0.\t-\t0\tID=eg_missing_children"
-    gene_entry = gffhelper.GFFObject(s)
-    controller.clean_entry(gene_entry)
-    coordinate = controller.latest_genome_handler.data.coordinates[0]
-
-    slh._mark_erroneous(gene_entry, coordinate=coordinate, controller=controller)
-    assert len(slh.transcribed_handlers) == 4
-
-    slh.check_and_fix_structure(coordinate=coordinate, controller=controller)
-    features = controller.session.query(
-        orm.Feature).filter(orm.Feature.given_name == 'eg_missing_children').all()
-    assert len(features) == 1
-    assert features[0].start == 404
-    assert features[0].end == 18
-
-
-def test_setup_proteins():
-    """Tests explicit protein creation from mRNA & CDS gff features"""
-    slh, controller = setup_dummyloci_super_locus()
-    transcript = [x for x in slh.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
-    t_interp = importer.TranscriptInterpreter(transcript, slh, controller)
-    controller.insertion_queues.execute_so_far()
-    print(t_interp.proteins)
-    assert len(t_interp.proteins.keys()) == 1
-
-    transcript_orm = controller.session.query(
-        orm.Transcribed).filter(orm.Transcribed.given_name == 'y').first()
-    protein_orm = controller.session.query(
-        orm.Translated).filter(orm.Translated.given_name == 'y.p').first()
-    assert protein_orm.given_name == 'y.p'
-
-
-def test_cp_features_to_prot():
-    """Test linking of appropriate features to newly created protein (translated)"""
-    slh, controller = setup_dummyloci_super_locus()
-    controller.session.commit()
-    transcript_handler = [x for x in slh.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
-    t_interp = importer.TranscriptInterpreter(transcript_handler, slh, controller)
-
-    t_interp.decode_raw_features()
-    controller.session.commit()
-    controller.insertion_queues.execute_so_far()
-    # grab protein again jic
-    protein = controller.session.query(
-        orm.Translated).filter(orm.Translated.given_name == 'y.p').all()
-    assert len(protein) == 1
-    protein = protein[0]
-    print(protein.id)
-    print(controller.session.query(orm.association_translated_to_feature).all())
-    assert len(protein.features) == 1
-    p_feature = protein.features[0]
-    assert p_feature.type.value == types.CODING
-    assert p_feature.start_is_biological_start == p_feature.end_is_biological_end == True
-
-
-def test_check_and_fix_structure():
-    """checks expected 'geenuff' format can be produced from the initial pre-entries parsed from the gff file"""
-    # so we save a copy of the cleaned up loci once per test run
-    rel_path = 'testdata/dummyloci_annotations.sqlitedb'
-    db_path = 'sqlite:///{}'.format(rel_path)
-    if os.path.exists(rel_path):
-        os.remove(rel_path)
-    slh, controller = setup_dummyloci_super_locus(db_path)
-    coordinate = controller.latest_genome_handler.data.coordinates[0]
-
-    slh.check_and_fix_structure(coordinate=coordinate, controller=controller)
-    controller.insertion_queues.execute_so_far()
-    # check handling of nice transcript
-    protein = controller.session.query(
-        orm.Translated).filter(orm.Translated.given_name == 'y.p').all()
-    print(controller.session.query(orm.association_translated_to_feature).all())
-    assert len(protein) == 1
-    protein = protein[0]
-    print(protein.id)
-    print(controller.session.query(orm.association_translated_to_feature).all())
-    # check we get a coding region/feature for the nice transcript
-    assert len(protein.features) == 1
-    p_feature = protein.features[0]
-    assert p_feature.type.value == types.CODING
-    assert p_feature.start == 10
-    assert p_feature.end == 300
-    assert p_feature.start_is_biological_start
-    assert p_feature.end_is_biological_end
-
-    # check we get a transcript with transcribed, coding and two intronic regions
-    piece = controller.session.query(
-        orm.TranscribedPiece).filter(orm.TranscribedPiece.given_name == 'y').first()
-    print(piece)
-    assert len(piece.features) == 4
-    assert set([x.type.value for x in piece.features]) == {
-        types.TRANSCRIBED,
-        types.INTRON,
-        types.CODING,
-    }
-    assert set([(x.start_is_biological_start, x.end_is_biological_end)
-                for x in piece.features]) == {(True, True)}
-    # check handling of truncated transcript
-    piece = controller.session.query(
-        orm.TranscribedPiece).filter(orm.TranscribedPiece.given_name == 'x').first()
-    protein = controller.session.query(
-        orm.Translated).filter(orm.Translated.given_name == 'x.p').first()
-    print(protein.features)
-    assert len(protein.features) == 1
-    p_feature = protein.features[0]
-    assert p_feature.type.value == types.CODING
-    assert p_feature.start == 10
-    assert p_feature.end == 120
-    assert p_feature.start_is_biological_start
-    assert not p_feature.end_is_biological_end
-
-    assert len(piece.features) == 4
-    assert set([x.type.value for x in piece.features
-                ]) == {types.TRANSCRIBED, types.INTRON, types.ERROR, types.CODING}
-    coding_fs = [x for x in piece.features if x.type.value == types.CODING]
-    assert len(coding_fs) == 1
-    assert coding_fs[0].start_is_biological_start
-    assert not coding_fs[0].end_is_biological_end
-
-    transcribed_fs = [x for x in piece.features if x.type.value == types.TRANSCRIBED]
-    assert len(transcribed_fs) == 1
-    assert transcribed_fs[0].start_is_biological_start
-    assert not transcribed_fs[0].end_is_biological_end
-    assert transcribed_fs[0].start == 0
-    assert transcribed_fs[0].end == 120
-
-    sl_datas = controller.session.query(orm.SuperLocus).all()
-    assert len(sl_datas) == 1
-    assert len(sl_datas[0].translateds) == 3
-
-
-def test_erroneous_splice():
-    slh, controller = setup_dummyloci_super_locus()
-    sess = controller.session
-    # get target transcript
-    transcript = [x for x in slh.transcribed_handlers if x.gffentry.get_ID() == 'x'][0]
-    # fish out "first exon" features and extend so intron is of -length
-    features = []
-    for scribed in slh.transcribed_handlers:
-        features += scribed.feature_handlers
-    f0_handler = [f for f in features if f.gffentry.get_ID() == 'ftr000000'][0]
-    f1_handler = [f for f in features if f.gffentry.get_ID() == 'ftr000001'][0]
-    #f0 = sess.query(orm.Feature).filter(orm.Feature.given_name == 'ftr000000').first()
-    #f1 = sess.query(orm.Feature).filter(orm.Feature.given_name == 'ftr000001').first()
-    f0_handler.gffentry.end = f1_handler.gffentry.end = 115
-
-    ti = importer.TranscriptInterpreter(transcript, controller=controller, super_locus=slh)
-    ti.decode_raw_features()
-    sess.commit()
-    controller.insertion_queues.execute_so_far()
-    clean_datas = cleaned_commited_features(sess)
-    # TSS, start codon, 2x error splice, 2x error splice, 2x error no stop
-    print('---\n'.join([str(x) for x in clean_datas]))
-    assert len(clean_datas) == 5
-
-    assert len([x for x in clean_datas if x.type.value == types.ERROR]) == 3
-    # make sure splice error covers whole exon-intron-exon region
-    print('clean datas here::::')
-    print('\n\n'.join([str(x) for x in clean_datas]))
-    assert clean_datas[2].type.value == types.ERROR
-    assert clean_datas[2].start_is_biological_start
-    assert clean_datas[2].start == 10
-    assert clean_datas[2].end_is_biological_end
-    assert clean_datas[2].end == 120
-    sess.commit()
-
+# TODO
+# make one huge testcase where every single orm object is fully tested for two super loci
+# on plus and minus strand
 
 def test_gff_gen():
-    controller = ImportController(database_path='sqlite:///:memory:')
-    x = list(controller.gff_gen('testdata/testerSl.gff3'))
+    gff_organizer = OrganizedGFFEntries('testdata/testerSl.gff3')
+    x = list(gff_organizer._gff_gen())
     assert len(x) == 103
     assert x[0].type == 'region'
     assert x[-1].type == 'CDS'
 
 
 def test_gff_useful_gen():
-    controller = ImportController(database_path='sqlite:///:memory:')
-    x = list(controller.useful_gff_entries('testdata/testerSl.gff3'))
+    gff_organizer = OrganizedGFFEntries('testdata/testerSl.gff3')
+    x = list(gff_organizer._useful_gff_entries())
     assert len(x) == 100  # should drop the region entry
     assert x[0].type == 'gene'
     assert x[-1].type == 'CDS'
 
 
 def test_gff_grouper():
-    controller = ImportController(database_path='sqlite:///:memory:')
-    x = list(controller.group_gff_by_gene('testdata/testerSl.gff3'))
-    assert len(x) == 5
-    for group in x:
-        assert group[0].type == 'gene'
-
-
-def test_import2biointerp():
-    class TCShortcut(TranscriptCoordinate):
-        """just fills in what's always the same for the TranscriptCoordinate to stop retyping"""
-
-        def __init__(self, start):
-            super().__init__(coordinate_id=1, piece_position=0, is_plus_strand=True, start=start)
-
-    class RShortcut(Range):
-        """just fills in what's always the same for the Range to stop retyping"""
-
-        def __init__(self, start, end):
-            super().__init__(coordinate_id=1,
-                             piece_position=0,
-                             is_plus_strand=True,
-                             start=start,
-                             end=end)
-
-    sequence_path = 'testdata/biointerp_loci.fa'
-    gff_path = 'testdata/biointerp_loci.gff3'
-    controller = ImportController(database_path='sqlite:///:memory:', err_path='/dev/null')
-    controller.add_genome(sequence_path, gff_path)
-
-    super_loci = controller.session.query(orm.SuperLocus).all()
-    assert len(super_loci) == 2
-
-    ### coding ###
-    sl_coding = [sl for sl in super_loci if sl.given_name == "gene0"][0]
-    sl_coding_handler = handlers.SuperLocusHandlerBase()
-    sl_coding_handler.add_data(sl_coding)
-    assert len(sl_coding.transcribeds) == 1
-    scribed_coding = sl_coding.transcribeds[0]
-    scribed_coding_handler = handlers.TranscribedHandlerBase()
-    scribed_coding_handler.add_data(scribed_coding)
-
-    ti = TranscriptInterpBase(transcript=scribed_coding_handler,
-                              super_locus=sl_coding_handler,
-                              session=controller.session)
-
-    # check transcribed sites and range
-    assert ti.transcription_start_sites() == [TCShortcut(start=100)]
-
-    assert ti.transcription_end_sites() == [TCShortcut(start=900)]
-    assert ti.transcribed_ranges() == [RShortcut(start=100, end=900)]
-    # check coding sites and ranges
-    assert ti.translation_start_sites() == [TCShortcut(start=200)]
-    assert ti.translation_end_sites() == [TCShortcut(start=800)]
-    assert ti.translated_ranges() == [RShortcut(start=200, end=800)]
-
-    # check intron sites and ranges
-    assert ti.intron_start_sites() == [TCShortcut(start=300)]
-    assert ti.intron_end_sites() == [TCShortcut(start=700)]
-    assert ti.intronic_ranges() == [RShortcut(start=300, end=700)]
-    # check exons and similar
-    assert ti.cis_exonic_ranges() == [RShortcut(start=100, end=300), RShortcut(start=700, end=900)]
-    assert ti.translated_exonic_ranges() == [
-        RShortcut(start=200, end=300), RShortcut(start=700, end=800)
-    ]
-    assert ti.untranslated_exonic_ranges() == [
-        RShortcut(start=100, end=200), RShortcut(start=800, end=900)
-    ]
-
-    # check that a few interpretations that should be empty are
-    assert ti.trans_intron_end_sites() == []
-    assert ti.error_ranges() == []
-
-    ### partial ###
-    sl_partial = [sl for sl in super_loci if sl.given_name == "gene1"][0]
-    sl_partial_handler = handlers.SuperLocusHandlerBase()
-    sl_partial_handler.add_data(sl_coding)
-    assert len(sl_partial.transcribeds) == 1
-    scribed_partial = sl_partial.transcribeds[0]
-    scribed_partial_handler = handlers.TranscribedHandlerBase()
-    scribed_partial_handler.add_data(scribed_partial)
-
-    ti = TranscriptInterpBase(transcript=scribed_partial_handler,
-                              super_locus=sl_partial_handler,
-                              session=controller.session)
-
-    assert ti.transcription_start_sites() == [TCShortcut(start=100)]
-    assert ti.transcription_end_sites() == []
-    assert ti.transcribed_ranges() == [RShortcut(start=100, end=500)]
-
-    assert ti.translation_start_sites() == [TCShortcut(start=200)]
-    assert ti.translation_end_sites() == []
-    assert ti.translated_ranges() == [RShortcut(start=200, end=500)]
-
-    err_ranges = ti.error_ranges()
-    assert len(err_ranges) == 1
-    assert err_ranges[0].start == 499
+    gff_organizer = OrganizedGFFEntries('testdata/testerSl.gff3')
+    gff_organizer.load_organized_entries()
+    n_genes_seqid = {'NC_015438.2': 2, 'NC_015439.2': 2, 'NC_015440.2': 1}
+    for seqid, count in n_genes_seqid.items():
+        assert len(gff_organizer.organized_entries[seqid]) == count
+        for group in gff_organizer.organized_entries[seqid]:
+            assert group[0].type == 'gene'
 
 
 # section: types
