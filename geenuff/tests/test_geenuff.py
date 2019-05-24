@@ -38,7 +38,7 @@ def setup_data_handler(handler_type, data_type, **kwargs):
 
 def setup_dummyloci_super_locus(db_path='sqlite:///:memory:'):
     controller = ImportController(database_path=db_path)
-    controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff3', clean_gff=False)
+    controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff3')
     sl = controller.session.query(orm.SuperLocus).one()
     return sl, controller
 
@@ -1032,7 +1032,6 @@ def test_dummyloci_multiple_errors():
     controller.add_genome('testdata/dummyloci_multiple.fa',
                           'testdata/dummyloci_multiple.gff',
                           clean_gff=True)
-    import pudb; pudb.set_trace()
     error_types = [t.value for t in types.Errors]
     errors = controller.session.query(orm.Feature).filter(orm.Feature.type.in_(error_types)).all()
     coords = controller.session.query(orm.Coordinate).all()

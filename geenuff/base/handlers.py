@@ -36,6 +36,7 @@ class Handler(object):
     def __repr__(self):
         return self._get_repr('Handler', {'id': self.id})
 
+
 class GenomeHandlerBase(Handler):
 
     @property
