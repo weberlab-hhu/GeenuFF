@@ -19,6 +19,8 @@ class Genome(Base):
     acquired_from = Column(String)
     coordinates = relationship("Coordinate", back_populates="genome")
 
+    def __repr__(self):
+        return '<Genome {}, species: {}>'.format(self.id, self.species)
 
 class Coordinate(Base):
     __tablename__ = 'coordinate'
@@ -57,6 +59,10 @@ class SuperLocus(Base):
     # things SuperLocus can have a lot of
     transcribeds = relationship('Transcribed', back_populates='super_locus')
     translateds = relationship('Translated', back_populates='super_locus')
+
+    def __repr__(self):
+        return '<SuperLocus {}, given_name: \'{}\', type: {}>'.format(self.id, self.given_name,
+                                                                  self.type.value)
 
 
 association_transcribed_piece_to_feature = Table('association_transcribed_piece_to_feature', Base.metadata,
@@ -123,6 +129,11 @@ class Translated(Base):
 
     features = relationship('Feature', secondary=association_translated_to_feature,
                             back_populates='translateds')
+
+    def __repr__(self):
+        return '<Translated {}, given_name: \'{}\', super_locus_id: {}>'.format(self.id,
+                                                                                self.given_name,
+                                                                                self.super_locus_id)
 
 
 class Feature(Base):
