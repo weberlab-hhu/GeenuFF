@@ -308,28 +308,27 @@ class OrganizedGFFEntries(object):
     """
     def __init__(self, gff_file):
         self.gff_file = gff_file
-        self.organized_entries = self._organize_entries()
+        self.organized_entries = {}
 
-    def _organize_entries(self):
-        organized = {}
+    def load_organized_entries(self):
+        self.organized_entries = {}
         gene_level = [x.value for x in types.SuperLocusAll]
 
         reader = self._useful_gff_entries()
         first = next(reader)
         seqid = first.seqid
         gene_group = [first]
-        organized[seqid] = []
+        self.organized_entries[seqid] = []
         for entry in reader:
             if entry.type in gene_level:
-                organized[seqid].append(gene_group)
+                self.organized_entries[seqid].append(gene_group)
                 gene_group = [entry]
                 if entry.seqid != seqid:
-                    organized[entry.seqid] = []
+                    self.organized_entries[entry.seqid] = []
                     seqid = entry.seqid
             else:
                 gene_group.append(entry)
-        organized[seqid].append(gene_group)
-        return organized
+        self.organized_entries[seqid].append(gene_group)
 
     def _useful_gff_entries(self):
         skipable = [x.value for x in types.IgnorableFeatures]
@@ -613,7 +612,9 @@ class ImportController(object):
 
         assert self.latest_fasta_importer is not None, 'No recent genome found'
         self.latest_fasta_importer.mk_mapper(gff_file)
-        organized_gff_entries = OrganizedGFFEntries(gff_file).organized_entries
+        gff_organizer = OrganizedGFFEntries(gff_file)
+        gff_organizer.load_organized_entries()
+        organized_gff_entries = gff_organizer.organized_entries
         geenuff_importer_groups = []
         for seqid in organized_gff_entries.keys():
             for entry_group in organized_gff_entries[seqid]:
@@ -690,7 +691,6 @@ class FastaImporter(object):
 
 class SuperLocusImporter(Insertable):
     def __init__(self, entry_type, given_name, controller, coord=None, is_plus_strand=None, start=-1, end=-1):
-        super().__init__()
         self.id = InsertCounterHolder.super_locus()
         self.entry_type = entry_type
         self.given_name = given_name
@@ -712,8 +712,6 @@ class SuperLocusImporter(Insertable):
 
 class FeatureImporter(Insertable):
     def __init__(self, coord, is_plus_strand, feature_type, controller, start=-1, end=-1, given_name=None, phase_5p=0, phase_3p=0, score=None, source=None):
-        """Initializes a handler for a soon to be inserted geenuff feature."""
-        super().__init__()
         self.id = InsertCounterHolder.feature()
         self.coord = coord
         self.given_name = given_name
@@ -789,7 +787,6 @@ class FeatureImporter(Insertable):
 
 class TranscribedImporter(Insertable):
     def __init__(self, entry_type, given_name, super_locus_id, controller):
-        super().__init__()
         self.id = InsertCounterHolder.transcribed()
         self.entry_type = entry_type
         self.given_name = given_name
@@ -815,7 +812,6 @@ class TranscribedImporter(Insertable):
 
 class TranscribedPieceImporter(Insertable):
     def __init__(self, given_name, transcript_id, position, controller):
-        super().__init__()
         self.id = InsertCounterHolder.transcribed_piece()
         self.given_name = given_name
         self.transcript_id = transcript_id
@@ -841,7 +837,6 @@ class TranscribedPieceImporter(Insertable):
 
 class TranslatedImporter(Insertable):
     def __init__(self, given_name, super_locus_id, controller):
-        super().__init__()
         self.id = InsertCounterHolder.translated()
         self.given_name = given_name
         self.super_locus_id = super_locus_id

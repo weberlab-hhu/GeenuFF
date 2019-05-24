@@ -49,7 +49,7 @@
 1	manual	exon	1782	1800	.	+	.	ID=e3;Parent=y
 1	manual	CDS	1782	1795	.	+	1	ID=c3;Parent=y
 #
-# test case 5: gene without errors, but with introns of length 0
+# test case 5: gene without errors, but with an intron of length 0
 # the first transscript contains the exons without a gap in between them
 # the second transcript is without special cases
 2	manual	gene	1	300	.	+	.	ID=gene_intron_len_0
@@ -96,7 +96,7 @@
 # gene is on the minus strand
 # the first transcript has overlapping exons (the first two) and the end of the last cds region
 # does not link to a start codon
-# the second transcript is without errors
+# the second transcript is without errors and has no introns
 2	manual	gene	1550	1750	.	-	.	ID=gene_overlapping_exons_missing_start
 2	manual	mRNA	1550	1750	.	-	.	ID=x;Parent=gene_overlapping_exons_missing_start	
 2	manual	exon	1550	1600	.	-	.	ID=e0;Parent=x
@@ -106,7 +106,5 @@
 2	manual	exon	1720	1750	.	-	.	ID=e2;Parent=x
 2	manual	CDS	1720	1725	.	-	0	ID=c2;Parent=x
 2	manual	mRNA	1550	1750	.	-	.	ID=y;Parent=gene_overlapping_exons_missing_start	
-2	manual	exon	1550	1600	.	-	.	ID=e3;Parent=y
-2	manual	CDS	1575	1600	.	-	1	ID=c3;Parent=y
-2	manual	exon	1720	1750	.	-	.	ID=e4;Parent=y
-2	manual	CDS	1720	1730	.	-	0	ID=c4;Parent=y
+2	manual	exon	1550	1750	.	-	.	ID=e3;Parent=y
+2	manual	CDS	1575	1730	.	-	0	ID=c3;Parent=y
