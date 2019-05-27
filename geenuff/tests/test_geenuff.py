@@ -52,12 +52,64 @@ def cleaned_commited_features(sess):
     clean_datas = [x for x in all_features if x.type.value in allowed_types]
     return clean_datas
 
+
+# Do not implement as __eq__ to not change __hash__ behavior
+def matching_super_loci(s1, s2):
+    if not isinstance(s1, s2.__class__):
+        return False
+    if s1.id != None and s2.id != None:
+        if s1.id != s2.id:
+            return False
+    if s1.given_name != s2.given_name or s1.type != s2.type:
+        return False
+    return True
+
+
+def matching_features(f1, f2):
+    if not isinstance(f1, f2.__class__):
+        return False
+    if f1.id != None and f2.id != None:
+        if f1.id != f2.id:
+            return False
+    if (f1.type != f2.type or
+            f1.given_name != f2.given_name or
+            f1.start != f2.start or
+            f1.end != f2.end or
+            f1.start_is_biological_start != f2.start_is_biological_start or
+            f1.end_is_biological_end != f2.end_is_biological_end or
+            f1.is_plus_strand != f2.is_plus_strand or
+            f1.phase != f2.phase):
+        return False
+    return True
+
+
+def matching_proteins(t1, t2):
+    if not isinstance(t1, t2.__class__):
+        return False
+    if t1.id != None and t2.id != None:
+        if t1.id != t2.id:
+            return False
+    if t1.given_name != t2.given_name:
+        return False
+    return True
+
+
+def matching_transcripts(t1, t2):
+    if not isinstance(t1, t2.__class__):
+        return False
+    if t1.id != None and t2.id != None:
+        if t1.id != t2.id:
+            return False
+    if t1.given_name != t2.given_name or t1.type != t2.type:
+        return False
+    return True
+
+
 def orm_object_in_list(obj, obj_list):
-    """Checks if obj is in obj_list (by implicitely calling __eq__()) and
-    removes obj from obj_list if it has been found. Return whether it was found.
-    """
     for o in obj_list[:]:  # make a copy at each iteration so we avoid weird errors
-        if o == obj:
+        if ((isinstance(o, Feature) and matching_features(o, obj)) or
+                (isinstance(o, Translated) and matching_proteins(o, obj)) or
+                (isinstance(o, Transcribed) and matching_transcripts(o, obj))):
             obj_list.remove(o)
             return True
     return False
@@ -827,7 +879,7 @@ def test_case_1():
     sl_h = SuperLocusHandlerBase(sl)
 
     super_locus = SuperLocus(given_name='gene0', type=types.SuperLocusAll.gene)
-    assert sl == super_locus
+    assert matching_super_loci(sl, super_locus)
 
     # confirm exisistence of all objects where things could go wrong
     # not testing for TranscriptPieces as trans-splicing is currently not implemented
@@ -955,7 +1007,7 @@ def test_case_8():
 
     super_locus = SuperLocus(given_name='gene_overlapping_exons_missing_start',
                              type=types.SuperLocusAll.gene)
-    assert sl == super_locus
+    assert matching_super_loci(sl, super_locus)
 
     sl_objects = list(sl_h.features) + sl_h.data.transcribeds + sl_h.data.translateds
 
