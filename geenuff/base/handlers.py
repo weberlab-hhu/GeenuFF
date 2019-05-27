@@ -69,11 +69,11 @@ class SuperLocusHandlerBase(Handler):
         self.handler_holder.make_all_handlers()
 
 
-class TranscribedHandlerBase(Handler):
+class TranscriptHandlerBase(Handler):
 
     @property
     def data_type(self):
-        return orm.Transcribed
+        return orm.Transcript
 
     @property
     def sorted_pieces(self):
@@ -81,18 +81,18 @@ class TranscribedHandlerBase(Handler):
         return sorted(pieces, key=lambda p: p.position)
 
 
-class TranscribedPieceHandlerBase(Handler):
+class TranscriptPieceHandlerBase(Handler):
 
     @property
     def data_type(self):
-        return orm.TranscribedPiece
+        return orm.TranscriptPiece
 
 
-class TranslatedHandlerBase(Handler):
+class ProteinHandlerBase(Handler):
 
     @property
     def data_type(self):
-        return orm.Translated
+        return orm.Protein
 
 
 class FeatureHandlerBase(Handler):
@@ -137,7 +137,7 @@ class HandleMaker(object):
 
     def _get_handler_type(self, old_data):
         key = [(SuperLocusHandlerBase, orm.SuperLocus),
-               (TranscribedHandlerBase, orm.Transcribed),
-               (TranslatedHandlerBase, orm.Translated)]
+               (TranscriptHandlerBase, orm.Transcript),
+               (ProteinHandlerBase, orm.Protein)]
 
         return self._get_paired_item(type(old_data), search_col=1, return_col=0, nested_list=key)

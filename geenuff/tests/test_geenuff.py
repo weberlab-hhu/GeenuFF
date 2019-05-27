@@ -11,9 +11,9 @@ from .. import orm
 from .. import types
 from .. import handlers
 from .. import helpers
-from ..base.orm import (Genome, Feature, Coordinate, Transcribed, TranscribedPiece, SuperLocus,
-                        Translated)
-from ..base.handlers import SuperLocusHandlerBase, TranscribedHandlerBase
+from ..base.orm import (Genome, Feature, Coordinate, Transcript, TranscriptPiece, SuperLocus,
+                        Protein)
+from ..base.handlers import SuperLocusHandlerBase, TranscriptHandlerBase
 from ..applications import importer
 from ..applications.importer import ImportController, InsertCounterHolder, OrganizedGFFEntries
 
@@ -42,7 +42,7 @@ def setup_data_handler(handler_type, data_type, **kwargs):
 def setup_dummyloci_super_locus(db_path='sqlite:///:memory:'):
     controller = ImportController(database_path=db_path)
     controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff')
-    sl = controller.session.query(SuperLocus).one()
+    sl = controller.session.query(SuperLocus).filter
     return sl, controller
 
 
@@ -110,8 +110,8 @@ def matching_transcripts(t1, t2):
 def orm_object_in_list(obj, obj_list):
     for o in obj_list[:]:  # make a copy at each iteration so we avoid weird errors
         if ((isinstance(o, Feature) and matching_features(o, obj)) or
-                (isinstance(o, Translated) and matching_proteins(o, obj)) or
-                (isinstance(o, Transcribed) and matching_transcripts(o, obj))):
+                (isinstance(o, Protein) and matching_proteins(o, obj)) or
+                (isinstance(o, Transcript) and matching_transcripts(o, obj))):
             obj_list.remove(o)
             return True
     return False
@@ -197,10 +197,10 @@ def test_many2many_with_features():
     """
     sl = SuperLocus()
     # one transcript, multiple proteins
-    piece0 = TranscribedPiece()
-    scribed0 = Transcribed(super_locus=sl, transcribed_pieces=[piece0])
-    slated0 = Translated(super_locus=sl)
-    slated1 = Translated(super_locus=sl)
+    piece0 = TranscriptPiece()
+    scribed0 = Transcript(super_locus=sl, transcribed_pieces=[piece0])
+    slated0 = Protein(super_locus=sl)
+    slated1 = Protein(super_locus=sl)
     # features representing alternative start codon for proteins on one transcript
     feat0_tss = Feature(transcribed_pieces=[piece0])
     feat1_tss = Feature(transcribed_pieces=[piece0])
@@ -286,22 +286,22 @@ def test_transcribed_piece_unique_constraints():
     """
     sess = mk_memory_session()
     sl = SuperLocus()
-    transcribed0 = Transcribed(super_locus=sl)
-    transcribed1 = Transcribed(super_locus=sl)
+    transcribed0 = Transcript(super_locus=sl)
+    transcribed1 = Transcript(super_locus=sl)
 
     # test if same position for different transcribed_id goes through
-    piece_tr0_pos0 = TranscribedPiece(transcribed=transcribed0, position=0)
-    piece_tr1_pos0 = TranscribedPiece(transcribed=transcribed1, position=0)
+    piece_tr0_pos0 = TranscriptPiece(transcribed=transcribed0, position=0)
+    piece_tr1_pos0 = TranscriptPiece(transcribed=transcribed1, position=0)
     sess.add_all([transcribed0, piece_tr0_pos0, piece_tr1_pos0])
     sess.commit()
 
     # same transcibed_id but different position
-    piece_tr0_pos1 = TranscribedPiece(transcribed=transcribed0, position=1)
+    piece_tr0_pos1 = TranscriptPiece(transcribed=transcribed0, position=1)
     sess.add(piece_tr0_pos1)
     sess.commit()
 
     # test if unique constraint works
-    piece_tr0_pos1_2nd = TranscribedPiece(transcribed=transcribed0, position=1)
+    piece_tr0_pos1_2nd = TranscriptPiece(transcribed=transcribed0, position=1)
     sess.add(piece_tr0_pos1_2nd)
     with pytest.raises(IntegrityError):
         sess.commit()
@@ -319,11 +319,11 @@ def test_order_pieces():
     sess.commit()
     # setup one transcribed handler with pieces
     sl, sl_h = setup_data_handler(SuperLocusHandlerBase, SuperLocus)
-    t, t_h = setup_data_handler(TranscribedHandlerBase, Transcribed, super_locus=sl)
+    t, t_h = setup_data_handler(TranscriptHandlerBase, Transcript, super_locus=sl)
     # insert in wrong order
-    piece1 = TranscribedPiece(position=1)
-    piece0 = TranscribedPiece(position=0)
-    piece2 = TranscribedPiece(position=2)
+    piece1 = TranscriptPiece(position=1)
+    piece0 = TranscriptPiece(position=0)
+    piece2 = TranscriptPiece(position=2)
     t.transcribed_pieces = [piece0, piece1, piece2]
     sess.add_all([t, piece1, piece0, piece2])
     sess.commit()
@@ -357,286 +357,6 @@ def test_order_pieces():
     print([piece0, piece1, piece2], 'expected')
     print(op, 'sorted')
     assert op == [piece0, piece1, piece2]
-
-
-class BiointerpDemoDataCoding(object):
-    def __init__(self, sess, is_plus_strand):
-        self.sl, self.sl_handler = setup_data_handler(handlers.SuperLocusHandlerBase, SuperLocus)
-        self.scribed, self.scribed_handler = setup_data_handler(handlers.TranscribedHandlerBase,
-                                                                Transcribed,
-                                                                super_locus=self.sl)
-        self.piece = TranscribedPiece(position=0, transcribed=self.scribed)
-        self.g = Genome()
-
-        # setup ranges for a two-exon coding gene
-        self.coordinate = Coordinate(seqid='a', start=1, end=2000, genome=self.g)
-        transcribed_start, transcribed_end = 100, 900
-        coding_start, coding_end = 200, 800
-        intron_start, intron_end = 300, 700
-
-        if not is_plus_strand:  # swap if we're setting up data for "-" strand
-            transcribed_end, transcribed_start = transcribed_start, transcribed_end
-            coding_end, coding_start = coding_start, coding_end
-            intron_end, intron_start = intron_start, intron_end
-
-        # transcribed:
-        self.transcribed_feature = Feature(coordinate=self.coordinate,
-                                           is_plus_strand=is_plus_strand,
-                                           start=transcribed_start,
-                                           end=transcribed_end,
-                                           start_is_biological_start=True,
-                                           end_is_biological_end=True,
-                                           type=types.TRANSCRIBED)
-        # coding:
-        self.coding_feature = Feature(coordinate=self.coordinate,
-                                      is_plus_strand=is_plus_strand,
-                                      start=coding_start,
-                                      end=coding_end,
-                                      start_is_biological_start=True,
-                                      end_is_biological_end=True,
-                                      type=types.CODING)
-        # intron:
-        self.intron_feature = Feature(coordinate=self.coordinate,
-                                      is_plus_strand=is_plus_strand,
-                                      start=intron_start,
-                                      end=intron_end,
-                                      start_is_biological_start=True,
-                                      end_is_biological_end=True,
-                                      type=types.INTRON)
-
-        self.piece.features = [self.transcribed_feature, self.coding_feature, self.intron_feature]
-
-        sess.add(self.sl)
-        sess.commit()
-
-
-class BiointerpDemoDataPartial(object):
-    def __init__(self, sess, is_plus_strand):
-        self.sl, self.sl_handler = setup_data_handler(handlers.SuperLocusHandlerBase, SuperLocus)
-        self.scribed, self.scribed_handler = setup_data_handler(handlers.TranscribedHandlerBase,
-                                                                Transcribed,
-                                                                super_locus=self.sl)
-        self.piece = TranscribedPiece(position=0, transcribed=self.scribed)
-        self.ag = Genome()
-
-        # setup ranges for a two-exon coding gene
-        self.coordinates = Coordinate(seqid='a', start=1, end=2000, genome=self.ag)
-        transcribed_start, transcribed_end = 100, 500
-        error_start, error_end = 499, 600
-        transcription_bearings = (True, False)
-
-        if not is_plus_strand:  # swap if we're setting up data for "-" strand
-            transcribed_end, transcribed_start = transcribed_start, transcribed_end
-            error_end, error_start = error_start, error_end
-            transcription_bearings = (False, True)
-
-        self.transcribed_feature = Feature(coordinate=self.coordinates,
-                                           is_plus_strand=is_plus_strand,
-                                           start=transcribed_start,
-                                           end=transcribed_end,
-                                           start_is_biological_start=transcription_bearings[0],
-                                           end_is_biological_end=transcription_bearings[1],
-                                           type=types.TRANSCRIBED)
-
-        self.error_feature = Feature(coordinate=self.coordinates,
-                                     is_plus_strand=is_plus_strand,
-                                     start=error_start,
-                                     end=error_end,
-                                     start_is_biological_start=True,
-                                     end_is_biological_end=True,
-                                     type=types.ERROR)
-
-        self.piece.features = [self.transcribed_feature, self.error_feature]
-        sess.add_all([self.ag, self.sl])
-        sess.commit()
-
-
-def test_biointerp_features_as_ranges():
-    """checks biological interpretation for ranges from db for simple, spliced, coding gene"""
-    sess = mk_memory_session()
-    bi = BiointerpDemoDataCoding(sess, is_plus_strand=True)
-
-    # tr = Transcribed(
-
-    assert fw.ti.transcribed_ranges() == [
-        Range(coordinate_id=1, is_plus_strand=True, piece_position=0, start=100, end=900)
-    ]
-    assert fw.ti.translated_ranges() == [
-        Range(coordinate_id=1, is_plus_strand=True, piece_position=0, start=200, end=800)
-    ]
-    assert fw.ti.intronic_ranges() == [
-        Range(coordinate_id=1, is_plus_strand=True, piece_position=0, start=300, end=700)
-    ]
-    assert fw.ti.trans_intronic_ranges() == []
-
-    assert fw.ti.cis_exonic_ranges() == [
-        Range(coordinate_id=1, is_plus_strand=True, piece_position=0, start=100, end=300),
-        Range(coordinate_id=1, is_plus_strand=True, piece_position=0, start=700, end=900)
-    ]
-    assert fw.ti.translated_exonic_ranges() == [
-        Range(coordinate_id=1, is_plus_strand=True, piece_position=0, start=200, end=300),
-        Range(coordinate_id=1, is_plus_strand=True, piece_position=0, start=700, end=800)
-    ]
-
-    assert fw.ti.untranslated_exonic_ranges() == [
-        Range(coordinate_id=1, is_plus_strand=True, piece_position=0, start=100, end=200),
-        Range(coordinate_id=1, is_plus_strand=True, piece_position=0, start=800, end=900)
-    ]
-
-    rev = BiointerpDemoDataCoding(sess, is_plus_strand=False)
-    assert rev.ti.transcribed_ranges() == [
-        Range(coordinate_id=2, is_plus_strand=False, piece_position=0, start=900, end=100)
-    ]
-    assert rev.ti.translated_ranges() == [
-        Range(coordinate_id=2, is_plus_strand=False, piece_position=0, start=800, end=200)
-    ]
-    assert rev.ti.intronic_ranges() == [
-        Range(coordinate_id=2, is_plus_strand=False, piece_position=0, start=700, end=300)
-    ]
-    assert rev.ti.trans_intronic_ranges() == []
-
-    assert rev.ti.cis_exonic_ranges() == [
-        Range(coordinate_id=2, is_plus_strand=False, piece_position=0, start=900, end=700),
-        Range(coordinate_id=2, is_plus_strand=False, piece_position=0, start=300, end=100)
-    ]
-    assert rev.ti.translated_exonic_ranges() == [
-        Range(coordinate_id=2, is_plus_strand=False, piece_position=0, start=800, end=700),
-        Range(coordinate_id=2, is_plus_strand=False, piece_position=0, start=300, end=200)
-    ]
-
-    assert rev.ti.untranslated_exonic_ranges() == [
-        Range(coordinate_id=2, is_plus_strand=False, piece_position=0, start=900, end=800),
-        Range(coordinate_id=2, is_plus_strand=False, piece_position=0, start=200, end=100)
-    ]
-
-
-def test_biointerp_features_as_ranges_partial():
-    """check biological interpretation for ranges from non-coding transcribed fragment"""
-    sess = mk_memory_session()
-    fw = BiointerpDemoDataPartial(sess, is_plus_strand=True)
-    assert fw.ti.transcribed_ranges() == [
-        Range(coordinate_id=1, is_plus_strand=True, piece_position=0, start=100, end=500)
-    ]
-    assert fw.ti.error_ranges() == [
-        Range(coordinate_id=1, is_plus_strand=True, piece_position=0, start=499, end=600)
-    ]
-    assert fw.ti.trans_intronic_ranges() == []
-    assert fw.ti.translated_ranges() == []
-
-    rev = BiointerpDemoDataPartial(sess, is_plus_strand=False)
-    assert rev.ti.transcribed_ranges() == [
-        Range(coordinate_id=2, is_plus_strand=False, piece_position=0, start=500, end=100)
-    ]
-    assert rev.ti.error_ranges() == [
-        Range(coordinate_id=2, is_plus_strand=False, piece_position=0, start=600, end=499)
-    ]
-
-
-# section: importer
-def test_data_frm_gffentry():
-    """Test the interpretation and transformation of raw GFF entries."""
-    controller = ImportController(database_path='sqlite:///:memory:', err_path=None)
-
-    sess = controller.session
-    g, gh = setup_data_handler(importer.GenomeHandler, Genome)
-    coords = Coordinate(start=1, end=100000, seqid='NC_015438.2', genome=g)
-
-    sess.add_all([g, coords])
-    sess.commit()
-    gh.mk_mapper()
-    gene_string = 'NC_015438.2\tGnomon\tgene\t4343\t5685\t.\t+\t.\tID=gene0;Dbxref=GeneID:104645797;Name=LOC10'
-    mrna_string = 'NC_015438.2\tBestRefSeq\tmRNA\t13024\t15024\t.\t+\t.\tID=rna0;Parent=gene0;Dbxref=GeneID:'
-    exon_string = 'NC_015438.2\tGnomon\texon\t4343\t4809\t.\t+\t.\tID=id1;Parent=rna0;Dbxref=GeneID:104645797'
-    gene_entry = gffhelper.GFFObject(gene_string)
-    controller.clean_entry(gene_entry)
-    handler = importer.SuperLocusHandler()
-    handler.gffentry = gene_entry
-    sl2add = handler.setup_insertion_ready()
-
-    print(gh.gffid_to_coords.keys())
-    print(gh._gff_seq_ids)
-    assert sl2add['given_name'] == 'gene0'
-    assert sl2add['type'] == 'gene'
-
-    mrna_entry = gffhelper.GFFObject(mrna_string)
-    mrna_handler = importer.TranscribedHandler()
-    mrna2add, piece2add = mrna_handler.setup_insertion_ready(mrna_entry, super_locus=handler)
-    piece_handler = mrna_handler.transcribed_piece_handlers[0]
-    assert piece2add['transcribed_id'] == mrna2add['id'] == mrna_handler.id
-
-    assert mrna2add['given_name'] == 'rna0'
-    assert mrna2add['type'] == 'mRNA'
-    assert mrna2add['super_locus_id'] == handler.id
-
-    exon_entry = gffhelper.GFFObject(exon_string)
-    controller.clean_entry(exon_entry)
-    exon_handler = importer.FeatureHandler()
-    exon_handler.gffentry = exon_entry
-    exon2add, feature2pieces, feature2translateds = exon_handler.setup_insertion_ready(
-        super_locus=handler, transcribed_pieces=[piece_handler], coordinate=coords)
-
-    # accessed via gffentry
-    assert exon_handler.gffentry.start == 4343
-    assert exon_handler.gffentry.type == 'exon'
-    assert 'type' not in exon2add.keys()
-
-    # ready to add
-    assert exon2add['is_plus_strand']
-    assert exon2add['score'] is None
-    assert exon2add['coordinate_id'] == coords.id
-    assert exon2add['super_locus_id'] == handler.id
-    assert feature2pieces[0] == {
-        'transcribed_piece_id': piece_handler.id,
-        'feature_id': exon2add['id']
-    }
-    assert feature2translateds == []
-
-
-def test_organize_and_split_features():
-    """Tests 5'-3' ordering of features and slicing at overlaps"""
-    sl, controller = setup_dummyloci_super_locus()
-    transcript_full = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
-    transcript_interpreter = importer.TranscriptInterpreter(transcript_full,
-                                                            super_locus=sl,
-                                                            controller=controller)
-
-    ordered_features = transcript_interpreter.organize_and_split_features()
-    ordered_features = list(ordered_features)
-    for i in [0, 4]:
-        assert len(ordered_features[i]) == 1
-        assert types.CDS not in [x.data.gffentry.type for x in ordered_features[i]]
-    for i in [1, 2, 3]:
-        assert len(ordered_features[i]) == 2
-        assert types.CDS in [x.data.gffentry.type for x in ordered_features[i]]
-
-    transcript_short = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'z'][0]
-    transcript_interpreter = importer.TranscriptInterpreter(transcript_short,
-                                                            super_locus=sl,
-                                                            controller=controller)
-    ordered_features = transcript_interpreter.organize_and_split_features()
-    ordered_features = list(ordered_features)
-    assert len(ordered_features) == 1
-    assert len(ordered_features[0]) == 2
-
-
-def test_possible_types():
-    cds = types.OnSequence.CDS.name
-    five_prime = types.OnSequence.five_prime_UTR.name
-    three_prime = types.OnSequence.three_prime_UTR.name
-
-    sl, controller = setup_dummyloci_super_locus()
-    transcript_full = [x for x in sl.transcribed_handlers if x.gffentry.get_ID() == 'y'][0]
-    transcript_interpreter = importer.TranscriptInterpreter(transcript_full,
-                                                            super_locus=sl,
-                                                            controller=controller)
-    ordered_features = transcript_interpreter.intervals_5to3(plus_strand=True)
-    ordered_features = list(ordered_features)
-    pt = transcript_interpreter.possible_types(ordered_features[0])
-    assert set(pt) == {five_prime, three_prime}
-    pt = transcript_interpreter.possible_types(ordered_features[1])
-    assert set(pt) == {cds}
-    pt = transcript_interpreter.possible_types(ordered_features[-1])
-    assert set(pt) == {five_prime, three_prime}
 
 
 def test_fasta_import():
@@ -868,10 +588,10 @@ def test_case_1():
     sl_objects = list(sl_h.features) + sl_h.data.transcribeds + sl_h.data.translateds
 
     # first transcript
-    transcript = Transcribed(given_name='x', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
+    transcript = Transcript(given_name='x', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
     assert orm_object_in_list(transcript, sl_objects)
 
-    protein = Translated(given_name='x.p', super_locus=sl)
+    protein = Protein(given_name='x.p', super_locus=sl)
     assert orm_object_in_list(protein, sl_objects)
 
     feature = Feature(given_name='x',
@@ -906,10 +626,10 @@ def test_case_1():
     assert orm_object_in_list(feature, sl_objects)
 
     # second transcript
-    transcript = Transcribed(given_name='y', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
+    transcript = Transcript(given_name='y', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
     assert orm_object_in_list(transcript, sl_objects)
 
-    protein = Translated(given_name='y.p', super_locus=sl)
+    protein = Protein(given_name='y.p', super_locus=sl)
     assert orm_object_in_list(protein, sl_objects)
 
     feature = Feature(given_name='y',
@@ -954,10 +674,10 @@ def test_case_1():
     assert orm_object_in_list(feature, sl_objects)
 
     # third transcript
-    transcript = Transcribed(given_name='z', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
+    transcript = Transcript(given_name='z', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
     assert orm_object_in_list(transcript, sl_objects)
 
-    protein = Translated(given_name='z.p', super_locus=sl)
+    protein = Protein(given_name='z.p', super_locus=sl)
     assert orm_object_in_list(protein, sl_objects)
 
     feature = Feature(given_name='z',
@@ -1004,10 +724,10 @@ def test_case_8():
     sl_objects = list(sl_h.features) + sl_h.data.transcribeds + sl_h.data.translateds
 
     # first transcript
-    transcript = Transcribed(given_name='x', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
+    transcript = Transcript(given_name='x', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
     assert orm_object_in_list(transcript, sl_objects)
 
-    protein = Translated(given_name='x.p', super_locus=sl)
+    protein = Protein(given_name='x.p', super_locus=sl)
     assert orm_object_in_list(protein, sl_objects)
 
     feature = Feature(given_name='x',
@@ -1042,10 +762,10 @@ def test_case_8():
     assert orm_object_in_list(feature, sl_objects)
 
     # second transcript
-    transcript = Transcribed(given_name='y', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
+    transcript = Transcript(given_name='y', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
     assert orm_object_in_list(transcript, sl_objects)
 
-    protein = Translated(given_name='y.p', super_locus=sl)
+    protein = Protein(given_name='y.p', super_locus=sl)
     assert orm_object_in_list(protein, sl_objects)
 
     feature = Feature(given_name='y',

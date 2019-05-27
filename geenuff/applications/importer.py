@@ -18,9 +18,9 @@ class InsertionQueue(helpers.QueueController):
     def __init__(self, session, engine):
         super().__init__(session, engine)
         self.super_locus = helpers.CoreQueue(orm.SuperLocus.__table__.insert())
-        self.transcribed = helpers.CoreQueue(orm.Transcribed.__table__.insert())
-        self.transcribed_piece = helpers.CoreQueue(orm.TranscribedPiece.__table__.insert())
-        self.translated = helpers.CoreQueue(orm.Translated.__table__.insert())
+        self.transcribed = helpers.CoreQueue(orm.Transcript.__table__.insert())
+        self.transcribed_piece = helpers.CoreQueue(orm.TranscriptPiece.__table__.insert())
+        self.translated = helpers.CoreQueue(orm.Protein.__table__.insert())
         self.feature = helpers.CoreQueue(orm.Feature.__table__.insert())
         self.association_transcribed_piece_to_feature = helpers.CoreQueue(
             orm.association_transcribed_piece_to_feature.insert())
@@ -37,10 +37,10 @@ class InsertionQueue(helpers.QueueController):
 class InsertCounterHolder(object):
     """provides incrementing unique integers to be used as primary keys for bulk inserts"""
     feature = helpers.Counter(orm.Feature)
-    translated = helpers.Counter(orm.Translated)
-    transcribed = helpers.Counter(orm.Transcribed)
+    translated = helpers.Counter(orm.Protein)
+    transcribed = helpers.Counter(orm.Transcript)
     super_locus = helpers.Counter(orm.SuperLocus)
-    transcribed_piece = helpers.Counter(orm.TranscribedPiece)
+    transcribed_piece = helpers.Counter(orm.TranscriptPiece)
     genome = helpers.Counter(orm.Genome)
 
     @staticmethod
@@ -108,12 +108,12 @@ class OrganizedGeenuffImporterGroup(object):
                 raise NotImplementedError
             t_id = t.get_ID()
             # create transcript handler
-            t_i = TranscribedImporter(entry_type=t.type,
+            t_i = TranscriptImporter(entry_type=t.type,
                                       given_name=t_id,
                                       super_locus_id=sl_i.id,
                                       controller=self.controller)
             # create transcript piece handler
-            tp_i = TranscribedPieceImporter(given_name=t_id,
+            tp_i = TranscriptPieceImporter(given_name=t_id,
                                             transcript_id=t_i.id,
                                             position=0,
                                             controller=self.controller)
@@ -136,7 +136,7 @@ class OrganizedGeenuffImporterGroup(object):
             if t_entries['cds']:
                 # create protein handler
                 protein_id = self._get_protein_id_from_cds_list(t_entries['cds'])
-                p_i = TranslatedImporter(given_name=protein_id,
+                p_i = ProteinImporter(given_name=protein_id,
                                          super_locus_id=sl_i.id,
                                          controller=self.controller)
                 # create coding features from exon limits
@@ -810,7 +810,7 @@ class FeatureImporter(Insertable):
         return self._get_repr('FeatureImporter', params, str(self.start) + '--' + str(self.end))
 
 
-class TranscribedImporter(Insertable):
+class TranscriptImporter(Insertable):
     def __init__(self, entry_type, given_name, super_locus_id, controller):
         self.id = InsertCounterHolder.transcribed()
         self.entry_type = entry_type
@@ -835,7 +835,7 @@ class TranscribedImporter(Insertable):
         return self._get_repr('TranscriptImporter', self._get_params_dict())
 
 
-class TranscribedPieceImporter(Insertable):
+class TranscriptPieceImporter(Insertable):
     def __init__(self, given_name, transcript_id, position, controller):
         self.id = InsertCounterHolder.transcribed_piece()
         self.given_name = given_name
@@ -857,10 +857,10 @@ class TranscribedPieceImporter(Insertable):
         return d
 
     def __repr__(self):
-        return self._get_repr('TranscribedPieceImporter', self._get_params_dict())
+        return self._get_repr('TranscriptPieceImporter', self._get_params_dict())
 
 
-class TranslatedImporter(Insertable):
+class ProteinImporter(Insertable):
     def __init__(self, given_name, super_locus_id, controller):
         self.id = InsertCounterHolder.translated()
         self.given_name = given_name

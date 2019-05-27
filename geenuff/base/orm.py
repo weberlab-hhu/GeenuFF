@@ -57,8 +57,8 @@ class SuperLocus(Base):
     aliases = Column(String)
     type = Column(Enum(types.SuperLocusAll))
     # things SuperLocus can have a lot of
-    transcribeds = relationship('Transcribed', back_populates='super_locus')
-    translateds = relationship('Translated', back_populates='super_locus')
+    transcribeds = relationship('Transcript', back_populates='super_locus')
+    translateds = relationship('Protein', back_populates='super_locus')
 
     def __repr__(self):
         return '<SuperLocus {}, given_name: \'{}\', type: {}>'.format(self.id, self.given_name,
@@ -77,7 +77,7 @@ association_translated_to_feature = Table('association_translated_to_feature', B
 )
 
 
-class Transcribed(Base):
+class Transcript(Base):
     __tablename__ = 'transcribed'
 
     id = Column(Integer, primary_key=True)
@@ -88,14 +88,14 @@ class Transcribed(Base):
     super_locus_id = Column(Integer, ForeignKey('super_locus.id'), nullable=False)
     super_locus = relationship('SuperLocus', back_populates='transcribeds')
 
-    transcribed_pieces = relationship('TranscribedPiece', back_populates='transcribed')
+    transcribed_pieces = relationship('TranscriptPiece', back_populates='transcribed')
 
     def __repr__(self):
-        return '<Transcribed, {}, "{}" of type {}, with {} pieces>'.format(self.id, self.given_name, self.type,
+        return '<Transcript, {}, "{}" of type {}, with {} pieces>'.format(self.id, self.given_name, self.type,
                                                                            len(self.transcribed_pieces))
 
 
-class TranscribedPiece(Base):
+class TranscriptPiece(Base):
     __tablename__ = 'transcribed_piece'
 
     id = Column(Integer, primary_key=True)
@@ -104,7 +104,7 @@ class TranscribedPiece(Base):
     position = Column(Integer, nullable=False)
 
     transcribed_id = Column(Integer, ForeignKey('transcribed.id'), nullable=False)
-    transcribed = relationship('Transcribed', back_populates='transcribed_pieces')
+    transcribed = relationship('Transcript', back_populates='transcribed_pieces')
 
     features = relationship('Feature', secondary=association_transcribed_piece_to_feature,
                             back_populates='transcribed_pieces')
@@ -114,11 +114,11 @@ class TranscribedPiece(Base):
     )
 
     def __repr__(self):
-        return ('<TranscribedPiece, {}: for transcribed {} '
+        return ('<TranscriptPiece, {}: for transcribed {} '
                 'in position {}>').format(self.id, self.transcribed_id, self.position)
 
 
-class Translated(Base):
+class Protein(Base):
     __tablename__ = 'translated'
 
     id = Column(Integer, primary_key=True)
@@ -131,7 +131,7 @@ class Translated(Base):
                             back_populates='translateds')
 
     def __repr__(self):
-        return '<Translated {}, given_name: \'{}\', super_locus_id: {}>'.format(self.id,
+        return '<Protein {}, given_name: \'{}\', super_locus_id: {}>'.format(self.id,
                                                                                 self.given_name,
                                                                                 self.super_locus_id)
 
@@ -158,11 +158,11 @@ class Feature(Base):
     coordinate = relationship('Coordinate', back_populates='features')
 
     # relations
-    transcribed_pieces = relationship('TranscribedPiece',
+    transcribed_pieces = relationship('TranscriptPiece',
                                       secondary=association_transcribed_piece_to_feature,
                                       back_populates='features')
 
-    translateds = relationship('Translated',
+    translateds = relationship('Protein',
                                secondary=association_translated_to_feature,
                                back_populates='features')
 
