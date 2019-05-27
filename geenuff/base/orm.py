@@ -60,6 +60,17 @@ class SuperLocus(Base):
     transcribeds = relationship('Transcribed', back_populates='super_locus')
     translateds = relationship('Translated', back_populates='super_locus')
 
+    def __eq__(self, other):
+        """Does not compare foreign keys or relationships recursively"""
+        if not isinstance(other, self.__class__):
+            return False
+        if self.id != None and other.id != None:
+            if self.id != other.id:
+                return False
+        if self.given_name != other.given_name or self.type != other.type:
+            return False
+        return True
+
     def __repr__(self):
         return '<SuperLocus {}, given_name: \'{}\', type: {}>'.format(self.id, self.given_name,
                                                                   self.type.value)
@@ -90,6 +101,17 @@ class Transcribed(Base):
 
     transcribed_pieces = relationship('TranscribedPiece', back_populates='transcribed')
 
+    def __eq__(self, other):
+        """Does not compare foreign keys or relationships recursively"""
+        if not isinstance(other, self.__class__):
+            return False
+        if self.id != None and other.id != None:
+            if self.id != other.id:
+                return False
+        if self.given_name != other.given_name or self.type != other.type:
+            return False
+        return True
+
     def __repr__(self):
         return '<Transcribed, {}, "{}" of type {}, with {} pieces>'.format(self.id, self.given_name, self.type,
                                                                            len(self.transcribed_pieces))
@@ -113,6 +135,17 @@ class TranscribedPiece(Base):
         UniqueConstraint('transcribed_id', 'position', name='unique_positions_per_piece'),
     )
 
+    def __eq__(self, other):
+        """Does not compare foreign keys or relationships recursively"""
+        if not isinstance(other, self.__class__):
+            return False
+        if self.id != None and other.id != None:
+            if self.id != other.id:
+                return False
+        if self.given_name != other.given_name or self.position != other.position:
+            return False
+        return True
+
     def __repr__(self):
         return ('<TranscribedPiece, {}: for transcribed {} '
                 'in position {}>').format(self.id, self.transcribed_id, self.position)
@@ -129,6 +162,17 @@ class Translated(Base):
 
     features = relationship('Feature', secondary=association_translated_to_feature,
                             back_populates='translateds')
+
+    def __eq__(self, other):
+        """Does not compare foreign keys or relationships recursively"""
+        if not isinstance(other, self.__class__):
+            return False
+        if self.id != None and other.id != None:
+            if self.id != other.id:
+                return False
+        if self.given_name != other.given_name:
+            return False
+        return True
 
     def __repr__(self):
         return '<Translated {}, given_name: \'{}\', super_locus_id: {}>'.format(self.id,
@@ -172,6 +216,24 @@ class Feature(Base):
         CheckConstraint(phase >= 0, name='check_phase_not_negative'),
         CheckConstraint(phase < 3, name='check_phase_less_three'),
     )
+
+    def __eq__(self, other):
+        """Does not compare foreign keys or relationships recursively"""
+        if not isinstance(other, self.__class__):
+            return False
+        if self.id != None and other.id != None:
+            if self.id != other.id:
+                return False
+        if (self.type != other.type or
+                self.given_name != other.given_name or
+                self.start != other.start or
+                self.end != other.end or
+                self.start_is_biological_start != other.start_is_biological_start or
+                self.end_is_biological_end != other.end_is_biological_end or
+                self.is_plus_strand != other.is_plus_strand or
+                self.phase != other.phase):
+            return False
+        return True
 
     def __repr__(self):
         start_caveat = end_caveat = ''

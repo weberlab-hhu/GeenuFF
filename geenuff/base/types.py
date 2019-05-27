@@ -52,7 +52,7 @@ SuperLocusAll = join_to_enum('SuperLocusAll', SuperLocus, SuperLocusHistorical)
 TranscriptLevelNice = make_enum('TranscriptLevelNice', MRNA, TRNA, RRNA,MIRNA, SNORNA, SNRNA, SRP_RNA,
                                 LNC_RNA, PRE_MIRNA, RNASE_MRP_RNA)
 TranscriptLevelInput = make_enum('TranscriptLevelInput', TRANSCRIPT, PRIMARY_TRANSCRIPT, PSEUDOGENIC_TRANSCRIPT)
-TranscriptLevelAll = join_to_enum('TranscriptLevel', TranscriptLevelNice, TranscriptLevelInput)
+TranscriptLevelAll = join_to_enum('TranscriptLevelAll', TranscriptLevelNice, TranscriptLevelInput)
 
 
 # FEATURES

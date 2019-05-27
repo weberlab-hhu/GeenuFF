@@ -422,10 +422,10 @@ class GFFErrorHandling(object):
                     if introns:
                         # the case of wrong 3p phase
                         len_3p_exon = abs(cds.end - transcript['introns'][-1].end)
-                        # can't think of a better way to check 3p phase
-                        if cds.phase_3p != (3 - len_3p_exon % 3) % 3:
+                        if cds.phase_3p != len_3p_exon % 3:
                             self._add_overlapping_error(i, cds, '3p', types.MISMATCHED_PHASE_3P)
 
+                        faulty_introns = []
                         for j, intron in enumerate(introns):
                             # the case of overlapping exons
                             if ((self.is_plus_strand and intron.end < intron.start) or
@@ -441,11 +441,16 @@ class GFFErrorHandling(object):
                                     error_end = transcript['transcript_feature'].end
                                 self._add_error(error_start, error_end, self.is_plus_strand,
                                                 types.OVERLAPPING_EXONS)
+                                faulty_introns.append(intron)
                             # the case of a too short intron
                             # todo put the minimum length in a config somewhere
                             elif abs(intron.end - intron.start) < 60:
                                 self._add_error(intron.start, intron.end, self.is_plus_strand,
                                                 types.TOO_SHORT_INTRON)
+                                faulty_introns.append(intron)
+                        # do not save faulty introns, the error should be descriptive enough
+                        for intron in faulty_introns:
+                            introns.remove(intron)
 
     def _add_error(self, start, end, is_plus_strand, error_type):
         # todo logging

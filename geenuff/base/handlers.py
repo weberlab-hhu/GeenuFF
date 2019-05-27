@@ -16,10 +16,7 @@ class Handler(object):
 
     def add_data(self, data):
         assert isinstance(data, self.data_type), 'data type does not match with handler class'
-        if self.id is not None:
-            data.id = self.id
         self.data = data
-        data.handler = self  # terrible form, but I need some sort of efficient point back
 
     @property
     def data_type(self):
@@ -34,7 +31,7 @@ class Handler(object):
             return class_name + '[' +  param_str + ']'
 
     def __repr__(self):
-        return self._get_repr('Handler', {'id': self.id})
+        return self._get_repr('Handler', {'data': self.data})
 
 
 class GenomeHandlerBase(Handler):
