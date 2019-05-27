@@ -78,7 +78,8 @@ def matching_features(f1, f2):
             f1.start_is_biological_start != f2.start_is_biological_start or
             f1.end_is_biological_end != f2.end_is_biological_end or
             f1.is_plus_strand != f2.is_plus_strand or
-            f1.phase != f2.phase):
+            f1.phase != f2.phase or
+            f1.coordinate.id != f2.coordinate.id):
         return False
     return True
 
@@ -89,7 +90,7 @@ def matching_proteins(t1, t2):
     if t1.id != None and t2.id != None:
         if t1.id != t2.id:
             return False
-    if t1.given_name != t2.given_name:
+    if t1.given_name != t2.given_name or t1.super_locus.id != t2.super_locus.id:
         return False
     return True
 
@@ -100,7 +101,8 @@ def matching_transcripts(t1, t2):
     if t1.id != None and t2.id != None:
         if t1.id != t2.id:
             return False
-    if t1.given_name != t2.given_name or t1.type != t2.type:
+    if (t1.given_name != t2.given_name or t1.super_locus.id != t2.super_locus.id or
+            t1.type != t2.type):
         return False
     return True
 
@@ -351,25 +353,10 @@ def test_order_pieces():
                         given_name='2d',
                         is_plus_strand=True)
     # see if they can be ordered as expected overall
-    op = ti.sorted_pieces()
+    op = t_h.sorted_pieces
     print([piece0, piece1, piece2], 'expected')
     print(op, 'sorted')
     assert op == [piece0, piece1, piece2]
-    # order features by piece
-    fully_sorted = ti.sort_all()
-    expected = [[feature0u], [feature1d, feature1u], [feature2d]]
-    assert fully_sorted == expected
-    # test assertion of matching strand
-    feature_neg = Feature(transcribed_pieces=[piece2],
-                          coordinate=coor,
-                          start=5,
-                          end=10,
-                          given_name='neg',
-                          is_plus_strand=False)
-    sess.add(feature_neg)
-    sess.commit()
-    with pytest.raises(AssertionError):
-        ti.sorted_features(piece2)
 
 
 class BiointerpDemoDataCoding(object):
@@ -378,14 +365,9 @@ class BiointerpDemoDataCoding(object):
         self.scribed, self.scribed_handler = setup_data_handler(handlers.TranscribedHandlerBase,
                                                                 Transcribed,
                                                                 super_locus=self.sl)
-
         self.piece = TranscribedPiece(position=0, transcribed=self.scribed)
-
-        self.ti = TranscriptInterpBase(transcript=self.scribed_handler,
-                                       super_locus=self.sl,
-                                       session=sess)
-
         self.g = Genome()
+
         # setup ranges for a two-exon coding gene
         self.coordinate = Coordinate(seqid='a', start=1, end=2000, genome=self.g)
         transcribed_start, transcribed_end = 100, 900
@@ -434,14 +416,9 @@ class BiointerpDemoDataPartial(object):
         self.scribed, self.scribed_handler = setup_data_handler(handlers.TranscribedHandlerBase,
                                                                 Transcribed,
                                                                 super_locus=self.sl)
-
         self.piece = TranscribedPiece(position=0, transcribed=self.scribed)
-
-        self.ti = TranscriptInterpBase(transcript=self.scribed_handler,
-                                       super_locus=self.sl,
-                                       session=sess)
-
         self.ag = Genome()
+
         # setup ranges for a two-exon coding gene
         self.coordinates = Coordinate(seqid='a', start=1, end=2000, genome=self.ag)
         transcribed_start, transcribed_end = 100, 500
@@ -477,7 +454,9 @@ class BiointerpDemoDataPartial(object):
 def test_biointerp_features_as_ranges():
     """checks biological interpretation for ranges from db for simple, spliced, coding gene"""
     sess = mk_memory_session()
-    fw = BiointerpDemoDataCoding(sess, is_plus_strand=True)
+    bi = BiointerpDemoDataCoding(sess, is_plus_strand=True)
+
+    # tr = Transcribed(
 
     assert fw.ti.transcribed_ranges() == [
         Range(coordinate_id=1, is_plus_strand=True, piece_position=0, start=100, end=900)
@@ -881,16 +860,18 @@ def test_case_1():
     super_locus = SuperLocus(given_name='gene0', type=types.SuperLocusAll.gene)
     assert matching_super_loci(sl, super_locus)
 
+    coords = query(Coordinate).all()
+
     # confirm exisistence of all objects where things could go wrong
     # not testing for TranscriptPieces as trans-splicing is currently not implemented
     # above db level and one piece has to exist for the sl_h.features query to work
     sl_objects = list(sl_h.features) + sl_h.data.transcribeds + sl_h.data.translateds
 
     # first transcript
-    transcript = Transcribed(given_name='x', type=types.TranscriptLevelAll.mRNA)
+    transcript = Transcribed(given_name='x', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
     assert orm_object_in_list(transcript, sl_objects)
 
-    protein = Translated(given_name='x.p')
+    protein = Translated(given_name='x.p', super_locus=sl)
     assert orm_object_in_list(protein, sl_objects)
 
     feature = Feature(given_name='x',
@@ -900,7 +881,8 @@ def test_case_1():
                       start_is_biological_start=True,
                       end_is_biological_end=True,
                       is_plus_strand=True,
-                      phase=0)
+                      phase=0,
+                      coordinate=coords[0])
     assert orm_object_in_list(feature, sl_objects)
     feature = Feature(given_name=None,
                       type=types.OnSequence.coding,
@@ -909,7 +891,8 @@ def test_case_1():
                       start_is_biological_start=True,
                       end_is_biological_end=False,
                       is_plus_strand=True,
-                      phase=0)
+                      phase=0,
+                      coordinate=coords[0])
     assert orm_object_in_list(feature, sl_objects)
     feature = Feature(given_name=None,
                       type=types.OnSequence.intron,
@@ -918,14 +901,15 @@ def test_case_1():
                       start_is_biological_start=True,
                       end_is_biological_end=True,
                       is_plus_strand=True,
-                      phase=0)
+                      phase=0,
+                      coordinate=coords[0])
     assert orm_object_in_list(feature, sl_objects)
 
     # second transcript
-    transcript = Transcribed(given_name='y', type=types.TranscriptLevelAll.mRNA)
+    transcript = Transcribed(given_name='y', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
     assert orm_object_in_list(transcript, sl_objects)
 
-    protein = Translated(given_name='y.p')
+    protein = Translated(given_name='y.p', super_locus=sl)
     assert orm_object_in_list(protein, sl_objects)
 
     feature = Feature(given_name='y',
@@ -935,7 +919,8 @@ def test_case_1():
                       start_is_biological_start=True,
                       end_is_biological_end=True,
                       is_plus_strand=True,
-                      phase=0)
+                      phase=0,
+                      coordinate=coords[0])
     assert orm_object_in_list(feature, sl_objects)
     feature = Feature(given_name=None,
                       type=types.OnSequence.coding,
@@ -944,7 +929,8 @@ def test_case_1():
                       start_is_biological_start=True,
                       end_is_biological_end=True,
                       is_plus_strand=True,
-                      phase=0)
+                      phase=0,
+                      coordinate=coords[0])
     assert orm_object_in_list(feature, sl_objects)
     feature = Feature(given_name=None,
                       type=types.OnSequence.intron,
@@ -953,7 +939,8 @@ def test_case_1():
                       start_is_biological_start=True,
                       end_is_biological_end=True,
                       is_plus_strand=True,
-                      phase=0)
+                      phase=0,
+                      coordinate=coords[0])
     assert orm_object_in_list(feature, sl_objects)
     feature = Feature(given_name=None,
                       type=types.OnSequence.intron,
@@ -962,14 +949,15 @@ def test_case_1():
                       start_is_biological_start=True,
                       end_is_biological_end=True,
                       is_plus_strand=True,
-                      phase=0)
+                      phase=0,
+                      coordinate=coords[0])
     assert orm_object_in_list(feature, sl_objects)
 
     # third transcript
-    transcript = Transcribed(given_name='z', type=types.TranscriptLevelAll.mRNA)
+    transcript = Transcribed(given_name='z', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
     assert orm_object_in_list(transcript, sl_objects)
 
-    protein = Translated(given_name='z.p')
+    protein = Translated(given_name='z.p', super_locus=sl)
     assert orm_object_in_list(protein, sl_objects)
 
     feature = Feature(given_name='z',
@@ -979,7 +967,8 @@ def test_case_1():
                       start_is_biological_start=True,
                       end_is_biological_end=True,
                       is_plus_strand=True,
-                      phase=0)
+                      phase=0,
+                      coordinate=coords[0])
     assert orm_object_in_list(feature, sl_objects)
     feature = Feature(given_name=None,
                       type=types.OnSequence.coding,
@@ -988,7 +977,8 @@ def test_case_1():
                       start_is_biological_start=False,
                       end_is_biological_end=False,
                       is_plus_strand=True,
-                      phase=0)
+                      phase=0,
+                      coordinate=coords[0])
     assert orm_object_in_list(feature, sl_objects)
 
     # test if we have no extra objects
@@ -1009,13 +999,15 @@ def test_case_8():
                              type=types.SuperLocusAll.gene)
     assert matching_super_loci(sl, super_locus)
 
+    coords = query(Coordinate).all()
+
     sl_objects = list(sl_h.features) + sl_h.data.transcribeds + sl_h.data.translateds
 
     # first transcript
-    transcript = Transcribed(given_name='x', type=types.TranscriptLevelAll.mRNA)
+    transcript = Transcribed(given_name='x', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
     assert orm_object_in_list(transcript, sl_objects)
 
-    protein = Translated(given_name='x.p')
+    protein = Translated(given_name='x.p', super_locus=sl)
     assert orm_object_in_list(protein, sl_objects)
 
     feature = Feature(given_name='x',
@@ -1025,7 +1017,8 @@ def test_case_8():
                       start_is_biological_start=True,
                       end_is_biological_end=True,
                       is_plus_strand=False,
-                      phase=0)
+                      phase=0,
+                      coordinate=coords[1])
     assert orm_object_in_list(feature, sl_objects)
     feature = Feature(given_name=None,
                       type=types.OnSequence.coding,
@@ -1034,7 +1027,8 @@ def test_case_8():
                       start_is_biological_start=False,
                       end_is_biological_end=True,
                       is_plus_strand=False,
-                      phase=0)
+                      phase=0,
+                      coordinate=coords[1])
     assert orm_object_in_list(feature, sl_objects)
     feature = Feature(given_name=None,
                       type=types.OnSequence.intron,
@@ -1043,14 +1037,15 @@ def test_case_8():
                       start_is_biological_start=True,
                       end_is_biological_end=True,
                       is_plus_strand=False,
-                      phase=0)
+                      phase=0,
+                      coordinate=coords[1])
     assert orm_object_in_list(feature, sl_objects)
 
     # second transcript
-    transcript = Transcribed(given_name='y', type=types.TranscriptLevelAll.mRNA)
+    transcript = Transcribed(given_name='y', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
     assert orm_object_in_list(transcript, sl_objects)
 
-    protein = Translated(given_name='y.p')
+    protein = Translated(given_name='y.p', super_locus=sl)
     assert orm_object_in_list(protein, sl_objects)
 
     feature = Feature(given_name='y',
@@ -1060,7 +1055,8 @@ def test_case_8():
                       start_is_biological_start=True,
                       end_is_biological_end=True,
                       is_plus_strand=False,
-                      phase=0)
+                      phase=0,
+                      coordinate=coords[1])
     assert orm_object_in_list(feature, sl_objects)
     feature = Feature(given_name=None,
                       type=types.OnSequence.coding,
@@ -1069,7 +1065,8 @@ def test_case_8():
                       start_is_biological_start=True,
                       end_is_biological_end=True,
                       is_plus_strand=False,
-                      phase=0)
+                      phase=0,
+                      coordinate=coords[1])
     assert orm_object_in_list(feature, sl_objects)
 
     # test if we have no extra objects

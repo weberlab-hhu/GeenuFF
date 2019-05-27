@@ -75,6 +75,11 @@ class TranscribedHandlerBase(Handler):
     def data_type(self):
         return orm.Transcribed
 
+    @property
+    def sorted_pieces(self):
+        pieces = self.data.transcribed_pieces
+        return sorted(pieces, key=lambda p: p.position)
+
 
 class TranscribedPieceHandlerBase(Handler):
 
