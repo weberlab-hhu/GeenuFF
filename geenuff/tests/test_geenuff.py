@@ -644,9 +644,7 @@ def test_import_multiple_genomes():
     n_features_1 = query(Feature).count()
     n_coords_1 = query(Coordinate).count()
     n_genomes_1 = query(Genome).count()
-
     max_id_1 = query(func.max(Feature.id)).one()[0]
-    assert max_id_1 == n_features_1
 
     # add two more genomes
     controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff', clean_gff=True)
