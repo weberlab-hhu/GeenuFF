@@ -678,7 +678,7 @@ def test_import_multiple_genomes():
     assert len(translateds_sl_1) == len(translateds_sl_2) == len(translateds_sl_3)
 
 
-def test_dummyloci_multiple_errors():
+def test_dummyloci_errors():
     """Tests if all errors generated for dummyloci{.gff|.fa} are correct"""
 
     def error_in_list(error, error_list):
@@ -807,9 +807,47 @@ def test_dummyloci_multiple_errors():
     assert not errors
 
 
-# TODO
-# make one huge testcase where every single orm object is fully tested for two super loci
-# on plus and minus strand
+def test_case_1():
+    """Confirm the existence of all features of test case 1 of dummyloci.gff except
+    for error features, which are tested in test_dummyloci_errors().
+    Does not test the exact ids or exactly matching object relationships."""
+    def orm_object_in_list(obj, obj_list):
+        for o in obj_list[:]:  # make a copy at each iteration so we avoid weird errors
+            if o == obj:
+                return True
+        return False
+
+    controller = ImportController(database_path='sqlite:///:memory:')
+    controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff', clean_gff=True)
+    query = controller.session.query
+
+    sl = query(SuperLocus).filter(SuperLocus.given_name == 'gene0').one()
+    sl_h = SuperLocusHandlerBase(sl)
+
+    super_locus = SuperLocus(given_name='gene0', type=types.SuperLocusAll.gene)
+    assert sl == super_locus
+
+    # confirm exisistence of all features
+    sl_features = list(sl_h.features)
+
+    feature = Feature(given_name='x',
+                      type=types.OnSequence.transcribed,
+                      start=0,
+                      end=120,
+                      start_is_biological_start=True,
+                      end_is_biological_end=True,
+                      is_plus_strand=True,
+                      phase=0)
+    feature.__eq__(sl_features[0])
+    assert orm_object_in_list(feature, sl_features)
+
+
+
+
+
+
+
+
 
 
 def test_gff_gen():
