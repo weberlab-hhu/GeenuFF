@@ -480,7 +480,7 @@ class GFFErrorHandling(object):
 
         # set correct downstream error end point
         if direction in ['3p', 'whole']:
-            if i < len(self.groups) -1:
+            if i < len(self.groups) - 1:
                 sl_next = self.groups[i + 1]['super_locus']
                 anchor_3p = self._halfway_mark(sl, sl_next)
             else:
@@ -493,7 +493,7 @@ class GFFErrorHandling(object):
             error_5p = anchor_5p
             error_3p = handler.start
             handler.start_is_biological_start = False
-        elif direction =='3p':
+        elif direction == '3p':
             error_5p = handler.end
             error_3p = anchor_3p
             handler.end_is_biological_end = False
@@ -501,7 +501,27 @@ class GFFErrorHandling(object):
             error_5p = anchor_5p
             error_3p = anchor_3p
 
-        self._add_error(error_5p, error_3p, self.is_plus_strand, error_type)
+        if not self._zero_len_coords_at_sequence_edge(error_5p, error_3p, direction, sl.coord):
+            self._add_error(error_5p, error_3p, self.is_plus_strand, error_type)
+
+    def _zero_len_coords_at_sequence_edge(self, error_5p, error_3p, direction, coordinate):
+        """Check if error 5p-3p is of zero length due to hitting start or end of sequence"""
+        out = False
+        if self.is_plus_strand:
+            if direction == '5p':
+                if error_5p == error_3p == 0:
+                    out = True
+            elif direction == '3p':
+                if error_5p == error_3p == coordinate.end:
+                    out = True
+        else:
+            if direction == '5p':
+                if error_5p == error_3p == coordinate.end - 1:
+                    out = True
+            elif direction == '3p':
+                if error_5p == error_3p == -1:
+                    out = True
+        return out
 
     def _halfway_mark(self, sl, sl_next):
         """Calculates the half way point between two super loci, which is then used for
