@@ -422,8 +422,7 @@ class GFFErrorHandling(object):
                     if introns:
                         # the case of wrong 3p phase
                         len_3p_exon = abs(cds.end - transcript['introns'][-1].end)
-                        # can't think of a better way to check 3p phase
-                        if cds.phase_3p != (3 - len_3p_exon % 3) % 3:
+                        if cds.phase_3p != len_3p_exon % 3:
                             self._add_overlapping_error(i, cds, '3p', types.MISMATCHED_PHASE_3P)
 
                         for j, intron in enumerate(introns):

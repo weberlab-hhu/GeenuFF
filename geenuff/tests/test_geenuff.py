@@ -814,6 +814,7 @@ def test_case_1():
     def orm_object_in_list(obj, obj_list):
         for o in obj_list[:]:  # make a copy at each iteration so we avoid weird errors
             if o == obj:
+                obj_list.remove(o)
                 return True
         return False
 
@@ -827,8 +828,17 @@ def test_case_1():
     super_locus = SuperLocus(given_name='gene0', type=types.SuperLocusAll.gene)
     assert sl == super_locus
 
-    # confirm exisistence of all features
-    sl_features = list(sl_h.features)
+    # confirm exisistence of all objects where things could go wrong
+    # not testing for TranscriptPieces as trans-splicing is currently not implemented
+    # above db level and one piece has to exist for the sl_h.features query to work
+    sl_objects = list(sl_h.features) + sl_h.data.transcribeds + sl_h.data.translateds
+
+    # first transcript
+    transcript = Transcribed(given_name='x', type=types.TranscriptLevelAll.mRNA)
+    assert orm_object_in_list(transcript, sl_objects)
+
+    protein = Translated(given_name='x.p')
+    assert orm_object_in_list(protein, sl_objects)
 
     feature = Feature(given_name='x',
                       type=types.OnSequence.transcribed,
@@ -838,14 +848,98 @@ def test_case_1():
                       end_is_biological_end=True,
                       is_plus_strand=True,
                       phase=0)
-    feature.__eq__(sl_features[0])
-    assert orm_object_in_list(feature, sl_features)
+    assert orm_object_in_list(feature, sl_objects)
+    feature = Feature(given_name=None,
+                      type=types.OnSequence.coding,
+                      start=10,
+                      end=120,
+                      start_is_biological_start=True,
+                      end_is_biological_end=False,
+                      is_plus_strand=True,
+                      phase=0)
+    assert orm_object_in_list(feature, sl_objects)
+    feature = Feature(given_name=None,
+                      type=types.OnSequence.intron,
+                      start=21,
+                      end=110,
+                      start_is_biological_start=True,
+                      end_is_biological_end=True,
+                      is_plus_strand=True,
+                      phase=0)
+    assert orm_object_in_list(feature, sl_objects)
 
+    # second transcript
+    transcript = Transcribed(given_name='y', type=types.TranscriptLevelAll.mRNA)
+    assert orm_object_in_list(transcript, sl_objects)
 
+    protein = Translated(given_name='y.p')
+    assert orm_object_in_list(protein, sl_objects)
 
+    feature = Feature(given_name='y',
+                      type=types.OnSequence.transcribed,
+                      start=0,
+                      end=400,
+                      start_is_biological_start=True,
+                      end_is_biological_end=True,
+                      is_plus_strand=True,
+                      phase=0)
+    assert orm_object_in_list(feature, sl_objects)
+    feature = Feature(given_name=None,
+                      type=types.OnSequence.coding,
+                      start=10,
+                      end=300,
+                      start_is_biological_start=True,
+                      end_is_biological_end=True,
+                      is_plus_strand=True,
+                      phase=0)
+    assert orm_object_in_list(feature, sl_objects)
+    feature = Feature(given_name=None,
+                      type=types.OnSequence.intron,
+                      start=22,
+                      end=110,
+                      start_is_biological_start=True,
+                      end_is_biological_end=True,
+                      is_plus_strand=True,
+                      phase=0)
+    assert orm_object_in_list(feature, sl_objects)
+    feature = Feature(given_name=None,
+                      type=types.OnSequence.intron,
+                      start=120,
+                      end=200,
+                      start_is_biological_start=True,
+                      end_is_biological_end=True,
+                      is_plus_strand=True,
+                      phase=0)
+    assert orm_object_in_list(feature, sl_objects)
 
+    # third transcript
+    transcript = Transcribed(given_name='z', type=types.TranscriptLevelAll.mRNA)
+    assert orm_object_in_list(transcript, sl_objects)
 
+    protein = Translated(given_name='z.p')
+    assert orm_object_in_list(protein, sl_objects)
 
+    feature = Feature(given_name='z',
+                      type=types.OnSequence.transcribed,
+                      start=110,
+                      end=120,
+                      start_is_biological_start=True,
+                      end_is_biological_end=True,
+                      is_plus_strand=True,
+                      phase=0)
+    assert orm_object_in_list(feature, sl_objects)
+    feature = Feature(given_name=None,
+                      type=types.OnSequence.coding,
+                      start=110,
+                      end=120,
+                      start_is_biological_start=False,
+                      end_is_biological_end=False,
+                      is_plus_strand=True,
+                      phase=0)
+    assert orm_object_in_list(feature, sl_objects)
+
+    # test if we have no extra objects
+    assert not sl_objects
 
 
 
