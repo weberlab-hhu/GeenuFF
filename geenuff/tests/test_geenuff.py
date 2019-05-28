@@ -557,13 +557,13 @@ def test_case_1():
     sl_objects = list(sl_h.features) + sl_h.data.transcribeds + sl_h.data.translateds
 
     # first transcript
-    transcript = Transcript(given_name='x', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
+    transcript = Transcript(given_name='x1', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
     assert orm_object_in_list(transcript, sl_objects)
 
-    protein = Protein(given_name='x.p', super_locus=sl)
+    protein = Protein(given_name='x1.p', super_locus=sl)
     assert orm_object_in_list(protein, sl_objects)
 
-    feature = Feature(given_name='x',
+    feature = Feature(given_name='x1',
                       type=types.OnSequence.transcribed,
                       start=0,
                       end=120,
@@ -595,13 +595,13 @@ def test_case_1():
     assert orm_object_in_list(feature, sl_objects)
 
     # second transcript
-    transcript = Transcript(given_name='y', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
+    transcript = Transcript(given_name='y1', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
     assert orm_object_in_list(transcript, sl_objects)
 
-    protein = Protein(given_name='y.p', super_locus=sl)
+    protein = Protein(given_name='y1.p', super_locus=sl)
     assert orm_object_in_list(protein, sl_objects)
 
-    feature = Feature(given_name='y',
+    feature = Feature(given_name='y1',
                       type=types.OnSequence.transcribed,
                       start=0,
                       end=400,
@@ -643,13 +643,13 @@ def test_case_1():
     assert orm_object_in_list(feature, sl_objects)
 
     # third transcript
-    transcript = Transcript(given_name='z', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
+    transcript = Transcript(given_name='z1', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
     assert orm_object_in_list(transcript, sl_objects)
 
-    protein = Protein(given_name='z.p', super_locus=sl)
+    protein = Protein(given_name='z1.p', super_locus=sl)
     assert orm_object_in_list(protein, sl_objects)
 
-    feature = Feature(given_name='z',
+    feature = Feature(given_name='z1',
                       type=types.OnSequence.transcribed,
                       start=110,
                       end=120,
@@ -693,13 +693,13 @@ def test_case_8():
     sl_objects = list(sl_h.features) + sl_h.data.transcribeds + sl_h.data.translateds
 
     # first transcript
-    transcript = Transcript(given_name='x', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
+    transcript = Transcript(given_name='x8', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
     assert orm_object_in_list(transcript, sl_objects)
 
-    protein = Protein(given_name='x.p', super_locus=sl)
+    protein = Protein(given_name='x8.p', super_locus=sl)
     assert orm_object_in_list(protein, sl_objects)
 
-    feature = Feature(given_name='x',
+    feature = Feature(given_name='x8',
                       type=types.OnSequence.transcribed,
                       start=1749,
                       end=1548,
@@ -731,13 +731,13 @@ def test_case_8():
     assert orm_object_in_list(feature, sl_objects)
 
     # second transcript
-    transcript = Transcript(given_name='y', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
+    transcript = Transcript(given_name='y8', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
     assert orm_object_in_list(transcript, sl_objects)
 
-    protein = Protein(given_name='y.p', super_locus=sl)
+    protein = Protein(given_name='y8.p', super_locus=sl)
     assert orm_object_in_list(protein, sl_objects)
 
-    feature = Feature(given_name='y',
+    feature = Feature(given_name='y8',
                       type=types.OnSequence.transcribed,
                       start=1749,
                       end=1548,
