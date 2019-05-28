@@ -45,7 +45,9 @@ def setup_dummyloci_super_locus(db_path='sqlite:///:memory:'):
 
 def cleaned_commited_features(sess):
     all_features = sess.query(Feature).all()
-    allowed_types = [types.TRANSCRIBED, types.CODING, types.INTRON, types.TRANS_INTRON, types.ERROR]
+    allowed_types = [
+        types.TRANSCRIPT_FEATURE, types.CODING, types.INTRON, types.TRANS_INTRON, types.ERROR
+    ]
     clean_datas = [x for x in all_features if x.type.value in allowed_types]
     return clean_datas
 
@@ -68,14 +70,10 @@ def matching_features(f1, f2):
     if f1.id is not None and f2.id is not None:
         if f1.id != f2.id:
             return False
-    if (f1.type != f2.type
-            or f1.given_name != f2.given_name
-            or f1.start != f2.start
-            or f1.end != f2.end
-            or f1.start_is_biological_start != f2.start_is_biological_start
+    if (f1.type != f2.type or f1.given_name != f2.given_name or f1.start != f2.start
+            or f1.end != f2.end or f1.start_is_biological_start != f2.start_is_biological_start
             or f1.end_is_biological_end != f2.end_is_biological_end
-            or f1.is_plus_strand != f2.is_plus_strand
-            or f1.phase != f2.phase
+            or f1.is_plus_strand != f2.is_plus_strand or f1.phase != f2.phase
             or f1.coordinate.id != f2.coordinate.id):
         return False
     return True
@@ -189,8 +187,8 @@ def test_coordinate_insert():
 
 
 def test_many2many_with_features():
-    """Test the many2many tables association_transcribed_piece_to_feature and
-    association_translated_to_feature
+    """Test the many2many tables association_transcript_piece_to_feature and
+    association_protein_to_feature
     """
     sl = SuperLocus()
     # one transcript, multiple proteins
@@ -198,15 +196,15 @@ def test_many2many_with_features():
     slated0 = Protein(super_locus=sl)
     slated1 = Protein(super_locus=sl)
     # features representing alternative start codon for proteins on one transcript
-    feat0_tss = Feature(transcribed_pieces=[piece0])
-    feat2_stop = Feature(translateds=[slated0, slated1])
-    feat3_start = Feature(translateds=[slated0])
-    # test multi features per translated worked
+    feat0_tss = Feature(transcript_pieces=[piece0])
+    feat2_stop = Feature(proteins=[slated0, slated1])
+    feat3_start = Feature(proteins=[slated0])
+    # test multi features per protein worked
     assert len(slated0.features) == 2
-    # test mutli translated per feature worked
-    assert len(feat2_stop.translateds) == 2
-    assert len(feat3_start.translateds) == 1
-    assert len(feat0_tss.translateds) == 0
+    # test mutli protein per feature worked
+    assert len(feat2_stop.proteins) == 2
+    assert len(feat3_start.proteins) == 1
+    assert len(feat0_tss.proteins) == 0
 
 
 def test_feature_has_its_things():
@@ -274,36 +272,36 @@ def test_partially_remove_coordinate():
 
 
 # section: api
-def test_transcribed_piece_unique_constraints():
-    """Add transcribed pieces in valid and invalid configurations and test for
+def test_transcript_piece_unique_constraints():
+    """Add transcript pieces in valid and invalid configurations and test for
     valid outcomes.
     """
     sess = mk_memory_session()
     sl = SuperLocus()
-    transcribed0 = Transcript(super_locus=sl)
-    transcribed1 = Transcript(super_locus=sl)
+    transcript0 = Transcript(super_locus=sl)
+    transcript1 = Transcript(super_locus=sl)
 
-    # test if same position for different transcribed_id goes through
-    piece_tr0_pos0 = TranscriptPiece(transcribed=transcribed0, position=0)
-    piece_tr1_pos0 = TranscriptPiece(transcribed=transcribed1, position=0)
-    sess.add_all([transcribed0, piece_tr0_pos0, piece_tr1_pos0])
+    # test if same position for different transcript_id goes through
+    piece_tr0_pos0 = TranscriptPiece(transcript=transcript0, position=0)
+    piece_tr1_pos0 = TranscriptPiece(transcript=transcript1, position=0)
+    sess.add_all([transcript0, piece_tr0_pos0, piece_tr1_pos0])
     sess.commit()
 
     # same transcibed_id but different position
-    piece_tr0_pos1 = TranscriptPiece(transcribed=transcribed0, position=1)
+    piece_tr0_pos1 = TranscriptPiece(transcript=transcript0, position=1)
     sess.add(piece_tr0_pos1)
     sess.commit()
 
     # test if unique constraint works
-    piece_tr0_pos1_2nd = TranscriptPiece(transcribed=transcribed0, position=1)
+    piece_tr0_pos1_2nd = TranscriptPiece(transcript=transcript0, position=1)
     sess.add(piece_tr0_pos1_2nd)
     with pytest.raises(IntegrityError):
         sess.commit()
 
 
 def test_order_pieces():
-    """Add transcribed pieces that consists of one or many features to the db and test
-    if the order for the transcribed pieces and the features is returned according to the
+    """Add transcript pieces that consists of one or many features to the db and test
+    if the order for the transcript pieces and the features is returned according to the
     position property instead of db insertion order.
     """
     sess = mk_memory_session()
@@ -311,14 +309,14 @@ def test_order_pieces():
     coor = Coordinate(seqid='a', start=1, end=1000, genome=g)
     sess.add_all([g, coor])
     sess.commit()
-    # setup one transcribed handler with pieces
+    # setup one transcript handler with pieces
     sl, sl_h = setup_data_handler(SuperLocusHandlerBase, SuperLocus)
     t, t_h = setup_data_handler(TranscriptHandlerBase, Transcript, super_locus=sl)
     # insert in wrong order
     piece1 = TranscriptPiece(position=1)
     piece0 = TranscriptPiece(position=0)
     piece2 = TranscriptPiece(position=2)
-    t.transcribed_pieces = [piece0, piece1, piece2]
+    t.transcript_pieces = [piece0, piece1, piece2]
     sess.add_all([t, piece1, piece0, piece2])
     sess.commit()
     # see if they can be ordered as expected overall
@@ -380,30 +378,30 @@ def test_import_multiple_genomes():
     max_id_3 = query(func.max(Feature.id)).one()[0]
     assert max_id_1 * 3 == max_id_3
 
-    # test transcribed and super locus relation for a super loci on the plus strand
+    # test transcript and super locus relation for a super loci on the plus strand
     # we have 8 super loci in each genome
-    transcribeds_sl_1 = query(SuperLocus).filter(SuperLocus.id == 1).one().transcribeds
-    transcribeds_sl_2 = query(SuperLocus).filter(SuperLocus.id == 9).one().transcribeds
-    transcribeds_sl_3 = query(SuperLocus).filter(SuperLocus.id == 17).one().transcribeds
-    assert len(transcribeds_sl_1) == len(transcribeds_sl_2) == len(transcribeds_sl_3)
+    transcripts_sl_1 = query(SuperLocus).filter(SuperLocus.id == 1).one().transcripts
+    transcripts_sl_2 = query(SuperLocus).filter(SuperLocus.id == 9).one().transcripts
+    transcripts_sl_3 = query(SuperLocus).filter(SuperLocus.id == 17).one().transcripts
+    assert len(transcripts_sl_1) == len(transcripts_sl_2) == len(transcripts_sl_3)
 
-    # test translated and super locus relation
-    translateds_sl_1 = query(SuperLocus).filter(SuperLocus.id == 1).one().translateds
-    translateds_sl_2 = query(SuperLocus).filter(SuperLocus.id == 9).one().translateds
-    translateds_sl_3 = query(SuperLocus).filter(SuperLocus.id == 17).one().translateds
-    assert len(translateds_sl_1) == len(translateds_sl_2) == len(translateds_sl_3)
+    # test protein and super locus relation
+    proteins_sl_1 = query(SuperLocus).filter(SuperLocus.id == 1).one().proteins
+    proteins_sl_2 = query(SuperLocus).filter(SuperLocus.id == 9).one().proteins
+    proteins_sl_3 = query(SuperLocus).filter(SuperLocus.id == 17).one().proteins
+    assert len(proteins_sl_1) == len(proteins_sl_2) == len(proteins_sl_3)
 
-    # test transcribed and super locus relation for a super loci on the minus strand
-    transcribeds_sl_1 = query(SuperLocus).filter(SuperLocus.id == 6).one().transcribeds
-    transcribeds_sl_2 = query(SuperLocus).filter(SuperLocus.id == 14).one().transcribeds
-    transcribeds_sl_3 = query(SuperLocus).filter(SuperLocus.id == 22).one().transcribeds
-    assert len(transcribeds_sl_1) == len(transcribeds_sl_2) == len(transcribeds_sl_3)
+    # test transcript and super locus relation for a super loci on the minus strand
+    transcripts_sl_1 = query(SuperLocus).filter(SuperLocus.id == 6).one().transcripts
+    transcripts_sl_2 = query(SuperLocus).filter(SuperLocus.id == 14).one().transcripts
+    transcripts_sl_3 = query(SuperLocus).filter(SuperLocus.id == 22).one().transcripts
+    assert len(transcripts_sl_1) == len(transcripts_sl_2) == len(transcripts_sl_3)
 
-    # test translated and super locus relation
-    translateds_sl_1 = query(SuperLocus).filter(SuperLocus.id == 6).one().translateds
-    translateds_sl_2 = query(SuperLocus).filter(SuperLocus.id == 14).one().translateds
-    translateds_sl_3 = query(SuperLocus).filter(SuperLocus.id == 22).one().translateds
-    assert len(translateds_sl_1) == len(translateds_sl_2) == len(translateds_sl_3)
+    # test protein and super locus relation
+    proteins_sl_1 = query(SuperLocus).filter(SuperLocus.id == 6).one().proteins
+    proteins_sl_2 = query(SuperLocus).filter(SuperLocus.id == 14).one().proteins
+    proteins_sl_3 = query(SuperLocus).filter(SuperLocus.id == 22).one().proteins
+    assert len(proteins_sl_1) == len(proteins_sl_2) == len(proteins_sl_3)
 
 
 def test_dummyloci_errors():
@@ -554,7 +552,7 @@ def test_case_1():
     # confirm exisistence of all objects where things could go wrong
     # not testing for TranscriptPieces as trans-splicing is currently not implemented
     # above db level and one piece has to exist for the sl_h.features query to work
-    sl_objects = list(sl_h.features) + sl_h.data.transcribeds + sl_h.data.translateds
+    sl_objects = list(sl_h.features) + sl_h.data.transcripts + sl_h.data.proteins
 
     # first transcript
     transcript = Transcript(given_name='x1', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
@@ -564,7 +562,7 @@ def test_case_1():
     assert orm_object_in_list(protein, sl_objects)
 
     feature = Feature(given_name='x1',
-                      type=types.OnSequence.transcribed,
+                      type=types.OnSequence.transcript_feature,
                       start=0,
                       end=120,
                       start_is_biological_start=True,
@@ -602,7 +600,7 @@ def test_case_1():
     assert orm_object_in_list(protein, sl_objects)
 
     feature = Feature(given_name='y1',
-                      type=types.OnSequence.transcribed,
+                      type=types.OnSequence.transcript_feature,
                       start=0,
                       end=400,
                       start_is_biological_start=True,
@@ -650,7 +648,7 @@ def test_case_1():
     assert orm_object_in_list(protein, sl_objects)
 
     feature = Feature(given_name='z1',
-                      type=types.OnSequence.transcribed,
+                      type=types.OnSequence.transcript_feature,
                       start=110,
                       end=120,
                       start_is_biological_start=True,
@@ -690,7 +688,7 @@ def test_case_8():
 
     coords = query(Coordinate).all()
 
-    sl_objects = list(sl_h.features) + sl_h.data.transcribeds + sl_h.data.translateds
+    sl_objects = list(sl_h.features) + sl_h.data.transcripts + sl_h.data.proteins
 
     # first transcript
     transcript = Transcript(given_name='x8', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
@@ -700,7 +698,7 @@ def test_case_8():
     assert orm_object_in_list(protein, sl_objects)
 
     feature = Feature(given_name='x8',
-                      type=types.OnSequence.transcribed,
+                      type=types.OnSequence.transcript_feature,
                       start=1749,
                       end=1548,
                       start_is_biological_start=True,
@@ -738,7 +736,7 @@ def test_case_8():
     assert orm_object_in_list(protein, sl_objects)
 
     feature = Feature(given_name='y8',
-                      type=types.OnSequence.transcribed,
+                      type=types.OnSequence.transcript_feature,
                       start=1749,
                       end=1548,
                       start_is_biological_start=True,

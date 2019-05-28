@@ -60,8 +60,8 @@ class SuperLocusHandlerBase(Handler):
 
     @property
     def features(self):
-        for transcript in self.data.transcribeds:
-            for piece in transcript.transcribed_pieces:
+        for transcript in self.data.transcripts:
+            for piece in transcript.transcript_pieces:
                 for feature in piece.features:
                     yield feature
 
@@ -77,7 +77,7 @@ class TranscriptHandlerBase(Handler):
 
     @property
     def sorted_pieces(self):
-        pieces = self.data.transcribed_pieces
+        pieces = self.data.transcript_pieces
         return sorted(pieces, key=lambda p: p.position)
 
 
@@ -116,7 +116,7 @@ class HandleMaker(object):
     def make_all_handlers(self):
         self.handles = []
         sl = self.super_locus_handler.data
-        datas = sl.translateds + sl.transcribeds
+        datas = sl.proteins + sl.transcripts
 
         for item in datas:
             self.handles.append(self._get_or_make_one_handler(item))

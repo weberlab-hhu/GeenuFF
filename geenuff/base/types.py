@@ -101,11 +101,11 @@ MATCH = 'match'
 CDNA_MATCH = 'cDNA_match'
 
 # final feature types
-TRANSCRIBED = 'transcribed'
+TRANSCRIPT_FEATURE = 'transcript_feature'
 CODING = 'coding'
 INTRON = 'intron'  # defined above
 TRANS_INTRON = 'trans_intron'
-FinalFeatures = make_enum('FinalFeatures', TRANSCRIBED, CODING, INTRON, TRANS_INTRON)
+FinalFeatures = make_enum('FinalFeatures', TRANSCRIPT_FEATURE, CODING, INTRON, TRANS_INTRON)
 
 # error types
 MISSING_UTR_5P = 'missing_utr_5p'
@@ -138,24 +138,24 @@ KeepOnSequence = FinalFeatures
 #KeepOnSequence = join_to_enum('KeepOnSequence', TranscribedNice, TranslatedNice, ErrorFeature)
 
 # transcription related features
-TranscribedGeneral = make_enum('TranscribedGeneral', TRANSCRIBED)
-TranscribedInput = make_enum('TranscribedInput', EXON, FIVE_PRIME_UTR, THREE_PRIME_UTR)
+TranscriptGeneral = make_enum('TranscriptGeneral', TRANSCRIPT_FEATURE)
+TranscriptInput = make_enum('TranscriptInput', EXON, FIVE_PRIME_UTR, THREE_PRIME_UTR)
 #TranscribedStatus = make_enum('TranscribedStatus', IN_RAW_TRANSCRIPT, IN_INTRON, IN_TRANS_INTRON)
 #TranscribedTransSplice = make_enum('TranscribedTransSplice', DONOR_TRANS_SPLICE_SITE, ACCEPTOR_TRANS_SPLICE_SITE)
 # joining transcription related
-TranscribedAll = join_to_enum('TranscribedFeature', TranscribedGeneral, TranscribedInput)
+TranscriptAll = join_to_enum('TranscriptFeature', TranscriptGeneral, TranscriptInput)
 #TranscribedNice = join_to_enum('TranscribedNice', TranscribedGeneral, TranscribedStatus, TranscribedTransSplice)
 
-TranslatedInput = make_enum('TranslatedInput', CDS)
-TranslatedGeneral = make_enum('TranslatedGeneral', CODING)
+ProteinInput = make_enum('ProteinInput', CDS)
+ProteinGeneral = make_enum('ProteinGeneral', CODING)
 #TranslatedStatus = make_enum('TranslatedStatus', IN_TRANSLATED_REGION)
 
-TranslatedAll = join_to_enum('TranslatedFeatureType', TranslatedInput, TranslatedGeneral)
+ProteinAll = join_to_enum('ProteinFeatureType', ProteinInput, ProteinGeneral)
 #TranslatedNice = join_to_enum('TranslatedNice', TranslatedStatus, TranslatedGeneral)
 
 
 # All known features (else error on import)
-OnSequence = join_to_enum('OnSequence', TranscribedInput, TranslatedInput, FinalFeatures, Errors)
+OnSequence = join_to_enum('OnSequence', TranscriptInput, ProteinInput, FinalFeatures, Errors)
 AllKnown = join_to_enum('AllKnown', SuperLocusAll, TranscriptLevelAll, OnSequence,
                         IgnorableFeatures)
 AllKeepable = join_to_enum('AllKeepable', SuperLocusAll, TranscriptLevelNice, FinalFeatures)

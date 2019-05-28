@@ -17,38 +17,38 @@ class InsertionQueue(helpers.QueueController):
     def __init__(self, session, engine):
         super().__init__(session, engine)
         self.super_locus = helpers.CoreQueue(orm.SuperLocus.__table__.insert())
-        self.transcribed = helpers.CoreQueue(orm.Transcript.__table__.insert())
-        self.transcribed_piece = helpers.CoreQueue(orm.TranscriptPiece.__table__.insert())
-        self.translated = helpers.CoreQueue(orm.Protein.__table__.insert())
+        self.transcript = helpers.CoreQueue(orm.Transcript.__table__.insert())
+        self.transcript_piece = helpers.CoreQueue(orm.TranscriptPiece.__table__.insert())
+        self.protein = helpers.CoreQueue(orm.Protein.__table__.insert())
         self.feature = helpers.CoreQueue(orm.Feature.__table__.insert())
-        self.association_transcribed_piece_to_feature = helpers.CoreQueue(
-            orm.association_transcribed_piece_to_feature.insert())
-        self.association_translated_to_feature = helpers.CoreQueue(
-            orm.association_translated_to_feature.insert())
+        self.association_transcript_piece_to_feature = helpers.CoreQueue(
+            orm.association_transcript_piece_to_feature.insert())
+        self.association_protein_to_feature = helpers.CoreQueue(
+            orm.association_protein_to_feature.insert())
 
         self.ordered_queues = [
-            self.super_locus, self.transcribed, self.transcribed_piece, self.translated,
-            self.feature, self.association_transcribed_piece_to_feature,
-            self.association_translated_to_feature
+            self.super_locus, self.transcript, self.transcript_piece, self.protein,
+            self.feature, self.association_transcript_piece_to_feature,
+            self.association_protein_to_feature
         ]
 
 
 class InsertCounterHolder(object):
     """provides incrementing unique integers to be used as primary keys for bulk inserts"""
     feature = helpers.Counter(orm.Feature)
-    translated = helpers.Counter(orm.Protein)
-    transcribed = helpers.Counter(orm.Transcript)
+    protein = helpers.Counter(orm.Protein)
+    transcript = helpers.Counter(orm.Transcript)
     super_locus = helpers.Counter(orm.SuperLocus)
-    transcribed_piece = helpers.Counter(orm.TranscriptPiece)
+    transcript_piece = helpers.Counter(orm.TranscriptPiece)
     genome = helpers.Counter(orm.Genome)
 
     @staticmethod
     def sync_counters_with_db(session):
         InsertCounterHolder.feature.sync_with_db(session)
-        InsertCounterHolder.translated.sync_with_db(session)
-        InsertCounterHolder.transcribed.sync_with_db(session)
+        InsertCounterHolder.protein.sync_with_db(session)
+        InsertCounterHolder.transcript.sync_with_db(session)
         InsertCounterHolder.super_locus.sync_with_db(session)
-        InsertCounterHolder.transcribed_piece.sync_with_db(session)
+        InsertCounterHolder.transcript_piece.sync_with_db(session)
         InsertCounterHolder.genome.sync_with_db(session)
 
 
@@ -119,7 +119,7 @@ class OrganizedGeenuffImporterGroup(object):
             # create transcript feature handler
             tf_i = FeatureImporter(self.coord,
                                    is_plus_strand,
-                                   types.TRANSCRIBED,
+                                   types.TRANSCRIPT_FEATURE,
                                    given_name=t_id,
                                    score=score,
                                    source=source,
@@ -788,17 +788,17 @@ class FeatureImporter(Insertable):
     def insert_feature_piece_association(self, transcript_piece_id):
         features2pieces = {
             'feature_id': self.id,
-            'transcribed_piece_id': transcript_piece_id,
+            'transcript_piece_id': transcript_piece_id,
         }
-        self.controller.insertion_queues.association_transcribed_piece_to_feature.\
+        self.controller.insertion_queues.association_transcript_piece_to_feature.\
             queue.append(features2pieces)
 
     def insert_feature_protein_association(self, protein_id):
         features2protein = {
             'feature_id': self.id,
-            'translated_id': protein_id,
+            'protein_id': protein_id,
         }
-        self.controller.insertion_queues.association_translated_to_feature.\
+        self.controller.insertion_queues.association_protein_to_feature.\
             queue.append(features2protein)
 
     def set_start_end_from_gff(self, gff_start, gff_end):
@@ -827,15 +827,15 @@ class FeatureImporter(Insertable):
 
 class TranscriptImporter(Insertable):
     def __init__(self, entry_type, given_name, super_locus_id, controller):
-        self.id = InsertCounterHolder.transcribed()
+        self.id = InsertCounterHolder.transcript()
         self.entry_type = entry_type
         self.given_name = given_name
         self.super_locus_id = super_locus_id
         self.controller = controller
 
     def add_to_queue(self):
-        transcribed = self._get_params_dict()
-        self.controller.insertion_queues.transcribed.queue.append(transcribed)
+        transcript = self._get_params_dict()
+        self.controller.insertion_queues.transcript.queue.append(transcript)
 
     def _get_params_dict(self):
         d = {
@@ -852,21 +852,21 @@ class TranscriptImporter(Insertable):
 
 class TranscriptPieceImporter(Insertable):
     def __init__(self, given_name, transcript_id, position, controller):
-        self.id = InsertCounterHolder.transcribed_piece()
+        self.id = InsertCounterHolder.transcript_piece()
         self.given_name = given_name
         self.transcript_id = transcript_id
         self.position = position
         self.controller = controller
 
     def add_to_queue(self):
-        transcribed_piece = self._get_params_dict()
-        self.controller.insertion_queues.transcribed_piece.queue.append(transcribed_piece)
+        transcript_piece = self._get_params_dict()
+        self.controller.insertion_queues.transcript_piece.queue.append(transcript_piece)
 
     def _get_params_dict(self):
         d = {
             'id': self.id,
             'given_name': self.given_name,
-            'transcribed_id': self.transcript_id,
+            'transcript_id': self.transcript_id,
             'position': self.position,
         }
         return d
@@ -877,14 +877,14 @@ class TranscriptPieceImporter(Insertable):
 
 class ProteinImporter(Insertable):
     def __init__(self, given_name, super_locus_id, controller):
-        self.id = InsertCounterHolder.translated()
+        self.id = InsertCounterHolder.protein()
         self.given_name = given_name
         self.super_locus_id = super_locus_id
         self.controller = controller
 
     def add_to_queue(self):
-        translated = self._get_params_dict()
-        self.controller.insertion_queues.translated.queue.append(translated)
+        protein = self._get_params_dict()
+        self.controller.insertion_queues.protein.queue.append(protein)
 
     def _get_params_dict(self):
         d = {
