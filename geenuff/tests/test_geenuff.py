@@ -1,6 +1,5 @@
 import os
 import pytest
-from dustdas import gffhelper
 from sqlalchemy import create_engine
 from sqlalchemy import func
 from sqlalchemy.orm import sessionmaker
@@ -9,12 +8,10 @@ import sqlalchemy
 
 from .. import orm
 from .. import types
-from .. import handlers
 from .. import helpers
 from ..base.orm import (Genome, Feature, Coordinate, Transcript, TranscriptPiece, SuperLocus,
                         Protein)
 from ..base.handlers import SuperLocusHandlerBase, TranscriptHandlerBase
-from ..applications import importer
 from ..applications.importer import ImportController, InsertCounterHolder, OrganizedGFFEntries
 
 
@@ -57,7 +54,7 @@ def cleaned_commited_features(sess):
 def matching_super_loci(s1, s2):
     if not isinstance(s1, s2.__class__):
         return False
-    if s1.id != None and s2.id != None:
+    if s1.id is not None and s2.id is not None:
         if s1.id != s2.id:
             return False
     if s1.given_name != s2.given_name or s1.type != s2.type:
@@ -68,18 +65,18 @@ def matching_super_loci(s1, s2):
 def matching_features(f1, f2):
     if not isinstance(f1, f2.__class__):
         return False
-    if f1.id != None and f2.id != None:
+    if f1.id is not None and f2.id is not None:
         if f1.id != f2.id:
             return False
-    if (f1.type != f2.type or
-            f1.given_name != f2.given_name or
-            f1.start != f2.start or
-            f1.end != f2.end or
-            f1.start_is_biological_start != f2.start_is_biological_start or
-            f1.end_is_biological_end != f2.end_is_biological_end or
-            f1.is_plus_strand != f2.is_plus_strand or
-            f1.phase != f2.phase or
-            f1.coordinate.id != f2.coordinate.id):
+    if (f1.type != f2.type
+            or f1.given_name != f2.given_name
+            or f1.start != f2.start
+            or f1.end != f2.end
+            or f1.start_is_biological_start != f2.start_is_biological_start
+            or f1.end_is_biological_end != f2.end_is_biological_end
+            or f1.is_plus_strand != f2.is_plus_strand
+            or f1.phase != f2.phase
+            or f1.coordinate.id != f2.coordinate.id):
         return False
     return True
 
@@ -87,7 +84,7 @@ def matching_features(f1, f2):
 def matching_proteins(t1, t2):
     if not isinstance(t1, t2.__class__):
         return False
-    if t1.id != None and t2.id != None:
+    if t1.id is not None and t2.id is not None:
         if t1.id != t2.id:
             return False
     if t1.given_name != t2.given_name or t1.super_locus.id != t2.super_locus.id:
@@ -98,20 +95,20 @@ def matching_proteins(t1, t2):
 def matching_transcripts(t1, t2):
     if not isinstance(t1, t2.__class__):
         return False
-    if t1.id != None and t2.id != None:
+    if t1.id is not None and t2.id is not None:
         if t1.id != t2.id:
             return False
-    if (t1.given_name != t2.given_name or t1.super_locus.id != t2.super_locus.id or
-            t1.type != t2.type):
+    if (t1.given_name != t2.given_name or t1.super_locus.id != t2.super_locus.id
+            or t1.type != t2.type):
         return False
     return True
 
 
 def orm_object_in_list(obj, obj_list):
     for o in obj_list[:]:  # make a copy at each iteration so we avoid weird errors
-        if ((isinstance(o, Feature) and matching_features(o, obj)) or
-                (isinstance(o, Protein) and matching_proteins(o, obj)) or
-                (isinstance(o, Transcript) and matching_transcripts(o, obj))):
+        if ((isinstance(o, Feature) and matching_features(o, obj))
+                or (isinstance(o, Protein) and matching_proteins(o, obj))
+                or (isinstance(o, Transcript) and matching_transcripts(o, obj))):
             obj_list.remove(o)
             return True
     return False
@@ -198,15 +195,12 @@ def test_many2many_with_features():
     sl = SuperLocus()
     # one transcript, multiple proteins
     piece0 = TranscriptPiece()
-    scribed0 = Transcript(super_locus=sl, transcribed_pieces=[piece0])
     slated0 = Protein(super_locus=sl)
     slated1 = Protein(super_locus=sl)
     # features representing alternative start codon for proteins on one transcript
     feat0_tss = Feature(transcribed_pieces=[piece0])
-    feat1_tss = Feature(transcribed_pieces=[piece0])
     feat2_stop = Feature(translateds=[slated0, slated1])
     feat3_start = Feature(translateds=[slated0])
-    feat4_start = Feature(translateds=[slated1])
     # test multi features per translated worked
     assert len(slated0.features) == 2
     # test mutli translated per feature worked
@@ -327,31 +321,6 @@ def test_order_pieces():
     t.transcribed_pieces = [piece0, piece1, piece2]
     sess.add_all([t, piece1, piece0, piece2])
     sess.commit()
-    # setup some features on different pieces
-    feature0u = Feature(transcribed_pieces=[piece0],
-                        coordinate=coor,
-                        start=100,
-                        end=200,
-                        given_name='0u',
-                        is_plus_strand=True)
-    feature1d = Feature(transcribed_pieces=[piece1],
-                        coordinate=coor,
-                        start=1,
-                        end=3,
-                        given_name='1d',
-                        is_plus_strand=True)
-    feature1u = Feature(transcribed_pieces=[piece1],
-                        coordinate=coor,
-                        start=100,
-                        end=200,
-                        given_name='1u',
-                        is_plus_strand=True)
-    feature2d = Feature(transcribed_pieces=[piece2],
-                        coordinate=coor,
-                        start=1,
-                        end=3,
-                        given_name='2d',
-                        is_plus_strand=True)
     # see if they can be ordered as expected overall
     op = t_h.sorted_pieces
     print([piece0, piece1, piece2], 'expected')

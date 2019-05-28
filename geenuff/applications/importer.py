@@ -7,10 +7,9 @@ from sqlalchemy.orm import sessionmaker
 from dustdas import gffhelper, fastahelper
 from .. import orm
 from .. import types
-from .. import handlers
 from .. import helpers
-from ..base.helpers import (get_strand_direction, get_geenuff_start_end,
-                            has_start_codon, has_stop_codon)
+from ..base.helpers import (get_strand_direction, get_geenuff_start_end, has_start_codon,
+                            has_stop_codon)
 
 
 # core queue prep
@@ -95,12 +94,12 @@ class OrganizedGeenuffImporterGroup(object):
 
         sl_start, sl_end = get_geenuff_start_end(sl.start, sl.end, is_plus_strand)
         sl_i = self.importers['super_locus'] = SuperLocusImporter(entry_type=sl.type,
-                                                                   given_name=sl.get_ID(),
-                                                                   coord=self.coord,
-                                                                   is_plus_strand=is_plus_strand,
-                                                                   start=sl_start,
-                                                                   end=sl_end,
-                                                                   controller=self.controller)
+                                                                  given_name=sl.get_ID(),
+                                                                  coord=self.coord,
+                                                                  is_plus_strand=is_plus_strand,
+                                                                  start=sl_start,
+                                                                  end=sl_end,
+                                                                  controller=self.controller)
         for t, t_entries in entries['transcripts'].items():
             t_importers = {}
             # check for multi inheritance and throw NotImplementedError if found
@@ -109,14 +108,14 @@ class OrganizedGeenuffImporterGroup(object):
             t_id = t.get_ID()
             # create transcript handler
             t_i = TranscriptImporter(entry_type=t.type,
-                                      given_name=t_id,
-                                      super_locus_id=sl_i.id,
-                                      controller=self.controller)
+                                     given_name=t_id,
+                                     super_locus_id=sl_i.id,
+                                     controller=self.controller)
             # create transcript piece handler
             tp_i = TranscriptPieceImporter(given_name=t_id,
-                                            transcript_id=t_i.id,
-                                            position=0,
-                                            controller=self.controller)
+                                           transcript_id=t_i.id,
+                                           position=0,
+                                           controller=self.controller)
             # create transcript feature handler
             tf_i = FeatureImporter(self.coord,
                                    is_plus_strand,
@@ -137,8 +136,8 @@ class OrganizedGeenuffImporterGroup(object):
                 # create protein handler
                 protein_id = self._get_protein_id_from_cds_list(t_entries['cds'])
                 p_i = ProteinImporter(given_name=protein_id,
-                                         super_locus_id=sl_i.id,
-                                         controller=self.controller)
+                                      super_locus_id=sl_i.id,
+                                      controller=self.controller)
                 # create coding features from exon limits
                 if is_plus_strand:
                     phase_5p = t_entries['cds'][0].phase
@@ -279,13 +278,11 @@ class OrganizedGFFEntryGroup(object):
         # order exon and cds lists by start value (disregard strand for now)
         for _, value_dict in self.entries['transcripts'].items():
             for key in ['exons', 'cds']:
-                value_dict[key].sort(key=lambda e:e.start)
+                value_dict[key].sort(key=lambda e: e.start)
 
     def get_geenuff_importers(self):
-        geenuff_importer_group = OrganizedGeenuffImporterGroup(self.entries,
-                                                             self.coord,
-                                                             self.controller,
-                                                             self.err_handle)
+        geenuff_importer_group = OrganizedGeenuffImporterGroup(self.entries, self.coord,
+                                                               self.controller, self.err_handle)
         return geenuff_importer_group.importers
 
 
@@ -306,6 +303,7 @@ class OrganizedGFFEntries(object):
         ...
     }
     """
+
     def __init__(self, gff_file):
         self.gff_file = gff_file
         self.organized_entries = {}
@@ -380,6 +378,7 @@ class GFFErrorHandling(object):
     super loci, and looks for errors. Error features may be inserted and importers be
     removed when deemed necessary.
     """
+
     def __init__(self, geenuff_importer_groups, controller):
         self.groups = geenuff_importer_groups
         if self.groups:
@@ -643,10 +642,8 @@ class ImportController(object):
         geenuff_importer_groups = []
         for seqid in organized_gff_entries.keys():
             for entry_group in organized_gff_entries[seqid]:
-                organized_entries = OrganizedGFFEntryGroup(entry_group,
-                                                           self.latest_fasta_importer,
-                                                           self,
-                                                           err_handle)
+                organized_entries = OrganizedGFFEntryGroup(entry_group, self.latest_fasta_importer,
+                                                           self, err_handle)
                 geenuff_importer_groups.append(organized_entries.get_geenuff_importers())
             # never do error checking across fasta sequence borders
             clean_and_insert(self, geenuff_importer_groups, clean)
@@ -715,7 +712,14 @@ class FastaImporter(object):
 
 
 class SuperLocusImporter(Insertable):
-    def __init__(self, entry_type, given_name, controller, coord=None, is_plus_strand=None, start=-1, end=-1):
+    def __init__(self,
+                 entry_type,
+                 given_name,
+                 controller,
+                 coord=None,
+                 is_plus_strand=None,
+                 start=-1,
+                 end=-1):
         self.id = InsertCounterHolder.super_locus()
         self.entry_type = entry_type
         self.given_name = given_name
@@ -736,7 +740,18 @@ class SuperLocusImporter(Insertable):
 
 
 class FeatureImporter(Insertable):
-    def __init__(self, coord, is_plus_strand, feature_type, controller, start=-1, end=-1, given_name=None, phase_5p=0, phase_3p=0, score=None, source=None):
+    def __init__(self,
+                 coord,
+                 is_plus_strand,
+                 feature_type,
+                 controller,
+                 start=-1,
+                 end=-1,
+                 given_name=None,
+                 phase_5p=0,
+                 phase_3p=0,
+                 score=None,
+                 source=None):
         self.id = InsertCounterHolder.feature()
         self.coord = coord
         self.given_name = given_name
