@@ -612,7 +612,7 @@ def test_case_1():
     feature = Feature(given_name=None,
                       type=types.OnSequence.coding,
                       start=10,
-                      end=300,
+                      end=301,
                       start_is_biological_start=True,
                       end_is_biological_end=True,
                       is_plus_strand=True,
@@ -621,7 +621,7 @@ def test_case_1():
     assert orm_object_in_list(feature, sl_objects)
     feature = Feature(given_name=None,
                       type=types.OnSequence.intron,
-                      start=22,
+                      start=21,
                       end=110,
                       start_is_biological_start=True,
                       end_is_biological_end=True,

@@ -1,4 +1,5 @@
 import os
+import logging
 from pprint import pprint  # for debugging
 from abc import ABC, abstractmethod
 from sqlalchemy import create_engine
@@ -382,8 +383,9 @@ class GFFErrorHandling(object):
     def __init__(self, geenuff_importer_groups, controller):
         self.groups = geenuff_importer_groups
         if self.groups:
-            self.is_plus_strand = self.groups[0]['super_locus'].is_plus_strand
-            self.coord = self.groups[0]['super_locus'].coord
+            self.super_locus = self.groups[0]['super_locus']
+            self.is_plus_strand = self.super_locus.is_plus_strand
+            self.coord = self.super_locus.coord
         self.controller = controller
 
     def resolve_errors(self):
@@ -452,7 +454,6 @@ class GFFErrorHandling(object):
                             introns.remove(intron)
 
     def _add_error(self, start, end, is_plus_strand, error_type):
-        # todo logging
         error_i = FeatureImporter(self.coord,
                                   is_plus_strand,
                                   error_type,
@@ -460,6 +461,19 @@ class GFFErrorHandling(object):
                                   end=end,
                                   controller=self.controller)
         self.errors.append(error_i)
+        # error msg
+        if is_plus_strand:
+            strand_str = 'plus'
+        else:
+            strand_str = 'minus'
+        msg = ('marked as erroneous: seqid: {seqid}, {start}--{end}:{geneid}, on {strand} strand, '
+               'with type: {type}').format(seqid=self.coord.seqid,
+                                                               start=start,
+                                                               end=end,
+                                                               geneid=self.super_locus.given_name,
+                                                               strand=strand_str,
+                                                               type=error_type)
+        logging.warning(msg)
 
     def _add_overlapping_error(self, i, handler, direction, error_type):
         """Constructs an error features that overlaps halfway to the next super locus

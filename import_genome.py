@@ -46,8 +46,13 @@ class PathFinder(object):
 
 
 def main(args):
-    logging.basicConfig(level=logging.WARNING)
     paths = PathFinder(args.basedir, fasta=args.fasta, gff=args.gff3)
+    logging.basicConfig(filename=paths.problems_out,
+                        filemode='w',
+                        format='%(asctime)s - %(message)s',
+                        datefmt='%d-%b-%y %H:%M:%S')
+    # log to file and stderr simultaneously
+    logging.getLogger().addHandler(logging.StreamHandler())
 
     controller = ImportController(database_path=paths.db_out,
                                   err_path=paths.problems_out,
