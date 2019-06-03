@@ -54,9 +54,7 @@ def main(args):
     # log to file and stderr simultaneously
     logging.getLogger().addHandler(logging.StreamHandler())
 
-    controller = ImportController(database_path=paths.db_out,
-                                  err_path=paths.problems_out,
-                                  replace_db=args.replace_db)
+    controller = ImportController(database_path=paths.db_out, replace_db=args.replace_db)
     genome_args = {}
     for key in ['species', 'accession', 'version', 'acquired_from']:
         genome_args[key] = vars(args)[key]
