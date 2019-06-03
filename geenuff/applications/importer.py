@@ -77,10 +77,9 @@ class OrganizedGeenuffImporterGroup(object):
     }
     """
 
-    def __init__(self, organized_gff_entries, coord, controller, err_handle):
+    def __init__(self, organized_gff_entries, coord, controller):
         self.coord = coord
         self.controller = controller
-        self.err_handle = err_handle
         self.importers = {'transcripts': [], 'errors': []}
         self._parse_gff_entries(organized_gff_entries)
 
@@ -245,15 +244,14 @@ class OrganizedGFFEntryGroup(object):
     }
     """
 
-    def __init__(self, gff_entry_group, fasta_importer, controller, err_handle):
+    def __init__(self, gff_entry_group, fasta_importer, controller):
         self.fasta_importer = fasta_importer
         self.controller = controller
-        self.err_handle = err_handle
         self.entries = {'transcripts': {}}
         self.coord = None
-        self.add_gff_entry_group(gff_entry_group, err_handle)
+        self.add_gff_entry_group(gff_entry_group)
 
-    def add_gff_entry_group(self, entries, err_handle):
+    def add_gff_entry_group(self, entries):
         latest_transcript = None
         for entry in list(entries):
             if helpers.in_enum_values(entry.type, types.SuperLocusAll):
@@ -282,7 +280,7 @@ class OrganizedGFFEntryGroup(object):
 
     def get_geenuff_importers(self):
         geenuff_importer_group = OrganizedGeenuffImporterGroup(self.entries, self.coord,
-                                                               self.controller, self.err_handle)
+                                                               self.controller)
         return geenuff_importer_group.importers
 
 
@@ -542,9 +540,8 @@ class GFFErrorHandling(object):
 
 ##### main flow control #####
 class ImportController(object):
-    def __init__(self, database_path, err_path='/dev/null', replace_db=False):
+    def __init__(self, database_path, replace_db=False):
         self.database_path = database_path
-        self.err_path = err_path
         self.latest_genome = None
         self._mk_session(replace_db)
         # queues for adding to db
@@ -572,11 +569,9 @@ class ImportController(object):
         self.session.commit()
 
     def add_genome(self, fasta_path, gff_path, genome_args={}, clean_gff=True):
-        err_handle = open(self.err_path, 'w')
         self.clean_tmp_data()
         self.add_sequences(fasta_path, genome_args)
-        self.add_gff(gff_path, err_handle, clean=clean_gff)
-        err_handle.close()
+        self.add_gff(gff_path, clean=clean_gff)
 
     def add_sequences(self, seq_path, genome_args={}):
         if self.latest_genome is None:
@@ -589,7 +584,7 @@ class ImportController(object):
         self.latest_genome = None
         self.latest_super_loci = []
 
-    def add_gff(self, gff_file, err_handle, clean=True):
+    def add_gff(self, gff_file, clean=True):
         def insert_importer_groups(self, groups):
             """Initiates the calling of the add_to_queue() function of the importers
             in the correct order. Also initiates the insert of the many2many rows.
@@ -643,7 +638,7 @@ class ImportController(object):
         for seqid in organized_gff_entries.keys():
             for entry_group in organized_gff_entries[seqid]:
                 organized_entries = OrganizedGFFEntryGroup(entry_group, self.latest_fasta_importer,
-                                                           self, err_handle)
+                                                           self)
                 geenuff_importer_groups.append(organized_entries.get_geenuff_importers())
             # never do error checking across fasta sequence borders
             clean_and_insert(self, geenuff_importer_groups, clean)

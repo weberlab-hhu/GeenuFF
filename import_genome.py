@@ -49,9 +49,7 @@ def main(args):
     logging.basicConfig(level=logging.WARNING)
     paths = PathFinder(args.basedir, fasta=args.fasta, gff=args.gff3)
 
-    controller = ImportController(database_path=paths.db_out,
-                                  err_path=paths.problems_out,
-                                  replace_db=args.replace_db)
+    controller = ImportController(database_path=paths.db_out, replace_db=args.replace_db)
     genome_args = {}
     for key in ['species', 'accession', 'version', 'acquired_from']:
         genome_args[key] = vars(args)[key]
