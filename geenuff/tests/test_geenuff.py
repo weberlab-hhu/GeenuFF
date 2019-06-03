@@ -36,13 +36,6 @@ def setup_data_handler(handler_type, data_type, **kwargs):
     return data, handler
 
 
-def setup_dummyloci_super_locus(db_path='sqlite:///:memory:'):
-    controller = ImportController(database_path=db_path)
-    controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff')
-    sl = controller.session.query(SuperLocus).filter
-    return sl, controller
-
-
 def cleaned_commited_features(sess):
     all_features = sess.query(Feature).all()
     allowed_types = [
@@ -337,7 +330,7 @@ def test_fasta_import():
     # test import of multiple sequences from one file
     controller = import_fasta('testdata/basic_sequences.fa')
     coords = controller.session.query(Coordinate).all()
-    assert len(coords) == 3
+    assert len(coords) == 5
     assert coords[0].seqid == '1'
     assert coords[0].start == 0
     assert coords[0].end == 405

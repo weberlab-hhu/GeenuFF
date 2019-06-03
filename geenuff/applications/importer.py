@@ -28,9 +28,8 @@ class InsertionQueue(helpers.QueueController):
             orm.association_protein_to_feature.insert())
 
         self.ordered_queues = [
-            self.super_locus, self.transcript, self.transcript_piece, self.protein,
-            self.feature, self.association_transcript_piece_to_feature,
-            self.association_protein_to_feature
+            self.super_locus, self.transcript, self.transcript_piece, self.protein, self.feature,
+            self.association_transcript_piece_to_feature, self.association_protein_to_feature
         ]
 
 
@@ -427,8 +426,8 @@ class GFFErrorHandling(object):
                         faulty_introns = []
                         for j, intron in enumerate(introns):
                             # the case of overlapping exons
-                            if ((self.is_plus_strand and intron.end < intron.start) or
-                                    (not self.is_plus_strand and intron.end > intron.start)):
+                            if ((self.is_plus_strand and intron.end < intron.start)
+                                    or (not self.is_plus_strand and intron.end > intron.start)):
                                 # mark the overlapping cds regions as errors
                                 if j > 0:
                                     error_start = introns[j - 1].end
@@ -466,11 +465,11 @@ class GFFErrorHandling(object):
             strand_str = 'minus'
         msg = ('marked as erroneous: seqid: {seqid}, {start}--{end}:{geneid}, on {strand} strand, '
                'with type: {type}').format(seqid=self.coord.seqid,
-                                                               start=start,
-                                                               end=end,
-                                                               geneid=self.super_locus.given_name,
-                                                               strand=strand_str,
-                                                               type=error_type)
+                                           start=start,
+                                           end=end,
+                                           geneid=self.super_locus.given_name,
+                                           strand=strand_str,
+                                           type=error_type)
         logging.warning(msg)
 
     def _add_overlapping_error(self, i, handler, direction, error_type):
