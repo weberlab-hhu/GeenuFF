@@ -66,7 +66,7 @@ class SuperLocus(Base):
 
     def __repr__(self):
         return '<SuperLocus {}, given_name: \'{}\', type: {}>'.format(self.id, self.given_name,
-                                                                  self.type.value)
+                                                                      self.type.value)
 
 
 association_transcript_piece_to_feature = Table('association_transcript_piece_to_feature', Base.metadata,
@@ -95,8 +95,10 @@ class Transcript(Base):
     transcript_pieces = relationship('TranscriptPiece', back_populates='transcript')
 
     def __repr__(self):
-        return '<Transcript, {}, "{}" of type {}, with {} pieces>'.format(self.id, self.given_name, self.type,
-                                                                           len(self.transcript_pieces))
+        return '<Transcript, {}, "{}" of type {}, with {} pieces>'.format(self.id,
+                                                                          self.given_name,
+                                                                          self.type,
+                                                                          len(self.transcript_pieces))
 
 
 class TranscriptPiece(Base):
@@ -136,8 +138,8 @@ class Protein(Base):
 
     def __repr__(self):
         return '<Protein {}, given_name: \'{}\', super_locus_id: {}>'.format(self.id,
-                                                                                self.given_name,
-                                                                                self.super_locus_id)
+                                                                             self.given_name,
+                                                                             self.super_locus_id)
 
 
 class Feature(Base):

@@ -10,8 +10,9 @@ class PathFinder(object):
     INPUT = 'input'
     OUTPUT = 'output'
 
-    def __init__(self, basedir, fasta=None, gff=None):
+    def __init__(self, db_path, basedir, fasta=None, gff=None):
         # directories
+        self.db_out = db_path
         self.basedir = basedir
         self.input = '{}/{}/'.format(self.basedir, PathFinder.INPUT)
         self.output = '{}/{}/'.format(self.basedir, PathFinder.OUTPUT)
@@ -20,7 +21,8 @@ class PathFinder(object):
         # files
         self.fasta_in = self._get_fa(fasta)
         self.gff_in = self._get_gff(gff)
-        self.db_out = '{}geenuff.sqlite3'.format(self.output)
+        if not self.db_out:
+            self.db_out = '{}geenuff.sqlite3'.format(self.output)
         self.problems_out = '{}import.log'.format(self.output)
 
     def _get_fa(self, provided):
@@ -46,7 +48,7 @@ class PathFinder(object):
 
 
 def main(args):
-    paths = PathFinder(args.basedir, fasta=args.fasta, gff=args.gff3)
+    paths = PathFinder(args.db_path, args.basedir, fasta=args.fasta, gff=args.gff3)
     logging.basicConfig(filename=paths.problems_out,
                         filemode='w',
                         format='%(asctime)s - %(message)s',

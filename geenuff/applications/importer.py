@@ -380,9 +380,8 @@ class GFFErrorHandling(object):
     def __init__(self, geenuff_importer_groups, controller):
         self.groups = geenuff_importer_groups
         if self.groups:
-            self.super_locus = self.groups[0]['super_locus']
-            self.is_plus_strand = self.super_locus.is_plus_strand
-            self.coord = self.super_locus.coord
+            self.is_plus_strand = self.groups[0]['super_locus'].is_plus_strand
+            self.coord = self.groups[0]['super_locus'].coord
             # make sure self.groups is sorted correctly
             self.groups.sort(key=lambda g: g['super_locus'].start, reverse=not self.is_plus_strand)
         self.controller = controller
@@ -439,40 +438,48 @@ class GFFErrorHandling(object):
                                     error_end = introns[j + 1].start
                                 else:
                                     error_end = transcript['transcript_feature'].end
-                                self._add_error(error_start, error_end, self.is_plus_strand,
+                                self._add_error(i, error_start, error_end, self.is_plus_strand,
                                                 types.OVERLAPPING_EXONS)
                                 faulty_introns.append(intron)
                             # the case of a too short intron
                             # todo put the minimum length in a config somewhere
                             elif abs(intron.end - intron.start) < 60:
-                                self._add_error(intron.start, intron.end, self.is_plus_strand,
+                                self._add_error(i, intron.start, intron.end, self.is_plus_strand,
                                                 types.TOO_SHORT_INTRON)
                                 faulty_introns.append(intron)
                         # do not save faulty introns, the error should be descriptive enough
                         for intron in faulty_introns:
                             introns.remove(intron)
 
-    def _add_error(self, start, end, is_plus_strand, error_type):
-        error_i = FeatureImporter(self.coord,
-                                  is_plus_strand,
-                                  error_type,
-                                  start=start,
-                                  end=end,
-                                  controller=self.controller)
-        self.errors.append(error_i)
-        # error msg
+    def _add_error(self, i, start, end, is_plus_strand, error_type):
         if is_plus_strand:
             strand_str = 'plus'
         else:
             strand_str = 'minus'
-        msg = ('marked as erroneous: seqid: {seqid}, {start}--{end}:{geneid}, on {strand} strand, '
-               'with type: {type}').format(seqid=self.coord.seqid,
-                                           start=start,
-                                           end=end,
-                                           geneid=self.super_locus.given_name,
-                                           strand=strand_str,
-                                           type=error_type)
-        logging.warning(msg)
+        if (is_plus_strand and end < start) or (not is_plus_strand and end > start):
+            msg = ('skipping error in nested gene: seqid: {seqid}, {geneid}, on {strand} strand, '
+                   'with type: {type}').format(seqid=self.coord.seqid,
+                                               geneid=self.groups[i]['super_locus'].given_name,
+                                               strand=strand_str,
+                                               type=error_type)
+            logging.warning(msg)
+        else:
+            error_i = FeatureImporter(self.coord,
+                                      is_plus_strand,
+                                      error_type,
+                                      start=start,
+                                      end=end,
+                                      controller=self.controller)
+            self.errors.append(error_i)
+            # error msg
+            msg = ('marked as erroneous: seqid: {seqid}, {start}--{end}:{geneid}, on {strand} strand, '
+                   'with type: {type}').format(seqid=self.coord.seqid,
+                                               start=start,
+                                               end=end,
+                                               geneid=self.groups[i]['super_locus'].given_name,
+                                               strand=strand_str,
+                                               type=error_type)
+            logging.warning(msg)
 
     def _add_overlapping_error(self, i, handler, direction, error_type):
         """Constructs an error features that overlaps halfway to the next super locus
@@ -519,7 +526,7 @@ class GFFErrorHandling(object):
             error_3p = anchor_3p
 
         if not self._zero_len_coords_at_sequence_edge(error_5p, error_3p, direction, sl.coord):
-            self._add_error(error_5p, error_3p, self.is_plus_strand, error_type)
+            self._add_error(i, error_5p, error_3p, self.is_plus_strand, error_type)
 
     def _zero_len_coords_at_sequence_edge(self, error_5p, error_3p, direction, coordinate):
         """Check if error 5p-3p is of zero length due to hitting start or end of sequence"""
