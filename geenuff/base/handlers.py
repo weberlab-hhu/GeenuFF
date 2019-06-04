@@ -3,6 +3,7 @@ from types import GeneratorType
 
 from . import orm
 from . import types
+from . import helpers
 
 
 class Handler(object):
@@ -22,16 +23,8 @@ class Handler(object):
     def data_type(self):
         raise NotImplementedError
 
-    @staticmethod
-    def _get_repr(class_name, params, addition=''):
-        param_str = ', '.join('{}:{}'.format(k, v) for k, v in params.items())
-        if addition:
-            return class_name + '[' +  param_str + ', ' + addition + ']'
-        else:
-            return class_name + '[' +  param_str + ']'
-
     def __repr__(self):
-        return self._get_repr('Handler', {'data': self.data})
+        return helpers.get_repr('Handler', {'data': self.data})
 
 
 class GenomeHandlerBase(Handler):

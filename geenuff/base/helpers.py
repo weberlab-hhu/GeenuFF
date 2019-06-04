@@ -56,6 +56,13 @@ def chunk_str(string, length):
         yield string[i:(i+length)]
 
 
+def get_repr(class_name, params, addition=''):
+    param_str = ', '.join('{}:{}'.format(k, v) for k, v in params.items())
+    if addition:
+        return class_name + '[' +  param_str + ', ' + addition + ']'
+    else:
+        return class_name + '[' +  param_str + ']'
+
 
 ##### Mapper #####
 

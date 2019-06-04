@@ -383,6 +383,8 @@ class GFFErrorHandling(object):
             self.super_locus = self.groups[0]['super_locus']
             self.is_plus_strand = self.super_locus.is_plus_strand
             self.coord = self.super_locus.coord
+            # make sure self.groups is sorted correctly
+            self.groups.sort(key=lambda g: g['super_locus'].start, reverse=not self.is_plus_strand)
         self.controller = controller
 
     def resolve_errors(self):
@@ -744,7 +746,7 @@ class SuperLocusImporter(Insertable):
 
     def __repr__(self):
         params = {'id': self.id, 'type': self.entry_type, 'given_name': self.given_name}
-        return self._get_repr('SuperLocusImporter', params)
+        return helpers.get_repr('SuperLocusImporter', params)
 
 
 class FeatureImporter(Insertable):
@@ -777,9 +779,6 @@ class FeatureImporter(Insertable):
         self.controller = controller
 
     def add_to_queue(self):
-        # if ((self.is_plus_strand and self.end < self.start)
-                # or (not self.is_plus_strand and self.end > self.start)):
-
         feature = {
             'id': self.id,
             'type': self.feature_type,
@@ -833,7 +832,7 @@ class FeatureImporter(Insertable):
         }
         if self.given_name:
             params['given_name'] = self.given_name
-        return self._get_repr('FeatureImporter', params, str(self.start) + '--' + str(self.end))
+        return helpers.get_repr('FeatureImporter', params, str(self.start) + '--' + str(self.end))
 
 
 class TranscriptImporter(Insertable):
@@ -858,7 +857,7 @@ class TranscriptImporter(Insertable):
         return d
 
     def __repr__(self):
-        return self._get_repr('TranscriptImporter', self._get_params_dict())
+        return helpers.get_repr('TranscriptImporter', self._get_params_dict())
 
 
 class TranscriptPieceImporter(Insertable):
@@ -883,7 +882,7 @@ class TranscriptPieceImporter(Insertable):
         return d
 
     def __repr__(self):
-        return self._get_repr('TranscriptPieceImporter', self._get_params_dict())
+        return helpers.get_repr('TranscriptPieceImporter', self._get_params_dict())
 
 
 class ProteinImporter(Insertable):
@@ -906,4 +905,4 @@ class ProteinImporter(Insertable):
         return d
 
     def __repr__(self):
-        return self._get_repr('ProteinImporter', self._get_params_dict())
+        return helpers.get_repr('ProteinImporter', self._get_params_dict())
