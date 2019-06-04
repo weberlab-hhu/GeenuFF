@@ -777,6 +777,9 @@ class FeatureImporter(Insertable):
         self.controller = controller
 
     def add_to_queue(self):
+        # if ((self.is_plus_strand and self.end < self.start)
+                # or (not self.is_plus_strand and self.end > self.start)):
+
         feature = {
             'id': self.id,
             'type': self.feature_type,
