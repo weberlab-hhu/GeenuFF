@@ -1,35 +1,15 @@
 import os
-import intervaltree
-import copy
-import logging
-import hashlib
-import itertools
+from pprint import pprint  # for debugging
+from abc import ABC, abstractmethod
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from dustdas import gffhelper, fastahelper
 from .. import orm
 from .. import types
-from .. import handlers
-from ..base.transcript_interp import TranscriptInterpBase, EukTranscriptStatus
 from .. import helpers
-
-
-
-class IntervalCountError(Exception):
-    pass
-
-
-class NoTranscriptError(Exception):
-    pass
-
-
-class TransSplicingError(Exception):
-    pass
-
-
-class NoGFFEntryError(Exception):
-    pass
+from ..base.helpers import (get_strand_direction, get_geenuff_start_end, has_start_codon,
+                            has_stop_codon)
 
 
 # core queue prep
@@ -37,9 +17,9 @@ class InsertionQueue(helpers.QueueController):
     def __init__(self, session, engine):
         super().__init__(session, engine)
         self.super_locus = helpers.CoreQueue(orm.SuperLocus.__table__.insert())
-        self.transcribed = helpers.CoreQueue(orm.Transcribed.__table__.insert())
-        self.transcribed_piece = helpers.CoreQueue(orm.TranscribedPiece.__table__.insert())
-        self.translated = helpers.CoreQueue(orm.Translated.__table__.insert())
+        self.transcribed = helpers.CoreQueue(orm.Transcript.__table__.insert())
+        self.transcribed_piece = helpers.CoreQueue(orm.TranscriptPiece.__table__.insert())
+        self.translated = helpers.CoreQueue(orm.Protein.__table__.insert())
         self.feature = helpers.CoreQueue(orm.Feature.__table__.insert())
         self.association_transcribed_piece_to_feature = helpers.CoreQueue(
             orm.association_transcribed_piece_to_feature.insert())
@@ -47,64 +27,326 @@ class InsertionQueue(helpers.QueueController):
             orm.association_translated_to_feature.insert())
 
         self.ordered_queues = [
-            self.super_locus,
-            self.transcribed,
-            self.transcribed_piece,
-            self.translated,
-            self.feature,
-            self.association_transcribed_piece_to_feature,
+            self.super_locus, self.transcribed, self.transcribed_piece, self.translated,
+            self.feature, self.association_transcribed_piece_to_feature,
             self.association_translated_to_feature
         ]
 
 
 class InsertCounterHolder(object):
     """provides incrementing unique integers to be used as primary keys for bulk inserts"""
-    # todo, think about whether using class attributes for the counters would work? When should they reset?
-    feature = helpers.Counter()
-    translated = helpers.Counter()
-    transcribed = helpers.Counter()
-    super_locus = helpers.Counter()
-    transcribed_piece = helpers.Counter()
-    genome = helpers.Counter()
+    feature = helpers.Counter(orm.Feature)
+    translated = helpers.Counter(orm.Protein)
+    transcribed = helpers.Counter(orm.Transcript)
+    super_locus = helpers.Counter(orm.SuperLocus)
+    transcribed_piece = helpers.Counter(orm.TranscriptPiece)
+    genome = helpers.Counter(orm.Genome)
+
+    @staticmethod
+    def sync_counters_with_db(session):
+        InsertCounterHolder.feature.sync_with_db(session)
+        InsertCounterHolder.translated.sync_with_db(session)
+        InsertCounterHolder.transcribed.sync_with_db(session)
+        InsertCounterHolder.super_locus.sync_with_db(session)
+        InsertCounterHolder.transcribed_piece.sync_with_db(session)
+        InsertCounterHolder.genome.sync_with_db(session)
 
 
-##### main flow control #####
-class ImportController(object):
-    def __init__(self, database_path, err_path='/dev/null'):
-        self.database_path = database_path
-        self.err_path = err_path
-        self.genome_handler = None
-        self.coordinates = {}
-        self.super_loci = []
-        self._mk_session()
-        # queues for adding to db
-        self.insertion_queues = InsertionQueue(session=self.session, engine=self.engine)
+class OrganizedGeenuffImporterGroup(object):
+    """Stores the handler objects for a super locus in an organized fassion.
+    The format is similar to the one of OrganizedGFFEntryGroup, but it stores objects
+    according to the Geenuff way of saving genomic annotations. This format can then
+    be checked for errors and changed accordingly before being inserted into the db.
 
-    def _mk_session(self):
-        if os.path.exists(self.database_path):
-            os.remove(self.database_path)
-            print('removed existing database at {}'.format(self.database_path))
-        self.engine = create_engine(helpers.full_db_path(self.database_path), echo=False)
-        orm.Base.metadata.create_all(self.engine)
-        self.session = sessionmaker(bind=self.engine)()
+    The importers are organized in the following way:
 
-    @property
-    def genome_handler_type(self):
-        return GenomeHandler
+    importers = {
+        'super_locus' = super_locus_importer,
+        'transcripts': [
+            {
+                'transcript': transcript_importer,
+                'transcript_piece: transcript_piece_importer,
+                'transcript_feature': transcript_importer,
+                'protein': protein_importer,
+                'cds': cds_importer,
+                'introns': [intron_importer1, intron_importer2, ..]
+            },
+            ...
+        ],
+        'errors' = [error_importer1, error_importer2, ..],
+    }
+    """
 
-    def gff_gen(self, gff_file):
+    def __init__(self, organized_gff_entries, coord, controller, err_handle):
+        self.coord = coord
+        self.controller = controller
+        self.err_handle = err_handle
+        self.importers = {'transcripts': [], 'errors': []}
+        self._parse_gff_entries(organized_gff_entries)
+
+    def _parse_gff_entries(self, entries):
+        """Changes the GFF format into the GeenuFF format. Does all the parsing."""
+        sl = entries['super_locus']
+        # these attr are the same for all geenuff importers going to be created
+        is_plus_strand = get_strand_direction(sl)
+        score = sl.score
+        source = sl.source
+
+        sl_start, sl_end = get_geenuff_start_end(sl.start, sl.end, is_plus_strand)
+        sl_i = self.importers['super_locus'] = SuperLocusImporter(entry_type=sl.type,
+                                                                  given_name=sl.get_ID(),
+                                                                  coord=self.coord,
+                                                                  is_plus_strand=is_plus_strand,
+                                                                  start=sl_start,
+                                                                  end=sl_end,
+                                                                  controller=self.controller)
+        for t, t_entries in entries['transcripts'].items():
+            t_importers = {}
+            # check for multi inheritance and throw NotImplementedError if found
+            if len(t.get_Parent()) > 1:
+                raise NotImplementedError
+            t_id = t.get_ID()
+            # create transcript handler
+            t_i = TranscriptImporter(entry_type=t.type,
+                                     given_name=t_id,
+                                     super_locus_id=sl_i.id,
+                                     controller=self.controller)
+            # create transcript piece handler
+            tp_i = TranscriptPieceImporter(given_name=t_id,
+                                           transcript_id=t_i.id,
+                                           position=0,
+                                           controller=self.controller)
+            # create transcript feature handler
+            tf_i = FeatureImporter(self.coord,
+                                   is_plus_strand,
+                                   types.TRANSCRIBED,
+                                   given_name=t_id,
+                                   score=score,
+                                   source=source,
+                                   controller=self.controller)
+            tf_i.set_start_end_from_gff(t.start, t.end)
+
+            # insert everything so far into the dict
+            t_importers['transcript'] = t_i
+            t_importers['transcript_piece'] = tp_i
+            t_importers['transcript_feature'] = tf_i
+
+            # if it is not a non-coding gene or something like that
+            if t_entries['cds']:
+                # create protein handler
+                protein_id = self._get_protein_id_from_cds_list(t_entries['cds'])
+                p_i = ProteinImporter(given_name=protein_id,
+                                      super_locus_id=sl_i.id,
+                                      controller=self.controller)
+                # create coding features from exon limits
+                if is_plus_strand:
+                    phase_5p = t_entries['cds'][0].phase
+                    phase_3p = t_entries['cds'][-1].phase
+                else:
+                    phase_5p = t_entries['cds'][-1].phase
+                    phase_3p = t_entries['cds'][0].phase
+                cds_i = FeatureImporter(self.coord,
+                                        is_plus_strand,
+                                        types.CODING,
+                                        phase_5p=phase_5p,
+                                        phase_3p=phase_3p,
+                                        score=score,
+                                        source=source,
+                                        controller=self.controller)
+                gff_start = t_entries['cds'][0].start
+                gff_end = t_entries['cds'][-1].end
+                cds_i.set_start_end_from_gff(gff_start, gff_end)
+
+                # insert everything so far into the dict
+                t_importers['protein'] = p_i
+                t_importers['cds'] = cds_i
+
+                # create all the introns by traversing the exon entries and insert FeatureImporters
+                # into the previously created list
+                # the introns should strictly always lie between successive gff exons
+                exons = t_entries['exons']
+                introns = []
+                for i in range(len(exons) - 1):
+                    # the introns are delimited by the surrounding exons
+                    # the first base of an intron in right after the last exononic base
+                    gff_start = exons[i].end + 1
+                    gff_end = exons[i + 1].start - 1
+                    # ignore introns that would come from directly adjacent exons
+                    if gff_start - gff_end != 1:
+                        intron_i = FeatureImporter(self.coord,
+                                                   is_plus_strand,
+                                                   types.INTRON,
+                                                   score=score,
+                                                   source=source,
+                                                   controller=self.controller)
+                        intron_i.set_start_end_from_gff(gff_start, gff_end)
+                        introns.append(intron_i)
+                if is_plus_strand:
+                    t_importers['introns'] = introns
+                else:
+                    t_importers['introns'] = introns[::-1]
+            self.importers['transcripts'].append(t_importers)
+
+    @staticmethod
+    def _get_protein_id_from_cds_entry(cds_entry):
+        # check if anything is labeled as protein_id
+        protein_id = cds_entry.attrib_filter(tag='protein_id')
+        # failing that, try and get parent ID (presumably transcript, maybe gene)
+        if not protein_id:
+            protein_id = cds_entry.get_Parent()
+        # hopefully take single hit
+        if len(protein_id) == 1:
+            protein_id = protein_id[0]
+            if isinstance(protein_id, gffhelper.GFFAttribute):
+                protein_id = protein_id.value
+                assert len(protein_id) == 1
+                protein_id = protein_id[0]
+        # or handle other cases
+        elif len(protein_id) == 0:
+            protein_id = None
+        else:
+            raise ValueError('indeterminate single protein id {}'.format(protein_id))
+        return protein_id
+
+    @staticmethod
+    def _get_protein_id_from_cds_list(cds_entry_list):
+        """Returns the protein id of a list of cds gff entries. If multiple ids or no id at all
+        are found, an error is raised."""
+        protein_ids = set()
+        for cds_entry in cds_entry_list:
+            protein_id = OrganizedGeenuffImporterGroup._get_protein_id_from_cds_entry(cds_entry)
+            if protein_id:
+                protein_ids.add(protein_id)
+        if len(protein_ids) != 1:
+            raise ValueError('No protein_id or more than one protein_ids for one transcript')
+        return protein_ids.pop()
+
+
+class OrganizedGFFEntryGroup(object):
+    """Takes an entry group (all entries of one super locus) and stores the entries
+    in an orderly fassion. Can then return a corresponding OrganizedGeenuffImporterGroup.
+    Does not perform error checking, which happens later.
+
+    The entries are organized in the following way:
+
+    entries = {
+        'super_locus' = super_locus_entry,
+        'transcripts' = {
+            transcript_entry1: {
+                'exons': [ordered_exon_entry1, ordered_exon_entry2, ..],
+                'cds': [ordered_cds_entry1, ordered_cds_entry2, ..]
+            },
+            transcript_entry2: {
+                'exons': [ordered_exon_entry1, ordered_exon_entry2, ..],
+                'cds': [ordered_cds_entry1, ordered_cds_entry2, ..]
+            },
+            ...
+        }
+    }
+    """
+
+    def __init__(self, gff_entry_group, fasta_importer, controller, err_handle):
+        self.fasta_importer = fasta_importer
+        self.controller = controller
+        self.err_handle = err_handle
+        self.entries = {'transcripts': {}}
+        self.coord = None
+        self.add_gff_entry_group(gff_entry_group, err_handle)
+
+    def add_gff_entry_group(self, entries, err_handle):
+        latest_transcript = None
+        for entry in list(entries):
+            if helpers.in_enum_values(entry.type, types.SuperLocusAll):
+                assert 'super_locus' not in self.entries
+                self.entries['super_locus'] = entry
+            elif helpers.in_enum_values(entry.type, types.TranscriptLevelAll):
+                self.entries['transcripts'][entry] = {'exons': [], 'cds': []}
+                latest_transcript = entry
+            elif entry.type == types.EXON:
+                self.entries['transcripts'][latest_transcript]['exons'].append(entry)
+            elif entry.type == types.CDS:
+                self.entries['transcripts'][latest_transcript]['cds'].append(entry)
+            elif entry.type in [types.FIVE_PRIME_UTR, types.THREE_PRIME_UTR]:
+                # ignore these features but do not throw error
+                pass
+            else:
+                raise ValueError("problem handling entry of type {}".format(entry.type))
+
+        # set the coordinate
+        self.coord = self.fasta_importer.gffid_to_coords[self.entries['super_locus'].seqid]
+
+        # order exon and cds lists by start value (disregard strand for now)
+        for _, value_dict in self.entries['transcripts'].items():
+            for key in ['exons', 'cds']:
+                value_dict[key].sort(key=lambda e: e.start)
+
+    def get_geenuff_importers(self):
+        geenuff_importer_group = OrganizedGeenuffImporterGroup(self.entries, self.coord,
+                                                               self.controller, self.err_handle)
+        return geenuff_importer_group.importers
+
+
+class OrganizedGFFEntries(object):
+    """Structures the gff entries comming from gffhelper by seqid and gene. Also does some
+    basic gff value cleanup.
+    The entries are organized in the following way:
+
+    organized_entries = {
+        'seqid1': [
+            [gff_entry1_gene1, gff_entry2_gene1, ..],
+            [gff_entry1_gene2, gff_entry2_gene2, ..],
+        ],
+        'seqid2': [
+            [gff_entry1_gene1, gff_entry2_gene1, ..],
+            [gff_entry1_gene2, gff_entry2_gene2, ..],
+        ],
+        ...
+    }
+    """
+
+    def __init__(self, gff_file):
+        self.gff_file = gff_file
+        self.organized_entries = {}
+
+    def load_organized_entries(self):
+        self.organized_entries = {}
+        gene_level = [x.value for x in types.SuperLocusAll]
+
+        reader = self._useful_gff_entries()
+        first = next(reader)
+        seqid = first.seqid
+        gene_group = [first]
+        self.organized_entries[seqid] = []
+        for entry in reader:
+            if entry.type in gene_level:
+                self.organized_entries[seqid].append(gene_group)
+                gene_group = [entry]
+                if entry.seqid != seqid:
+                    self.organized_entries[entry.seqid] = []
+                    seqid = entry.seqid
+            else:
+                gene_group.append(entry)
+        self.organized_entries[seqid].append(gene_group)
+
+    def _useful_gff_entries(self):
+        skipable = [x.value for x in types.IgnorableFeatures]
+        reader = self._gff_gen()
+        for entry in reader:
+            if entry.type not in skipable:
+                yield entry
+
+    def _gff_gen(self):
         known = [x.value for x in types.AllKnown]
-        reader = gffhelper.read_gff_file(gff_file)
+        reader = gffhelper.read_gff_file(self.gff_file)
         for entry in reader:
             if entry.type not in known:
                 raise ValueError("unrecognized feature type from gff: {}".format(entry.type))
             else:
-                self.clean_entry(entry)
+                self._clean_entry(entry)
                 yield entry
 
-    # todo, this is an awkward place for this
     @staticmethod
-    def clean_entry(entry):
+    def _clean_entry(entry):
         # always present and integers
         entry.start = int(entry.start)
         entry.end = int(entry.end)
@@ -127,106 +369,300 @@ class ImportController(object):
         else:
             assert entry.strand in ['+', '-']
 
-    def useful_gff_entries(self, gff_file):
-        skipable = [x.value for x in types.IgnorableFeatures]
-        reader = self.gff_gen(gff_file)
-        for entry in reader:
-            if entry.type not in skipable:
-                yield entry
 
-    def group_gff_by_gene(self, gff_file):
-        gene_level = [x.value for x in types.SuperLocusAll]
-        reader = self.useful_gff_entries(gff_file)
-        gene_group = [next(reader)]
-        for entry in reader:
-            if entry.type in gene_level:
-                yield gene_group
-                gene_group = [entry]
+class GFFErrorHandling(object):
+    """Deal with error detection and handling of the input features. Does the handling
+    in the space of GeenuFF importers.
+    Assumes all super locus handler groups to be ordered 5p to 3p and of one strand.
+    Works with a list of OrganizedGeenuffImporterGroup, which correspond to a list of
+    super loci, and looks for errors. Error features may be inserted and importers be
+    removed when deemed necessary.
+    """
+
+    def __init__(self, geenuff_importer_groups, controller):
+        self.groups = geenuff_importer_groups
+        if self.groups:
+            self.is_plus_strand = self.groups[0]['super_locus'].is_plus_strand
+            self.coord = self.groups[0]['super_locus'].coord
+        self.controller = controller
+
+    def resolve_errors(self):
+        for i, group in enumerate(self.groups):
+            # the case of no transcript for a super locus
+            # solution is to add an error mask that extends halfway to the appending super
+            # loci in the intergenic region as something in this area appears to have gone wrong
+            self.errors = group['errors']
+            if not group['transcripts']:
+                self._add_overlapping_error(i, None, 'whole', types.EMPTY_SUPER_LOCUS)
+            # other cases
+            for transcript in group['transcripts']:
+                # if coding transcript
+                if 'cds' in transcript:
+                    cds = transcript['cds']
+                    introns = transcript['introns']
+
+                    # the case of missing of implicit UTR ranges
+                    # the solution is similar to the one above
+                    if cds.start == transcript['transcript_feature'].start:
+                        self._add_overlapping_error(i, cds, '5p', types.MISSING_UTR_5P)
+                    if cds.end == transcript['transcript_feature'].end:
+                        self._add_overlapping_error(i, cds, '3p', types.MISSING_UTR_3P)
+
+                    # the case of missing start/stop codon
+                    if not has_start_codon(cds.coord.sequence, cds.start, self.is_plus_strand):
+                        self._add_overlapping_error(i, cds, '5p', types.MISSING_START_CODON)
+                    if not has_stop_codon(cds.coord.sequence, cds.end, self.is_plus_strand):
+                        self._add_overlapping_error(i, cds, '3p', types.MISSING_STOP_CODON)
+
+                    # the case of wrong 5p phase
+                    if cds.phase_5p != 0:
+                        self._add_overlapping_error(i, cds, '5p', types.WRONG_PHASE_5P)
+
+                    if introns:
+                        # the case of wrong 3p phase
+                        len_3p_exon = abs(cds.end - transcript['introns'][-1].end)
+                        if cds.phase_3p != len_3p_exon % 3:
+                            self._add_overlapping_error(i, cds, '3p', types.MISMATCHED_PHASE_3P)
+
+                        faulty_introns = []
+                        for j, intron in enumerate(introns):
+                            # the case of overlapping exons
+                            if ((self.is_plus_strand and intron.end < intron.start) or
+                                    (not self.is_plus_strand and intron.end > intron.start)):
+                                # mark the overlapping cds regions as errors
+                                if j > 0:
+                                    error_start = introns[j - 1].end
+                                else:
+                                    error_start = transcript['transcript_feature'].start
+                                if j < len(introns) - 1:
+                                    error_end = introns[j + 1].start
+                                else:
+                                    error_end = transcript['transcript_feature'].end
+                                self._add_error(error_start, error_end, self.is_plus_strand,
+                                                types.OVERLAPPING_EXONS)
+                                faulty_introns.append(intron)
+                            # the case of a too short intron
+                            # todo put the minimum length in a config somewhere
+                            elif abs(intron.end - intron.start) < 60:
+                                self._add_error(intron.start, intron.end, self.is_plus_strand,
+                                                types.TOO_SHORT_INTRON)
+                                faulty_introns.append(intron)
+                        # do not save faulty introns, the error should be descriptive enough
+                        for intron in faulty_introns:
+                            introns.remove(intron)
+
+    def _add_error(self, start, end, is_plus_strand, error_type):
+        # todo logging
+        error_i = FeatureImporter(self.coord,
+                                  is_plus_strand,
+                                  error_type,
+                                  start=start,
+                                  end=end,
+                                  controller=self.controller)
+        self.errors.append(error_i)
+
+    def _add_overlapping_error(self, i, handler, direction, error_type):
+        """Constructs an error features that overlaps halfway to the next super locus
+        in the given direction from the given handler if possible. Otherwise mark until the end.
+        If the direction is 'whole', the handler parameter is ignored.
+
+        Also sets handler.start_is_biological_start=False (or the end).
+        """
+        assert direction in ['5p', '3p', 'whole']
+        sl = self.groups[i]['super_locus']
+
+        # set correct upstream error starting point
+        if direction in ['5p', 'whole']:
+            if i > 0:
+                sl_prev = self.groups[i - 1]['super_locus']
+                anchor_5p = self._halfway_mark(sl_prev, sl)
             else:
-                gene_group.append(entry)
-        yield gene_group
+                if self.is_plus_strand:
+                    anchor_5p = 0
+                else:
+                    anchor_5p = sl.coord.end
 
-    def make_genome(self, **kwargs):
-        # todo, parse in meta data from kwargs?
-        self.genome_handler = self.genome_handler_type()
-        ag = orm.Genome()
-        self.genome_handler.add_data(ag)
-        self.session.add(ag)
+        # set correct downstream error end point
+        if direction in ['3p', 'whole']:
+            if i < len(self.groups) - 1:
+                sl_next = self.groups[i + 1]['super_locus']
+                anchor_3p = self._halfway_mark(sl, sl_next)
+            else:
+                if self.is_plus_strand:
+                    anchor_3p = sl.coord.end
+                else:
+                    anchor_3p = -1
+
+        if direction == '5p':
+            error_5p = anchor_5p
+            error_3p = handler.start
+            handler.start_is_biological_start = False
+        elif direction == '3p':
+            error_5p = handler.end
+            error_3p = anchor_3p
+            handler.end_is_biological_end = False
+        elif direction == 'whole':
+            error_5p = anchor_5p
+            error_3p = anchor_3p
+
+        if not self._zero_len_coords_at_sequence_edge(error_5p, error_3p, direction, sl.coord):
+            self._add_error(error_5p, error_3p, self.is_plus_strand, error_type)
+
+    def _zero_len_coords_at_sequence_edge(self, error_5p, error_3p, direction, coordinate):
+        """Check if error 5p-3p is of zero length due to hitting start or end of sequence"""
+        out = False
+        if self.is_plus_strand:
+            if direction == '5p':
+                if error_5p == error_3p == 0:
+                    out = True
+            elif direction == '3p':
+                if error_5p == error_3p == coordinate.end:
+                    out = True
+        else:
+            if direction == '5p':
+                if error_5p == error_3p == coordinate.end - 1:
+                    out = True
+            elif direction == '3p':
+                if error_5p == error_3p == -1:
+                    out = True
+        return out
+
+    def _halfway_mark(self, sl, sl_next):
+        """Calculates the half way point between two super loci, which is then used for
+        error masks.
+        """
+        if self.is_plus_strand:
+            dist = sl_next.start - sl.end
+            mark = sl.end + dist // 2
+        else:
+            dist = sl.end - sl_next.start
+            mark = sl.end - dist // 2
+        return mark
+
+
+##### main flow control #####
+class ImportController(object):
+    def __init__(self, database_path, err_path='/dev/null', replace_db=False):
+        self.database_path = database_path
+        self.err_path = err_path
+        self.latest_genome = None
+        self._mk_session(replace_db)
+        # queues for adding to db
+        self.insertion_queues = InsertionQueue(session=self.session, engine=self.engine)
+
+    def _mk_session(self, replace_db):
+        appending_to_db = False
+        if os.path.exists(self.database_path):
+            if replace_db:
+                print('removed existing database at {}'.format(self.database_path))
+                os.remove(self.database_path)
+            else:
+                appending_to_db = True
+                print('appending to existing database at {}'.format(self.database_path))
+        self.engine = create_engine(helpers.full_db_path(self.database_path), echo=False)
+        orm.Base.metadata.create_all(self.engine)
+        self.session = sessionmaker(bind=self.engine)()
+        if appending_to_db:
+            InsertCounterHolder.sync_counters_with_db(self.session)
+
+    def make_genome(self, genome_args={}):
+        genome = orm.Genome(**genome_args)
+        self.latest_fasta_importer = FastaImporter(genome)
+        self.session.add(genome)
         self.session.commit()
 
-    def add_sequences(self, seq_path):
-        if self.genome_handler is None:
-            self.make_genome()
-        self.genome_handler.add_sequences(seq_path)
-        self.session.commit()
-
-    def add_gff(self, gff_file, clean=True):
-        # final prepping of seqid match up
-        self.genome_handler.mk_mapper(gff_file)
-
-        super_loci = []
+    def add_genome(self, fasta_path, gff_path, genome_args={}, clean_gff=True):
         err_handle = open(self.err_path, 'w')
-        i = 1
-        for entry_group in self.group_gff_by_gene(gff_file):
-            super_locus = SuperLocusHandler(controller=self)
-            if self.genome_handler is None:
-                raise AttributeError('An GenomeHandler has to exist .add_gff '
-                                     'is called, use (self.make_genome(...)')
-            if clean:
-                super_locus.add_n_clean_gff_entry_group(entry_group,
-                                                        err_handle,
-                                                        genome=self.genome_handler.data,
-                                                        controller=self)
-            else:
-                super_locus.add_gff_entry_group(entry_group,
-                                                err_handle,
-                                                genome=self.genome_handler.data,
-                                                controller=self)
-
-            super_loci.append(super_locus)  # just to keep some direct python link to this
-            if not i % 500:
-                self.insertion_queues.execute_so_far()
-            i += 1
-        self.super_loci = super_loci
-        self.insertion_queues.execute_so_far()
+        self.clean_tmp_data()
+        self.add_sequences(fasta_path, genome_args)
+        self.add_gff(gff_path, err_handle, clean=clean_gff)
         err_handle.close()
 
-    def add_genome(self, fasta_path, gff_path, clean_gff=True):
-        self.add_sequences(fasta_path)
-        self.add_gff(gff_path, clean=clean_gff)
+    def add_sequences(self, seq_path, genome_args={}):
+        if self.latest_genome is None:
+            self.make_genome(genome_args)
 
-    def clean_super_loci(self):
-        for sl in self.super_loci:
-            coordinate = self.genome_handler.gffid_to_coords[sl.gffentry.seqid]
-            sl.check_and_fix_structure(coordinate, controller=self)
+        self.latest_fasta_importer.add_sequences(seq_path)
+        self.session.commit()
+
+    def clean_tmp_data(self):
+        self.latest_genome = None
+        self.latest_super_loci = []
+
+    def add_gff(self, gff_file, err_handle, clean=True):
+        def insert_importer_groups(self, groups):
+            """Initiates the calling of the add_to_queue() function of the importers
+            in the correct order. Also initiates the insert of the many2many rows.
+            """
+            for group in groups:
+                group['super_locus'].add_to_queue()
+                # insert all features as well as transcript and protein related entries
+                for transcripts in group['transcripts']:
+                    # make shortcuts
+                    tp = transcripts['transcript_piece']
+                    tf = transcripts['transcript_feature']
+                    # add transcript handler that are always present
+                    transcripts['transcript'].add_to_queue()
+                    tp.add_to_queue()
+                    tf.add_to_queue()
+                    tf.insert_feature_piece_association(tp.id)
+                    # if coding transcript
+                    if 'protein' in transcripts:
+                        transcripts['protein'].add_to_queue()
+                        tf.insert_feature_protein_association(transcripts['protein'].id)
+                        transcripts['cds'].add_to_queue()
+                        transcripts['cds'].insert_feature_piece_association(tp.id)
+                        for intron in transcripts['introns']:
+                            intron.add_to_queue()
+                            intron.insert_feature_piece_association(tp.id)
+                # insert the errors
+                for error in group['errors']:
+                    error.add_to_queue()
+
+        def clean_and_insert(self, groups, clean):
+            plus = [g for g in groups if g['super_locus'].is_plus_strand]
+            minus = [g for g in groups if not g['super_locus'].is_plus_strand]
+            if clean:
+                # check and correct for errors
+                # do so for each strand seperately
+                # all changes should be made by reference
+                GFFErrorHandling(plus, self).resolve_errors()
+                # reverse order on minus strand
+                GFFErrorHandling(minus[::-1], self).resolve_errors()
+            # insert importers
+            insert_importer_groups(self, plus)
+            insert_importer_groups(self, minus)
+            self.insertion_queues.execute_so_far()
+
+        assert self.latest_fasta_importer is not None, 'No recent genome found'
+        self.latest_fasta_importer.mk_mapper(gff_file)
+        gff_organizer = OrganizedGFFEntries(gff_file)
+        gff_organizer.load_organized_entries()
+        organized_gff_entries = gff_organizer.organized_entries
+        geenuff_importer_groups = []
+        for seqid in organized_gff_entries.keys():
+            for entry_group in organized_gff_entries[seqid]:
+                organized_entries = OrganizedGFFEntryGroup(entry_group, self.latest_fasta_importer,
+                                                           self, err_handle)
+                geenuff_importer_groups.append(organized_entries.get_geenuff_importers())
+            # never do error checking across fasta sequence borders
+            clean_and_insert(self, geenuff_importer_groups, clean)
+            geenuff_importer_groups = []
 
 
-##### gff parsing subclasses #####
-class GFFDerived(object):
-    def __init__(self):
-        self.gffentry = None
-
-    def add_to_queue(self, insertion_queues, **kwargs):
-        raise NotImplementedError
-
-    def setup_insertion_ready(self, **kwargs):
-        # should create 'data' object (annotations_orm.Base subclass) and then call self.add_data(data)
-        raise NotImplementedError
+class Insertable(ABC):
+    @abstractmethod
+    def add_to_queue(self):
+        pass
 
 
-class GenomeHandler(handlers.GenomeHandlerBase):
-    def __init__(self, controller=None):
-        super().__init__()
-        if controller is not None:
-            self.id = InsertCounterHolder.genome()
+class FastaImporter(object):
+    def __init__(self, genome):
+        self.genome = genome
         self.mapper = None
         self._coords_by_seqid = None
         self._gffid_to_coords = None
         self._gff_seq_ids = None
-
-    @property
-    def data_type(self):
-        return orm.Genome
 
     @property
     def gffid_to_coords(self):
@@ -241,11 +677,11 @@ class GenomeHandler(handlers.GenomeHandlerBase):
     @property
     def coords_by_seqid(self):
         if not self._coords_by_seqid:
-            self._coords_by_seqid = {c.seqid: c for c in self.data.coordinates}
+            self._coords_by_seqid = {c.seqid: c for c in self.genome.coordinates}
         return self._coords_by_seqid
 
     def mk_mapper(self, gff_file=None):
-        fa_ids = [e.seqid for e in self.data.coordinates]
+        fa_ids = [e.seqid for e in self.genome.coordinates]
         if gff_file is not None:  # allow setup without ado when we know IDs match exactly
             self._gff_seq_ids = helpers.get_seqids_from_gff(gff_file)
         else:
@@ -263,6 +699,8 @@ class GenomeHandler(handlers.GenomeHandlerBase):
     def add_fasta(self, seq_file, id_delim=' '):
         fp = fastahelper.FastaParser()
         for fasta_header, seq in fp.read_fasta(seq_file):
+            if seq[0].islower():
+                seq = seq.upper()  # this may perform poorly
             seqid = fasta_header.split(id_delim)[0]
             # todo, parallelize sequence & annotation format, then import directly from ~Slice
             coord = orm.Coordinate(sequence=seq,
@@ -270,899 +708,191 @@ class GenomeHandler(handlers.GenomeHandlerBase):
                                    end=len(seq),
                                    seqid=seqid,
                                    sha1=helpers.sequence_hash(seq),
-                                   genome=self.data)
+                                   genome=self.genome)
 
 
-class CoordinateHandler(handlers.CoordinateHandlerBase):
-
-    def __init__(self, data=None, controller=None):
-        super().__init__()
-        self.add_data(data)
-        self.controller = controller  # is controller still used from here? todo...
-
-
-class SuperLocusHandler(handlers.SuperLocusHandlerBase, GFFDerived):
-    def __init__(self, controller=None):
-        super().__init__()
-        GFFDerived.__init__(self)
-        if controller is not None:
-            self.id = InsertCounterHolder.super_locus()
-        self.transcribed_handlers = []
-
-    def setup_insertion_ready(self):
-        # todo, grab more aliases from gff attribute?
-        return {'type': self.gffentry.type, 'given_name': self.gffentry.get_ID(), 'id': self.id}
-
-    def add_to_queue(self, insertion_queues, **kwargs):
-        to_add = self.setup_insertion_ready()
-        for key in kwargs:
-            to_add[key] = kwargs[key]
-
-        insertion_queues.super_locus.queue.append(to_add)
-
-    @property
-    def given_name(self):
-        return self.gffentry.get_ID()
-
-    def add_gff_entry(self, entry, controller):
-        exceptions = entry.attrib_filter(tag="exception")
-        for exception in [x.value for x in exceptions]:
-            if 'trans-splicing' in exception:
-                msg = 'trans-splice in attribute {} {}'.format(entry.get_ID(), entry.attribute)
-                raise TransSplicingError(msg)
-        if helpers.in_enum_values(entry.type, types.SuperLocusAll):
-            self.gffentry = entry
-            self.add_to_queue(controller.insertion_queues)
-
-        elif helpers.in_enum_values(entry.type, types.TranscriptLevelAll):
-            transcribed = TranscribedHandler(controller)
-            transcribed.gffentry = copy.deepcopy(entry)
-            transcribed.add_to_queue(controller.insertion_queues, super_locus=self, gffentry=entry)
-            self.transcribed_handlers.append(transcribed)
-
-        elif helpers.in_enum_values(entry.type, types.OnSequence):
-            feature = FeatureHandler(controller)
-            feature.gffentry = copy.deepcopy(entry)
-            assert len(self.transcribed_handlers) > 0, "no transcribeds found before feature"
-            feature.add_shortcuts_from_gffentry()
-            self.transcribed_handlers[-1].feature_handlers.append(feature)
-        else:
-            raise ValueError("problem handling entry of type {}".format(entry.type))
-
-    def _add_gff_entry_group(self, entries, controller):
-        entries = list(entries)
-        for entry in entries:
-            self.add_gff_entry(entry, controller)
-
-    def add_gff_entry_group(self, entries, ts_err_handle, genome, controller):
-        try:
-            self._add_gff_entry_group(entries, controller)
-        except TransSplicingError as e:
-            coordinate = genome.handler.gffid_to_coords[entries[0].seqid]
-            self._mark_erroneous(entries[0], coordinate, controller, 'trans-splicing')
-            logging.warning('skipping but noting trans-splicing: {}'.format(str(e)))
-            ts_err_handle.writelines([x.to_json() for x in entries])
-        except AssertionError as e:
-            coordinate = genome.handler.gffid_to_coords[entries[0].seqid]
-            self._mark_erroneous(entries[0], coordinate, controller, str(e))
-            logging.warning('marking errer bc {}'.format(e))
-
-    def add_n_clean_gff_entry_group(self, entries, ts_err_handle, genome, controller):
-        self.add_gff_entry_group(entries, ts_err_handle, genome, controller)
-        coordinate = genome.handler.gffid_to_coords[self.gffentry.seqid]
-        self.check_and_fix_structure(coordinate, controller=controller)
-
-    def _mark_erroneous(self, entry, coordinate, controller, msg=''):
-        assert entry.type in [x.value for x in types.SuperLocusAll]
-        logging.warning(
-            '{species}:{seqid}, {start}-{end}:{gene_id} by {src}, {msg} - marked erroneous'.format(
-                src=entry.source, species="todo", seqid=entry.seqid, start=entry.start,
-                end=entry.end, gene_id=self.given_name, msg=msg
-            ))
-
-        # dummy transcript
-        transcribed_e_handler = TranscribedHandler(controller)
-        transcribed_e_handler.gffentry = copy.deepcopy(entry)
-        transcribed_e_handler.add_to_queue(controller.insertion_queues, super_locus=self)
-
-        transcript_interpreter = TranscriptInterpreter(transcript=transcribed_e_handler,
-                                                       super_locus=self,
-                                                       controller=controller)
-
-        # setup error as only feature (defacto it's a mask)
-        feature = transcript_interpreter.new_feature(gffentry=entry, type=types.ERROR, start_is_biological_start=True,
-                                                     end_is_biological_end=True, coordinate_id=coordinate.id)
-        # gff start and end -> geenuff coordinates
-        if feature["is_plus_strand"]:
-            err_start = entry.start - 1
-            err_end = entry.end
-        else:
-            err_start = entry.end - 1
-            err_end = entry.start - 2
-
-        for key, val in [('start', err_start), ('end', err_end)]:
-            feature[key] = val
-
-        self.transcribed_handlers.append(transcribed_e_handler)
-
-    def check_and_fix_structure(self, coordinate, controller):
-        # todo, add against sequence check to see if start/stop and splice sites are possible or not, e.g. is start ATG?
-        # if it's empty (no bottom level features at all) mark as erroneous
-        features = []
-        for transcript in self.transcribed_handlers:
-            features += transcript.feature_handlers
-        if not features:
-            self._mark_erroneous(self.gffentry, coordinate=coordinate, controller=controller)
-
-        for transcript in self.transcribed_handlers:
-            t_interpreter = TranscriptInterpreter(transcript, super_locus=self, controller=controller)
-            # skip any transcript consisting of only processed features (in context, should just be pre-interp errors)
-            if t_interpreter.has_no_unprocessed_features():
-                pass
-            else:
-                # make new features
-                t_interpreter.decode_raw_features()
-                # make sure the new features link to protein if appropriate
-                controller.insertion_queues.execute_so_far()
-
-
-class FeatureHandler(handlers.FeatureHandlerBase, GFFDerived):
-
-    def __init__(self, controller=None, processed=False):
-        super().__init__()
-        GFFDerived.__init__(self)
-        if controller is not None:
-            self.id = InsertCounterHolder.feature()
-        self.processed = processed
-        self._is_plus_strand = None
-        self._given_name = None
-
-    @property
-    def is_plus_strand(self):
-        if self.data is not None:
-            return self.data.is_plus_strand
-        elif self._is_plus_strand is not None:
-            return self._is_plus_strand
-        else:
-            raise ValueError('attempt to use ._is_plus_strand while it is still None')
-
-    @property
-    def given_name(self):
-        if self.data is not None:
-            return self.data.given_name
-        elif self._given_name is not None:
-            return self._given_name
-        else:
-            raise ValueError('attempt to use ._given_name while it is still None')
-
-    def add_shortcuts_from_gffentry(self):
-
-        self._given_name = self.gffentry.get_ID()
-        if self.gffentry.strand == '+':
-            self._is_plus_strand = True
-        elif self.gffentry.strand == '-':
-            self._is_plus_strand = False
-        else:
-            raise ValueError('cannot interpret strand "{}"'.format(self.gffentry.strand))
-
-    def setup_insertion_ready(self, super_locus=None, transcribed_pieces=None, translateds=None,
-                              coordinate=None):
-
-        if transcribed_pieces is None:
-            transcribed_pieces = []
-        if translateds is None:
-            translateds = []
-
-        parents = self.gffentry.get_Parent()
-        if parents is not None:  # which can occur e.g. when we just copied gffentry from gene for an error
-            for piece in transcribed_pieces:
-                assert piece.gffentry.get_ID() in parents
-
-        if self._is_plus_strand is None or self._given_name is None:
-            self.add_shortcuts_from_gffentry()
-
-        feature = {'id': self.id,
-                   'subtype': 'general',
-                   'given_name': self.given_name,
-                   'coordinate_id': coordinate.id,
-                   'is_plus_strand': self.is_plus_strand,
-                   'score': self.gffentry.score,
-                   'source': self.gffentry.source,
-                   'phase': self.gffentry.phase,  # todo, do I need to handle '.'?
-                   'super_locus_id': super_locus.id,
-                   'start': None,  # all currently set via kwargs in add_to_queue, as they aren't clear from  gffentry
-                   'end': None,  # note the dict must always have all keys for core
-                   'start_is_biological_start': None,
-                   'end_is_biological_end': None
-                   }
-
-        feature2pieces = [{'transcribed_piece_id': p.id, 'feature_id': self.id} for p in transcribed_pieces]
-        feature2translateds = [{'translated_id': p.id, 'feature_id': self.id} for p in translateds]
-
-        return feature, feature2pieces, feature2translateds
-
-    def add_to_queue(self, insertion_queues, super_locus=None, transcribed_pieces=None, translateds=None,
-                     coordinate=None, **kwargs):
-
-        feature, feature2pieces, feature2translateds = self.setup_insertion_ready(
-            super_locus,
-            transcribed_pieces,  # todo, add flexibility for parsing trans-splicing...
-            translateds,
-            coordinate)
-
-        for key in kwargs:
-            feature[key] = kwargs[key]
-
-        insertion_queues.feature.queue.append(feature)
-        insertion_queues.association_transcribed_piece_to_feature.queue += feature2pieces
-        insertion_queues.association_translated_to_feature.queue += feature2translateds
-        return feature, feature2pieces, feature2translateds
-
-    # "+ strand" [upstream, downstream) or "- strand" (downstream, upstream] from 0 coordinate
-    def upstream_from_interval(self, interval):
-        if self.is_plus_strand:
-            return interval.begin
-        else:
-            return interval.end - 1  # -1 bc as this is now a start, it should be _inclusive_ (and flipped)
-
-    def downstream_from_interval(self, interval):
-        if self.is_plus_strand:
-            return interval.end
-        else:
-            return interval.begin - 1  # -1 to be _exclusive_ (and flipped)
-
-    def upstream(self):
-        if self.is_plus_strand:
-            return self.gffentry.start
-        else:
-            return self.gffentry.end
-
-    def downstream(self):
-        if self.is_plus_strand:
-            return self.gffentry.end
-        else:
-            return self.gffentry.start
-
-    @property
-    def py_start(self):
-        return helpers.as_py_start(self.gffentry.start)
-
-    @property
-    def py_end(self):
-        return helpers.as_py_end(self.gffentry.end)
-
-
-class TranscribedHandler(handlers.TranscribedHandlerBase, GFFDerived):
-    def __init__(self, controller=None):
-        super().__init__()
-        GFFDerived.__init__(self)
-        if controller is not None:
-            self.id = InsertCounterHolder.transcribed()
+class SuperLocusImporter(Insertable):
+    def __init__(self,
+                 entry_type,
+                 given_name,
+                 controller,
+                 coord=None,
+                 is_plus_strand=None,
+                 start=-1,
+                 end=-1):
+        self.id = InsertCounterHolder.super_locus()
+        self.entry_type = entry_type
+        self.given_name = given_name
         self.controller = controller
-        self.transcribed_piece_handlers = []
-        self.feature_handlers = []
+        # not neccessary for insert but helpful for certain error cases
+        self.coord = coord
+        self.is_plus_strand = is_plus_strand
+        self.start = start
+        self.end = end
 
-    def setup_insertion_ready(self, gffentry=None, super_locus=None):
-        if gffentry is not None:
-            parents = gffentry.get_Parent()
-            # the simple case
-            if len(parents) == 1:
-                assert super_locus.given_name == parents[0]
-                entry_type = gffentry.type
-                given_name = gffentry.get_ID()
-            else:
-                raise NotImplementedError  # todo handle multi inheritance, etc...
-        else:
-            entry_type = given_name = None
+    def add_to_queue(self):
+        to_add = {'type': self.entry_type, 'given_name': self.given_name, 'id': self.id}
+        self.controller.insertion_queues.super_locus.queue.append(to_add)
 
-        transcribed_2_add = {
-            'type': entry_type,
-            'given_name': given_name,
-            'super_locus_id': super_locus.id,
-            'id': self.id
-        }
-
-        piece = TranscribedPieceHandler(controller=self.controller)
-        piece.gffentry = copy.deepcopy(gffentry)
-
-        piece_2_add = piece.setup_insertion_ready(gffentry,
-                                                  super_locus=super_locus,
-                                                  transcribed=self,
-                                                  position=0)
-        self.transcribed_piece_handlers.append(piece)
-        return transcribed_2_add, piece_2_add
-
-    def add_to_queue(self, insertion_queues, gffentry=None, super_locus=None, **kwargs):
-        transcribed_add, piece_add = self.setup_insertion_ready(gffentry=gffentry,
-                                                                super_locus=super_locus)
-        for key in kwargs:
-            transcribed_add[key] = kwargs[key]
-
-        insertion_queues.transcribed.queue.append(transcribed_add)
-        insertion_queues.transcribed_piece.queue.append(piece_add)
-        return transcribed_add, piece_add
-
-    def one_piece(self):
-        pieces = self.transcribed_piece_handlers
-        assert len(pieces) == 1
-        return pieces[0]
+    def __repr__(self):
+        params = {'id': self.id, 'type': self.entry_type, 'given_name': self.given_name}
+        return self._get_repr('SuperLocusImporter', params)
 
 
-class TranscribedPieceHandler(handlers.TranscribedPieceHandlerBase, GFFDerived):
-    def __init__(self, controller=None):
-        super().__init__()
-        GFFDerived.__init__(self)
-        if controller is not None:
-            self.id = InsertCounterHolder.transcribed_piece()
-
-    def setup_insertion_ready(self, gffentry=None, super_locus=None, transcribed=None, position=0):
-        if gffentry is not None:
-            parents = gffentry.get_Parent()
-            # the simple case
-            if len(parents) == 1:
-                assert super_locus.given_name == parents[0]
-                given_name = gffentry.get_ID()
-            else:
-                raise NotImplementedError  # todo handle multi inheritance, etc...
-        else:
-            given_name = None
-
-        transcribed_piece = {
-            'id': self.id,
-            'transcribed_id': transcribed.id,
-            'super_locus_id': super_locus.id,
-            'given_name': given_name,
-            'position': position,
-        }
-        return transcribed_piece
-
-
-class TranslatedHandler(handlers.TranslatedHandlerBase):
-    def __init__(self, controller=None):  # todo, all handlers, controller=None
-        super().__init__()
-        if controller is not None:
-            self.id = InsertCounterHolder.translated()
-
-    def setup_insertion_ready(self, super_locus_handler=None, given_name=''):
-        translated = {
-            'id': self.id,
-            'super_locus_id': super_locus_handler.id,
-            'given_name': given_name,
-        }
-        return translated
-
-
-class TranscriptInterpreter(TranscriptInterpBase):
-    """takes raw/from-gff transcript, and converts to geenuff explicit format"""
-    HANDLED = 'handled'
-
-    def __init__(self, transcript, super_locus, controller):
-        super().__init__(transcript, super_locus, session=controller.session)
-        self.status = EukTranscriptStatus()
-        assert isinstance(controller, ImportController)
+class FeatureImporter(Insertable):
+    def __init__(self,
+                 coord,
+                 is_plus_strand,
+                 feature_type,
+                 controller,
+                 start=-1,
+                 end=-1,
+                 given_name=None,
+                 phase_5p=0,
+                 phase_3p=0,
+                 score=None,
+                 source=None):
+        self.id = InsertCounterHolder.feature()
+        self.coord = coord
+        self.given_name = given_name
+        self.is_plus_strand = is_plus_strand
+        self.feature_type = feature_type
+        # start/end may have to be adapted to geenuff
+        self.start = start
+        self.end = end
+        self.phase_5p = phase_5p
+        self.phase_3p = phase_3p  # only used for error checking
+        self.score = score
+        self.source = source
+        self.start_is_biological_start = True
+        self.end_is_biological_end = True
         self.controller = controller
-        try:
-            self.proteins = self._setup_proteins()
-        except NoGFFEntryError:
-            self.proteins = None  # this way we only run into an error if we actually wanted to use proteins
 
-    def new_feature(self, gffentry, translateds=None, **kwargs):
-        coordinate = self.controller.genome_handler.gffid_to_coords[gffentry.seqid]
-        handler = FeatureHandler(controller=self.controller, processed=True)
-        handler.gffentry = copy.deepcopy(gffentry)
-        feature, _, _ = handler.add_to_queue(insertion_queues=self.controller.insertion_queues,
-                                             super_locus=self.super_locus,
-                                             transcribed_pieces=self.transcript.transcribed_piece_handlers,
-                                             translateds=translateds,
-                                             coordinate=coordinate,
-                                             **kwargs)
+    def add_to_queue(self):
+        feature = {
+            'id': self.id,
+            'type': self.feature_type,
+            'given_name': self.given_name,
+            'coordinate_id': self.coord.id,
+            'is_plus_strand': self.is_plus_strand,
+            'score': self.score,
+            'source': self.source,
+            'phase': self.phase_5p,
+            'start': self.start,
+            'end': self.end,
+            'start_is_biological_start': self.start_is_biological_start,
+            'end_is_biological_end': self.end_is_biological_end,
+        }
+        self.controller.insertion_queues.feature.queue.append(feature)
 
-        return feature
+    def insert_feature_piece_association(self, transcript_piece_id):
+        features2pieces = {
+            'feature_id': self.id,
+            'transcribed_piece_id': transcript_piece_id,
+        }
+        self.controller.insertion_queues.association_transcribed_piece_to_feature.\
+            queue.append(features2pieces)
 
-    @staticmethod
-    def pick_one_interval(interval_set, target_type=None):
-        if target_type is None:
-            return interval_set[0]
-        else:
-            return [x for x in interval_set if x.data.gffentry.type == target_type][0]
+    def insert_feature_protein_association(self, protein_id):
+        features2protein = {
+            'feature_id': self.id,
+            'translated_id': protein_id,
+        }
+        self.controller.insertion_queues.association_translated_to_feature.\
+            queue.append(features2protein)
 
-    @staticmethod
-    def _get_protein_id_from_cds(cds_feature):
-        try:
-            assert cds_feature.gffentry.type == types.CDS, "{} != {}".format(cds_feature.gff_entry.type,
-                                                                             types.CDS)
-        except AttributeError:
-            raise NoGFFEntryError('No gffentry for {}'.format(cds_feature.data.given_name))
-        # check if anything is labeled as protein_id
-        protein_id = cds_feature.gffentry.attrib_filter(tag='protein_id')
-        # failing that, try and get parent ID (presumably transcript, maybe gene)
-        if not protein_id:
-            protein_id = cds_feature.gffentry.get_Parent()
-        # hopefully take single hit
-        if len(protein_id) == 1:
-            protein_id = protein_id[0]
-            if isinstance(protein_id, gffhelper.GFFAttribute):
-                protein_id = protein_id.value
-                assert len(protein_id) == 1
-                protein_id = protein_id[0]
-        # or handle other cases
-        elif len(protein_id) == 0:
-            protein_id = None
-        else:
-            raise ValueError('indeterminate single protein id {}'.format(protein_id))
-        return protein_id
+    def set_start_end_from_gff(self, gff_start, gff_end):
+        self.start, self.end = get_geenuff_start_end(gff_start, gff_end, self.is_plus_strand)
 
-    def _get_raw_protein_ids(self):
-        # only meant for use before feature interpretation
-        protein_ids = set()
-        for feature in self.transcript.feature_handlers:
-            try:
-                if feature.gffentry.type == types.CDS:
-                    protein_id = self._get_protein_id_from_cds(feature)
-                    protein_ids.add(protein_id)
-            except AttributeError as e:
-                print('failing here.........')
-                print(len(self.transcript.feature_handlers))
-                print(self.transcript.feature_handlers)
-                raise e
-        return protein_ids
+    def pos_cmp_key(self):
+        sortable_start = self.start
+        sortable_end = self.end
+        if not self.is_plus_strand:
+            sortable_start = sortable_start * -1
+            sortable_end = sortable_end * -1
+        return self.coord.seqid, self.is_plus_strand, sortable_start, sortable_end, self.feature_type
 
-    def _setup_proteins(self):
-        # only meant for use before feature interpretation
-        pids = self._get_raw_protein_ids()
-        proteins = {}
-        for key in pids:
-            # setup blank protein
-            protein = TranslatedHandler(controller=self.controller)
-            # ready translated for database entry
-            translated = protein.setup_insertion_ready(super_locus_handler=self.super_locus,
-                                                       given_name=key)
-            self.controller.insertion_queues.translated.queue.append(translated)
-            proteins[key] = protein
-        return proteins
+    def __repr__(self):
+        params = {
+            'id': self.id,
+            'coord_id': self.coord.id,
+            'type': self.feature_type,
+            'is_plus_strand': self.is_plus_strand,
+            'phase': self.phase_5p,
+        }
+        if self.given_name:
+            params['given_name'] = self.given_name
+        return self._get_repr('FeatureImporter', params, str(self.start) + '--' + str(self.end))
 
-    def is_plus_strand(self):
-        features = self.transcript.feature_handlers
-        seqids = [x.gffentry.seqid for x in features]
-        if not all([x == seqids[0] for x in seqids]):
-            raise TransSplicingError("non matching seqids {}, for {}".format(seqids, self.super_locus.id))
-        if all([x.is_plus_strand for x in features]):
-            return True
-        elif all([not x.is_plus_strand for x in features]):
-            return False
-        else:
-            raise TransSplicingError(
-                "Mixed strands at {} with {}".format(self.super_locus.id,
-                                                     [(x.coordinate.seqid, x.strand) for x in features]))
 
-    def drop_invervals_with_duplicated_data(self, ivals_before, ivals_after):
-        all_data = [x.data.data for x in ivals_before + ivals_after]
-        if len(all_data) > len(set(all_data)):
+class TranscriptImporter(Insertable):
+    def __init__(self, entry_type, given_name, super_locus_id, controller):
+        self.id = InsertCounterHolder.transcribed()
+        self.entry_type = entry_type
+        self.given_name = given_name
+        self.super_locus_id = super_locus_id
+        self.controller = controller
 
-            marked_before = []
-            for ival in ivals_before:
-                new = {'interval': ival, 'matches_edge': self.matches_edge_before(ival),
-                       'repeated': self.is_in_list(ival.data, [x.data for x in ivals_after])}
-                marked_before.append(new)
-            marked_after = []
-            for ival in ivals_after:
-                new = {'interval': ival, 'matches_edge': self.matches_edge_after(ival),
-                       'repeated': self.is_in_list(ival.data, [x.data for x in ivals_before])}
-                marked_after.append(new)
+    def add_to_queue(self):
+        transcribed = self._get_params_dict()
+        self.controller.insertion_queues.transcribed.queue.append(transcribed)
 
-            # warn if slice-causer (matches_edge) is on both sides
-            # should be fine in cases with [exon, CDS] -> [exon, UTR] or similar
-            matches_before = [x['interval'] for x in marked_before if x['matches_edge']]
-            slice_frm_before = bool(matches_before)
-            matches_after = [x['interval'] for x in marked_after if x['matches_edge']]
-            slice_frm_after = bool(matches_after)
-            if slice_frm_before and slice_frm_after:
-                # if it's not a splice site
-                if matches_before[0].end == matches_after[0].begin:
-                    logging.warning('slice causer on both sides with repeates\nbefore: {}, after: {}'.format(
-                        [(x.data.gffentry.type, x.data.gffentry.start, x.data.gffentry.end) for x in ivals_before],
-                        [(x.data.gffentry.type, x.data.gffentry.start, x.data.gffentry.end) for x in ivals_after]
-                    ))
-            # finally, keep non repeats or where this side didn't cause slice
-            ivals_before = [x['interval'] for x in marked_before if not x['repeated'] or not slice_frm_before]
-            ivals_after = [x['interval'] for x in marked_after if not x['repeated'] or not slice_frm_after]
-        return ivals_before, ivals_after
+    def _get_params_dict(self):
+        d = {
+            'id': self.id,
+            'type': self.entry_type,
+            'given_name': self.given_name,
+            'super_locus_id': self.super_locus_id,
+        }
+        return d
 
-    @staticmethod
-    def is_in_list(target, the_list):
-        matches = [x for x in the_list if x is target]
-        return len(matches) > 0
+    def __repr__(self):
+        return self._get_repr('TranscriptImporter', self._get_params_dict())
 
-    @staticmethod
-    def matches_edge_before(ival):
-        data = ival.data
-        if data.is_plus_strand:
-            out = data.py_end == ival.end
-        else:
-            out = data.py_start == ival.begin
-        return out
 
-    @staticmethod
-    def matches_edge_after(ival):
-        data = ival.data
-        if data.is_plus_strand:
-            out = data.py_start == ival.begin
-        else:
-            out = data.py_end == ival.end
-        return out
+class TranscriptPieceImporter(Insertable):
+    def __init__(self, given_name, transcript_id, position, controller):
+        self.id = InsertCounterHolder.transcribed_piece()
+        self.given_name = given_name
+        self.transcript_id = transcript_id
+        self.position = position
+        self.controller = controller
 
-    def interpret_transition(self, ivals_before, ivals_after, plus_strand=True):
-        sign = 1
-        if not plus_strand:
-            sign = -1
-        ivals_before, ivals_after = self.drop_invervals_with_duplicated_data(ivals_before, ivals_after)
-        before_types = self.possible_types(ivals_before)
-        after_types = self.possible_types(ivals_after)
-        # 5' UTR can hit either start codon or splice site
-        if self.status.is_5p_utr():
-            # start codon
-            self.handle_from_5p_utr(ivals_before, ivals_after, before_types, after_types, sign)
-        elif self.status.is_coding():
-            self.handle_from_coding(ivals_before, ivals_after, before_types, after_types, sign)
-        elif self.status.is_3p_utr():
-            self.handle_from_3p_utr(ivals_before, ivals_after, before_types, after_types, sign)
-        elif self.status.is_intronic():
-            self.handle_from_intron()
-        elif self.status.is_intergenic():
-            self.handle_from_intergenic()
-        else:
-            raise ValueError('unknown status {}'.format(self.status.__dict__))
+    def add_to_queue(self):
+        transcribed_piece = self._get_params_dict()
+        self.controller.insertion_queues.transcribed_piece.queue.append(transcribed_piece)
 
-    def handle_from_coding(self, ivals_before, ivals_after, before_types, after_types, sign):
-        assert types.CDS in before_types
-        # stop codon
-        if types.THREE_PRIME_UTR in after_types:
-            self.handle_control_codon(ivals_before, ivals_after, sign, is_start=False)
-        # splice site
-        elif types.CDS in after_types:
-            self.handle_splice(ivals_before, ivals_after, sign)
-        else:
-            raise ValueError("don't know how to transition from coding to {}".format(after_types))
+    def _get_params_dict(self):
+        d = {
+            'id': self.id,
+            'given_name': self.given_name,
+            'transcribed_id': self.transcript_id,
+            'position': self.position,
+        }
+        return d
 
-    def handle_from_intron(self):
-        raise NotImplementedError  # todo later
+    def __repr__(self):
+        return self._get_repr('TranscriptPieceImporter', self._get_params_dict())
 
-    def handle_from_3p_utr(self, ivals_before, ivals_after, before_types, after_types, sign):
-        assert types.THREE_PRIME_UTR in before_types
-        # the only thing we should encounter is a splice site
-        if types.THREE_PRIME_UTR in after_types:
-            self.handle_splice(ivals_before, ivals_after, sign)
-        else:
-            raise ValueError('wrong feature types after three prime: b: {}, a: {}'.format(
-                [x.gffentry.type for x in ivals_before], [x.gffentry.type for x in ivals_after]))
 
-    def handle_from_5p_utr(self, ivals_before, ivals_after, before_types, after_types, sign):
-        assert types.FIVE_PRIME_UTR in before_types
-        # start codon
-        if types.CDS in after_types:
-            self.handle_control_codon(ivals_before, ivals_after, sign, is_start=True)
-        # intron
-        elif types.FIVE_PRIME_UTR in after_types:
-            self.handle_splice(ivals_before, ivals_after, sign)
-        else:
-            raise ValueError('wrong feature types after five prime: b: {}, a: {}'.format(
-                [x.gffentry.type for x in ivals_before], [x.gffentry.type for x in ivals_after]))
+class ProteinImporter(Insertable):
+    def __init__(self, given_name, super_locus_id, controller):
+        self.id = InsertCounterHolder.translated()
+        self.given_name = given_name
+        self.super_locus_id = super_locus_id
+        self.controller = controller
 
-    def handle_from_intergenic(self):
-        raise NotImplementedError  # todo later
+    def add_to_queue(self):
+        translated = self._get_params_dict()
+        self.controller.insertion_queues.translated.queue.append(translated)
 
-    def is_gap(self, ivals_before, ivals_after, sign):
-        """checks for a gap between intervals, and validates it's a positive one on strand of interest"""
-        after0 = self.pick_one_interval(ivals_after)
-        before0 = self.pick_one_interval(ivals_before)
-        before_downstream = before0.data.downstream_from_interval(before0)
-        after_upstream = after0.data.upstream_from_interval(after0)
-        is_gap = before_downstream != after_upstream
-        if is_gap:
-            # if there's a gap, confirm it's in the right direction
-            gap_len = (after_upstream - before_downstream) * sign
-            assert gap_len > 0, "inverse gap between {} and {} at putative control codon seq {}, gene {}, " \
-                                "features {} {}".format(before_downstream, after_upstream,
-                                                        after0.data.coordinate.seqid, self.super_locus.id,
-                                                        before0.data.id, after0.data.id)
-        return is_gap
+    def _get_params_dict(self):
+        d = {
+            'id': self.id,
+            'given_name': self.given_name,
+            'super_locus_id': self.super_locus_id,
+        }
+        return d
 
-    def get_protein(self, feature):
-        pid = self._get_protein_id_from_cds(feature)
-        return self.proteins[pid]
-
-    def handle_control_codon(self, ivals_before, ivals_after, sign, is_start=True, error_buffer=2000):
-        target_after_type = None
-        target_before_type = None
-        if is_start:
-            target_after_type = types.CDS
-        else:
-            target_before_type = types.CDS
-
-        after0 = self.pick_one_interval(ivals_after, target_after_type)
-        before0 = self.pick_one_interval(ivals_before, target_before_type)
-        # make sure there is no gap
-        is_gap = self.is_gap(ivals_before, ivals_after, sign)
-
-        if is_start:
-            if is_gap:
-                self.handle_splice(ivals_before, ivals_after, sign)
-
-            template = after0.data
-            translated = self.get_protein(template)
-            # it better be std phase if it's a start codon
-            at = template.upstream_from_interval(after0)
-            if template.gffentry.phase == 0:  # "non-0 phase @ {} in {}".format(template.id, template.super_locus.id)
-                start = at
-                coding_feature = self.new_feature(gffentry=template.gffentry, start=start, type=types.CODING,
-                                                  start_is_biological_start=True, translateds=[translated])
-                self.status.coding_tracker.set_channel_open_with_feature(feature=coding_feature, phase=0)
-            else:
-                err_start = before0.data.upstream_from_interval(before0) - sign * error_buffer  # mask prev feat. too
-                err_end = at + sign  # so that the error masks the coordinate with the close status
-                gffid_to_coords = self.controller.genome_handler.gffid_to_coords
-                if sign == 1:  # if is_plus_strand, todo, use same logic/setup as elsewhere
-                    start_of_sequence = gffid_to_coords[template.gffentry.seqid].start
-                    err_start = max(start_of_sequence, err_start)
-                else:
-                    end_of_sequence = gffid_to_coords[template.gffentry.seqid].end - 1
-                    err_start = min(end_of_sequence, err_start)
-                self.new_feature(gffentry=template.gffentry, type=types.ERROR, start=err_start, end=err_end,
-                                 start_is_biological_start=True, end_is_biological_end=True,
-                                 phase=None)
-
-                coding_feature = self.new_feature(gffentry=template.gffentry, type=types.CODING, start=at,
-                                                  start_is_biological_start=False, translateds=[translated])
-                self.status.coding_tracker.set_channel_open_with_feature(feature=coding_feature,
-                                                                         phase=template.gffentry.phase)
-
-        else:
-            template = before0.data
-            at = template.downstream_from_interval(before0)
-            self.status.coding_tracker.update_and_close_feature({'end': at, 'end_is_biological_end': True})
-
-            if is_gap:
-                self.handle_splice(ivals_before, ivals_after, sign)
-
-    def handle_splice(self, ivals_before, ivals_after, sign):
-        target_type = None
-        if self.status.is_coding():
-            target_type = types.CDS
-
-        before0 = self.pick_one_interval(ivals_before, target_type)
-        after0 = self.pick_one_interval(ivals_after, target_type)
-        donor_tmplt = before0.data
-        acceptor_tmplt = after0.data
-        if sign > 0:
-            # use original coords so that overlaps can be detected...
-            donor_at = donor_tmplt.downstream()  # -1 (to from 0) + 1 (intron start, not incl. exon end) = 0
-            acceptor_at = acceptor_tmplt.upstream() - 1  # -1 (to from 0), that's it as incl start is already excl end
-        else:
-            donor_at = donor_tmplt.downstream() - 2  # -1 (fr 0), -1 (intron start (-), not incl. exon end) = -2
-            acceptor_at = acceptor_tmplt.upstream() - 1  # -1 (fr 0), that's it as incl start is already excl end
-        # add splice sites if there's a gap
-        between_splice_sites = (acceptor_at - donor_at) * sign
-        min_intron_len = 3  # todo, maybe get something small but not entirely impossible?
-        if between_splice_sites > min_intron_len:
-            self.new_feature(gffentry=donor_tmplt.gffentry, start=donor_at, end=acceptor_at, phase=None,
-                             start_is_biological_start=True, end_is_biological_end=True,
-                             type=types.INTRON)
-
-        # do nothing if there is just no gap between exons for a technical / reporting error
-        elif between_splice_sites == 0:
-            pass
-        # everything else is invalid
-        else:
-            # mask both exons and the intron
-            if sign > 0:
-                err_start = donor_tmplt.upstream() - 1  # -1 to fr 0
-                err_end = acceptor_tmplt.downstream()  # -1 to fr 0, +1 to excl = 0
-            else:
-                err_start = donor_tmplt.upstream() - 1  # to fr 0
-                err_end = acceptor_tmplt.downstream() - 2  # -1 to fr 0, -1 to excl = -2
-
-            self.new_feature(gffentry=before0.data.gffentry, start=err_start, end=err_end,
-                             start_is_biological_start=True, end_is_biological_end=True,
-                             type=types.ERROR, bearing=types.START)
-
-    def interpret_first_pos(self, intervals, plus_strand=True, error_buffer=2000):
-        # shortcuts
-        cds = types.CDS
-
-        i0 = self.pick_one_interval(intervals)
-        at = i0.data.upstream_from_interval(i0)
-        possible_types = self.possible_types(intervals)
-        if types.FIVE_PRIME_UTR in possible_types:
-            # this should indicate we're good to go and have a transcription start site
-            transcribed_feature = self.new_feature(gffentry=i0.data.gffentry, type=types.TRANSCRIBED, start=at,
-                                                   phase=None, start_is_biological_start=True)
-            self.status.transcribed_tracker.set_channel_open_with_feature(feature=transcribed_feature)
-        elif cds in possible_types:
-            # this could be first exon detected or start codon, ultimately, indeterminate
-            cds_feature = self.pick_one_interval(intervals, target_type=cds).data
-            translated = self.get_protein(cds_feature)
-            # setup translated / coding feature
-            translated_feature = self.new_feature(gffentry=cds_feature.gffentry, type=types.CODING, start=at,
-                                                  start_is_biological_start=False, translateds=[translated])
-            self.status.coding_tracker.set_channel_open_with_feature(feature=translated_feature,
-                                                                     phase=cds_feature.gffentry.phase)
-            # setup transcribed feature (bc coding implies transcript)
-            transcribed_feature = self.new_feature(gffentry=cds_feature.gffentry, type=types.TRANSCRIBED, start=at,
-                                                   start_is_biological_start=False)
-            self.status.transcribed_tracker.set_channel_open_with_feature(transcribed_feature)
-
-            # mask a dummy region up-stream as it's very unclear whether it should be intergenic/intronic/utr
-            gffid_to_coords = self.controller.genome_handler.gffid_to_coords
-            if plus_strand:
-                # unless we're at the start of the sequence
-                start_of_sequence = gffid_to_coords[cds_feature.gffentry.seqid].start
-                if at != start_of_sequence:
-                    err_start = max(start_of_sequence, at - error_buffer)
-                    err_end = at + 1  # so that the error masks the coordinate with the close status
-                    self.new_feature(gffentry=cds_feature.gffentry, type=types.ERROR,
-                                     start_is_biological_start=True, end_is_biological_end=True,
-                                     start=err_start, end=err_end, phase=None)
-            else:
-                end_of_sequence = gffid_to_coords[cds_feature.gffentry.seqid].end - 1
-                if at != end_of_sequence:
-                    err_start = min(end_of_sequence, at + error_buffer)
-                    err_end = at - 1  # so that the error masks the coordinate with the close status
-                    self.new_feature(gffentry=cds_feature.gffentry, type=types.ERROR,
-                                     start_is_biological_start=True, end_is_biological_end=True,
-                                     start=err_start, end=err_end, phase=None)
-
-        else:
-            raise ValueError("why's this gene not start with 5' utr nor cds? types: {}, interpretations: {}".format(
-                [x.data.gffentry.type for x in intervals], possible_types))
-
-    def interpret_last_pos(self, intervals, plus_strand=True, error_buffer=2000):
-        i0 = self.pick_one_interval(intervals)
-        at = i0.data.downstream_from_interval(i0)
-        possible_types = self.possible_types(intervals)
-        if types.THREE_PRIME_UTR in possible_types:
-            # this should be transcription termination site
-            self.status.transcribed_tracker.update_and_close_feature(
-                {'end': at, 'end_is_biological_end': True})
-        elif types.CDS in possible_types:
-            # may or may not be stop codon, but will just mark as error (unless at edge of sequence)
-            cds_feature = self.pick_one_interval(intervals, target_type=types.CDS).data
-
-            self.status.transcribed_tracker.update_and_close_feature(
-                {'end': at, 'end_is_biological_end': False})
-            self.status.coding_tracker.update_and_close_feature(
-                {'end': at, 'end_is_biological_end': False}
-            )
-            # may or may not be stop codon, but will just mark as error (unless at edge of sequence)
-            gffid_to_coords = self.controller.genome_handler.gffid_to_coords
-
-            start_of_sequence = gffid_to_coords[cds_feature.gffentry.seqid].start - 1
-            end_of_sequence = gffid_to_coords[cds_feature.gffentry.seqid].end
-            if plus_strand:
-                if at != end_of_sequence:
-                    err_start = at - 1  # so that the error masks the coordinate with the open status
-                    err_end = min(at + error_buffer, end_of_sequence)
-                    self.new_feature(gffentry=i0.data.gffentry, type=types.ERROR, start=err_start, end=err_end,
-                                     start_is_biological_start=True, end_is_biological_end=True,
-                                     phase=None)
-            else:
-                if at != start_of_sequence:
-                    err_start = at + 1  # so that the error masks the coordinate with the open status
-                    err_end = max(start_of_sequence, at - error_buffer)
-                    self.new_feature(gffentry=i0.data.gffentry, type=types.ERROR,
-                                     phase=None, start=err_start, start_is_biological_start=True,
-                                     end=err_end, end_is_biological_end=True)
-        else:
-            raise ValueError("why's this gene not end with 3' utr/exon nor cds? types: {}, interpretations: {}".format(
-                [x.data.type for x in intervals], possible_types)
-            )
-
-    def intervals_5to3(self, plus_strand=False):
-        interval_sets = list(self.organize_and_split_features())
-        if not plus_strand:
-            interval_sets.reverse()
-        return interval_sets
-
-    def decode_raw_features(self):
-        plus_strand = self.is_plus_strand()
-        interval_sets = self.intervals_5to3(plus_strand)
-        self.interpret_first_pos(interval_sets[0], plus_strand)
-        for i in range(len(interval_sets) - 1):
-            ivals_before = interval_sets[i]
-            ivals_after = interval_sets[i + 1]
-            self.interpret_transition(ivals_before, ivals_after, plus_strand)
-
-        self.interpret_last_pos(intervals=interval_sets[-1], plus_strand=plus_strand)
-
-    @staticmethod
-    def possible_types(intervals):
-        # shortcuts
-        cds = types.CDS
-        five_prime = types.FIVE_PRIME_UTR
-        exon = types.EXON
-        three_prime = types.THREE_PRIME_UTR
-
-        # what we see
-        # uniq_datas = set([x.data.data for x in intervals])  # todo, revert and skip unique once handled above
-        observed_types = [x.data.gffentry.type for x in intervals]
-        set_o_types = set(observed_types)
-        # check length
-        if len(intervals) not in [1, 2]:
-            raise IntervalCountError('check interpretation by hand for transcript start with {}, {}'.format(
-                '\n'.join([str(ival.data.data) for ival in intervals]), observed_types
-            ))
-        if set_o_types.issubset(set([x.value for x in types.KeepOnSequence])):
-            out = [TranscriptInterpreter.HANDLED]
-        # interpret type combination
-        elif set_o_types == {exon, five_prime} or set_o_types == {five_prime}:
-            out = [five_prime]
-        elif set_o_types == {exon, three_prime} or set_o_types == {three_prime}:
-            out = [three_prime]
-        elif set_o_types == {exon}:
-            out = [five_prime, three_prime]
-        elif set_o_types == {cds, exon} or set_o_types == {cds}:
-            out = [cds]
-        else:
-            raise ValueError('check interpretation of combination for transcript start with {}, {}'.format(
-                intervals, observed_types
-            ))
-        return out
-
-    def organize_and_split_features(self):
-        # todo, handle non-single seqid loci
-        tree = intervaltree.IntervalTree()
-        features = set()
-        for feature in self._all_features():
-            features.add(feature)
-
-        for f in features:
-            tree[helpers.as_py_start(f.gffentry.start):helpers.as_py_end(f.gffentry.end)] = f
-        tree.split_overlaps()
-        # todo, minus strand
-        intervals = iter(sorted(tree))
-        out = [next(intervals)]
-        for interval in intervals:
-            if out[-1].begin == interval.begin:
-                out.append(interval)
-            else:
-                yield out
-                out = [interval]
-        yield out
-
-    def _all_features(self):
-        return self.transcript.feature_handlers
-
-    def has_no_unprocessed_features(self):
-        for feature in self._all_features():
-            if not feature.processed:
-                return False
-        return True
-
-    @staticmethod
-    def _get_intervals_by_type(stacked_intervals, target_type):
-        out = []
-        for stack in stacked_intervals:
-            new_stack = []
-            for interval in stack:
-                if interval.data.gffentry.type == target_type:
-                    new_stack.append(interval)
-            if new_stack:
-                out.append(new_stack)
-        return out
-
-    def _by_pos_and_type(self, stacked_intervals, pos, target_type):
-        exons = self._get_intervals_by_type(stacked_intervals, target_type=target_type)
-        pos_exons = exons[pos]
-        assert len(pos_exons) == 1
-        return pos_exons[0]
-
-    def first_exon(self, stacked_intervals):
-        return self._by_pos_and_type(stacked_intervals, 0, target_type=types.EXON)
-
-    def last_exon(self, stacked_intervals):
-        return self._by_pos_and_type(stacked_intervals, -1, target_type=types.EXON)
-
-    def first_cds(self, stacked_intervals):
-        return self._by_pos_and_type(stacked_intervals, 0, target_type=types.CDS)
-
-    def last_cds(self, stacked_intervals):
-        return self._by_pos_and_type(stacked_intervals, -1, target_type=types.CDS)
+    def __repr__(self):
+        return self._get_repr('ProteinImporter', self._get_params_dict())

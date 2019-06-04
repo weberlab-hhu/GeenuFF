@@ -16,14 +16,22 @@ class Handler(object):
 
     def add_data(self, data):
         assert isinstance(data, self.data_type), 'data type does not match with handler class'
-        if self.id is not None:
-            data.id = self.id
         self.data = data
-        data.handler = self  # terrible form, but I need some sort of efficient point back
 
     @property
     def data_type(self):
         raise NotImplementedError
+
+    @staticmethod
+    def _get_repr(class_name, params, addition=''):
+        param_str = ', '.join('{}:{}'.format(k, v) for k, v in params.items())
+        if addition:
+            return class_name + '[' +  param_str + ', ' + addition + ']'
+        else:
+            return class_name + '[' +  param_str + ']'
+
+    def __repr__(self):
+        return self._get_repr('Handler', {'data': self.data})
 
 
 class GenomeHandlerBase(Handler):
@@ -42,37 +50,49 @@ class CoordinateHandlerBase(Handler):
 
 class SuperLocusHandlerBase(Handler):
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, data=None):
+        super().__init__(data)
         self.handler_holder = HandleMaker(self)
-
-    def make_all_handlers(self):
-        self.handler_holder.make_all_handlers()
 
     @property
     def data_type(self):
         return orm.SuperLocus
 
+    @property
+    def features(self):
+        for transcript in self.data.transcribeds:
+            for piece in transcript.transcribed_pieces:
+                for feature in piece.features:
+                    yield feature
 
-class TranscribedHandlerBase(Handler):
+    def make_all_handlers(self):
+        self.handler_holder.make_all_handlers()
+
+
+class TranscriptHandlerBase(Handler):
 
     @property
     def data_type(self):
-        return orm.Transcribed
+        return orm.Transcript
+
+    @property
+    def sorted_pieces(self):
+        pieces = self.data.transcribed_pieces
+        return sorted(pieces, key=lambda p: p.position)
 
 
-class TranscribedPieceHandlerBase(Handler):
+class TranscriptPieceHandlerBase(Handler):
 
     @property
     def data_type(self):
-        return orm.TranscribedPiece
+        return orm.TranscriptPiece
 
 
-class TranslatedHandlerBase(Handler):
+class ProteinHandlerBase(Handler):
 
     @property
     def data_type(self):
-        return orm.Translated
+        return orm.Protein
 
 
 class FeatureHandlerBase(Handler):
@@ -80,12 +100,6 @@ class FeatureHandlerBase(Handler):
     @property
     def data_type(self):
         return orm.Feature
-
-    def cmp_key(self):
-        return self.data.cmp_key()
-
-    def pos_cmp_key(self):
-        return self.data.pos_cmp_key()
 
 
 class HandleMaker(object):
@@ -123,7 +137,7 @@ class HandleMaker(object):
 
     def _get_handler_type(self, old_data):
         key = [(SuperLocusHandlerBase, orm.SuperLocus),
-               (TranscribedHandlerBase, orm.Transcribed),
-               (TranslatedHandlerBase, orm.Translated)]
+               (TranscriptHandlerBase, orm.Transcript),
+               (ProteinHandlerBase, orm.Protein)]
 
         return self._get_paired_item(type(old_data), search_col=1, return_col=0, nested_list=key)

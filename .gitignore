@@ -1,6 +1,7 @@
 # Project specific
 tmp/*
 geenuff/testdata/dummyloci_annotations.sqlitedb
+geenuff/testdata/dummyloci_multiple.fa.fai
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

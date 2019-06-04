@@ -146,20 +146,108 @@ def get_seqids_from_gff(gfffile):
                 seqids.add(line.split('\t')[0])
     return seqids
 
+##### GFF start/end to GeenuFF #####
 
-def as_py_start(start):
-    return start - 1
+def get_strand_direction(gffentry):
+    if gffentry.strand == '+':
+        return True
+    elif gffentry.strand == '-':
+        return False
+    else:
+        raise ValueError('cannot interpret strand "{}"'.format(gffentry.strand))
 
 
-def as_py_end(end):
-    return end
+def get_geenuff_start_end(gff_start, gff_end, is_plus_strand):
+    gff_start, gff_end = to_count_from_0(gff_start), to_count_from_0(gff_end)
 
+    if is_plus_strand:
+        start = gff_start
+        end = to_exclusive_end(gff_end, is_plus_strand)
+    else:
+        start = gff_end
+        end = to_exclusive_end(gff_start, is_plus_strand)
+    return start, end
+
+
+def to_count_from_0(coord):
+    return coord - 1
+
+
+def to_exclusive_end(end, is_plus_strand):
+    if is_plus_strand:
+        return end + 1
+    else:
+        return end - 1
+
+
+##### Reverse complement #####
+
+def mk_rc_key():
+    fw = "ACGTMRWSYKVHDBN"
+    rv = "TGCAKYWSRMBDHVN"
+    key = {}
+    for f, r in zip(fw, rv):
+        key[f] = r
+    return key
+
+
+# so one doesn't recalculate it for every call of revers_complement
+REV_COMPLEMENT_KEY = mk_rc_key()
+
+
+def reverse_complement(seq):
+    key = REV_COMPLEMENT_KEY
+    rc_seq = []
+    for base in reversed(seq):
+        try:
+            rc_seq.append(key[base])
+        except KeyError as e:
+            raise KeyError('{} caused by non DNA character {}'.format(e, base))
+    return rc_seq
+
+
+##### Start/Stop codon detection #####
+
+START_CODON = 'ATG'
+START_CODON_COMP = ''.join(reverse_complement(START_CODON))
+STOP_CODONS = ['TAG', 'TGA', 'TAA']
+STOP_CODONS_COMP = [''.join(reverse_complement(c)) for c in STOP_CODONS]
+
+
+def substr_seq(seq, start, end, is_plus_strand):
+    """returns a substring of sequence according to geenuff coordinates and strand type"""
+    if is_plus_strand:
+        return seq[start:end]
+    else:
+        return seq[end+1:start+1]
+
+
+def has_start_codon(seq, start, is_plus_strand):
+    if is_plus_strand:
+        return substr_seq(seq, start, start + 3, is_plus_strand) == START_CODON
+    else:
+        return substr_seq(seq, start, start - 3, is_plus_strand) == START_CODON_COMP
+
+
+def has_stop_codon(seq, end, is_plus_strand):
+    if is_plus_strand:
+        return substr_seq(seq, end - 3, end, is_plus_strand) in STOP_CODONS
+    else:
+        return substr_seq(seq, end + 3, end, is_plus_strand) in STOP_CODONS_COMP
 
 ##### SQL alchemy core queue control #####
 
 class Counter(object):
-    def __init__(self, at=0):
+    def __init__(self, cl=None, at=0):
+        self.cl = cl
         self._at = at
+
+    def sync_with_db(self, session):
+        from sqlalchemy import func
+        new_at = session.query(func.max(self.cl.id)).one()[0]
+        if new_at == None:
+            new_at = 0
+        self._at = new_at
 
     def __call__(self, *args, **kwargs):
         self._at += 1

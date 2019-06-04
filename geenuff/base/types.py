@@ -52,7 +52,7 @@ SuperLocusAll = join_to_enum('SuperLocusAll', SuperLocus, SuperLocusHistorical)
 TranscriptLevelNice = make_enum('TranscriptLevelNice', MRNA, TRNA, RRNA,MIRNA, SNORNA, SNRNA, SRP_RNA,
                                 LNC_RNA, PRE_MIRNA, RNASE_MRP_RNA)
 TranscriptLevelInput = make_enum('TranscriptLevelInput', TRANSCRIPT, PRIMARY_TRANSCRIPT, PSEUDOGENIC_TRANSCRIPT)
-TranscriptLevelAll = join_to_enum('TranscriptLevel', TranscriptLevelNice, TranscriptLevelInput)
+TranscriptLevelAll = join_to_enum('TranscriptLevelAll', TranscriptLevelNice, TranscriptLevelInput)
 
 
 # FEATURES
@@ -105,9 +105,21 @@ TRANSCRIBED = 'transcribed'
 CODING = 'coding'
 INTRON = 'intron'  # defined above
 TRANS_INTRON = 'trans_intron'
-ERROR = 'error'
+FinalFeatures = make_enum('FinalFeatures', TRANSCRIBED, CODING, INTRON, TRANS_INTRON)
 
-FinalFeatures = make_enum('FinalFeatures', TRANSCRIBED, CODING, INTRON, TRANS_INTRON, ERROR)
+# error types
+MISSING_UTR_5P = 'missing_utr_5p'
+MISSING_UTR_3P = 'missing_utr_3p'
+EMPTY_SUPER_LOCUS = 'empty_super_locus'
+MISSING_START_CODON = 'missing_start_codon'
+MISSING_STOP_CODON = 'missing_stop_codon'
+WRONG_PHASE_5P = 'wrong_starting_phase'
+MISMATCHED_PHASE_3P = 'mismatched_ending_phase'
+OVERLAPPING_EXONS = 'overlapping_exons'
+TOO_SHORT_INTRON = 'too_short_intron'
+Errors = make_enum('Errors', MISSING_UTR_5P, MISSING_UTR_3P, EMPTY_SUPER_LOCUS, MISSING_START_CODON,
+                   MISSING_STOP_CODON, WRONG_PHASE_5P, MISMATCHED_PHASE_3P, OVERLAPPING_EXONS,
+                   TOO_SHORT_INTRON)
 
 # bearings
 START = 'start'
@@ -143,7 +155,7 @@ TranslatedAll = join_to_enum('TranslatedFeatureType', TranslatedInput, Translate
 
 
 # All known features (else error on import)
-OnSequence = join_to_enum('OnSequence', TranscribedInput, TranslatedInput, FinalFeatures)
+OnSequence = join_to_enum('OnSequence', TranscribedInput, TranslatedInput, FinalFeatures, Errors)
 AllKnown = join_to_enum('AllKnown', SuperLocusAll, TranscriptLevelAll, OnSequence,
                         IgnorableFeatures)
 AllKeepable = join_to_enum('AllKeepable', SuperLocusAll, TranscriptLevelNice, FinalFeatures)
