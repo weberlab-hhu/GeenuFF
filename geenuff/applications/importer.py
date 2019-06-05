@@ -433,8 +433,6 @@ class GFFErrorHandling(object):
 
                     if introns:
                         # the case of wrong 3p phase
-                        if transcript['transcript_feature'].given_name == 'Aco009693.1.v3':
-                            import pudb; pudb.set_trace()
                         len_3p_exon = abs(cds.end - self._3p_cds_start(transcript))
                         if cds.phase_3p != len_3p_exon % 3:
                             self._add_overlapping_error(i, cds, '3p', types.MISMATCHED_PHASE_3P)

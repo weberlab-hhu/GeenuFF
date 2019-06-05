@@ -741,7 +741,17 @@ def test_case_8():
     feature = Feature(given_name=None,
                       type=types.OnSequence.coding,
                       start=1729,
-                      end=1573,
+                      end=1699,
+                      start_is_biological_start=True,
+                      end_is_biological_end=True,
+                      is_plus_strand=False,
+                      phase=0,
+                      coordinate=coords[1])
+    assert orm_object_in_list(feature, sl_objects)
+    feature = Feature(given_name=None,
+                      type=types.OnSequence.intron,
+                      start=1678,
+                      end=1599,
                       start_is_biological_start=True,
                       end_is_biological_end=True,
                       is_plus_strand=False,
