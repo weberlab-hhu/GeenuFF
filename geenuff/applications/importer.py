@@ -393,46 +393,47 @@ class GFFErrorHandling(object):
         'normal': no overlap in any way
         'nested': sl is a fully nested gene inside sl_prev (no further disambiguation done)
         'overlap': the sl overlap but without errors on both sides
-        'overap_error': the sl overlap and at least one of the sl has an utr error at
-                        the side of the overlap
+        'overlap_error_3p': the sl 3p of the overlap has an utr error
+        'overlap_error_5p': the sl 5p of the overlap has an utr error
+        'overlap_error_both': both sl have an utr error at the overlap
         """
 
-        def _have_overlap_errors(slg_prev, slg):
+        def _overlap_error_status(slg_prev, slg):
+            status = 'overlap'
             for error in slg_prev['errors']:
                 if error.feature_type == types.MISSING_UTR_3P:
-                    return True
+                    status = 'overlap_error_3p'
+                    break
             for error in slg['errors']:
                 if error.feature_type == types.MISSING_UTR_5P:
-                    return True
-            return False
+                    if status == 'overlap':
+                        status = 'overlap_error_5p'
+                    else:
+                        status = 'overlap_error_both'
+                    break
+            return status
 
         sl_prev = slg_prev['super_locus']
         sl = slg['super_locus']
         nested_msg = 'nested super loci: {} and {}'
-        overlap_msg = 'overlapping, non nested super loci: {} and {}'
-        overlap_e_msg = 'overlapping, non nested super loci with error: {} and {}'
+        overlap_msg = ', non nested super loci: {} and {}'
+        overlap_msg_format = overlap_msg.format(sl_prev.given_name, sl.given_name)
         if self.is_plus_strand and sl_prev.end > sl.start:
             if sl_prev.end > sl.end:
-                logging.info('+ ' + nested_msg.format(sl_prev.given_name, sl.given_name))
+                logging.info(nested_msg.format(sl_prev.given_name, sl.given_name))
                 return 'nested'
             else:
-                if _have_overlap_errors(slg_prev, slg):
-                    logging.info('+ ' + overlap_e_msg.format(sl_prev.given_name, sl.given_name))
-                    return 'overlap_error'
-                else:
-                    logging.info('+ ' + overlap_msg.format(sl_prev.given_name, sl.given_name))
-                    return 'overlap'
+                overlap_status = _overlap_error_status(slg_prev, slg)
+                logging.info(overlap_status + overlap_msg_format)
+                return overlap_status
         elif not self.is_plus_strand and sl_prev.end < sl.start:
             if sl_prev.end < sl.end:
-                logging.info('- ' + nested_msg.format(sl_prev.given_name, sl.given_name))
+                logging.info(nested_msg.format(sl_prev.given_name, sl.given_name))
                 return 'nested'
             else:
-                if _have_overlap_errors(slg_prev, slg):
-                    logging.info('- ' + overlap_e_msg.format(sl_prev.given_name, sl.given_name))
-                    return 'overlap_error'
-                else:
-                    logging.info('- ' + overlap_msg.format(sl_prev.given_name, sl.given_name))
-                    return 'overlap'
+                overlap_status = _overlap_error_status(slg_prev, slg)
+                logging.info(overlap_status + overlap_msg_format)
+                return overlap_status
         return 'normal'
 
     def _3p_cds_start(self, transcript):
@@ -482,7 +483,9 @@ class GFFErrorHandling(object):
 
                     # the case of overlapping sl
                     if i > 0:
-                        self._check_sl_neighbor_status(self.groups[i - 1], group)
+                        status = self._check_sl_neighbor_status(self.groups[i - 1], group)
+                        if status == 'overlap_error':
+                            pass
 
                     if introns:
                         # the case of wrong 3p phase
