@@ -402,12 +402,13 @@ class GFFErrorHandling(object):
             status = 'overlap'
             for error in slg_prev['errors']:
                 if error.feature_type == types.MISSING_UTR_3P:
-                    status = 'overlap_error_3p'
+                    # a 3p utr error of the previous sl is 5p of the overlap
+                    status = 'overlap_error_5p'
                     break
             for error in slg['errors']:
                 if error.feature_type == types.MISSING_UTR_5P:
                     if status == 'overlap':
-                        status = 'overlap_error_5p'
+                        status = 'overlap_error_3p'
                     else:
                         status = 'overlap_error_both'
                     break
@@ -483,9 +484,14 @@ class GFFErrorHandling(object):
 
                     # the case of overlapping sl
                     if i > 0:
-                        status = self._check_sl_neighbor_status(self.groups[i - 1], group)
-                        if status == 'overlap_error':
-                            pass
+                        group_prev = self.groups[i - 1]
+                        status = self._check_sl_neighbor_status(group_prev, group)
+                        if status == 'overlap_error_5p' or status == 'overlap_error_both':
+                            self._add_overlapping_error(i, group_prev['super_locus'], '3p',
+                                                        types.SL_OVERLAP_ERROR)
+                        elif status == 'overlap_error_3p' or status == 'overlap_error_both':
+                            self._add_overlapping_error(i, group['super_locus'], '5p',
+                                                        types.SL_OVERLAP_ERROR)
 
                     if introns:
                         # the case of wrong 3p phase
@@ -535,10 +541,9 @@ class GFFErrorHandling(object):
             n_removed = full_len - len(group['errors'])
             if n_removed > 0:
                 msg = ('removed {count} backwards error(s) from overlapping super loci: '
-                       'seqid: {seqid}, {geneid}').format(
-                           count=n_removed,
-                           seqid=self.coord.seqid,
-                           geneid=group['super_locus'].given_name)
+                       'seqid: {seqid}, {geneid}').format(count=n_removed,
+                                                          seqid=self.coord.seqid,
+                                                          geneid=group['super_locus'].given_name)
                 logging.info(msg)
 
     def _add_error(self, i, start, end, is_plus_strand, error_type):
@@ -568,7 +573,7 @@ class GFFErrorHandling(object):
         in the given direction from the given handler if possible. Otherwise mark until the end.
         If the direction is 'whole', the handler parameter is ignored.
 
-        Also sets handler.start_is_biological_start=False (or the end).
+        Also sets handler.start_is_biological_start=False (or the end) if necessary
         """
         assert direction in ['5p', '3p', 'whole']
         sl = self.groups[i]['super_locus']
@@ -598,11 +603,13 @@ class GFFErrorHandling(object):
         if direction == '5p':
             error_5p = anchor_5p
             error_3p = handler.start
-            handler.start_is_biological_start = False
+            if isinstance(handler, FeatureImporter):
+                handler.start_is_biological_start = False
         elif direction == '3p':
             error_5p = handler.end
             error_3p = anchor_3p
-            handler.end_is_biological_end = False
+            if isinstance(handler, FeatureImporter):
+                handler.end_is_biological_end = False
         elif direction == 'whole':
             error_5p = anchor_5p
             error_3p = anchor_3p
