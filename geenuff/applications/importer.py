@@ -386,6 +386,19 @@ class GFFErrorHandling(object):
             self.groups.sort(key=lambda g: g['super_locus'].start, reverse=not self.is_plus_strand)
         self.controller = controller
 
+    def _3p_cds_start(self, transcript):
+        """returns the start of the 3p most cds feature"""
+        cds = transcript['cds']
+        start = cds.start
+        # introns are ordered by coordinate with no respect to strand
+        for intron in transcript['introns']:
+            if ((self.is_plus_strand and intron.end < cds.end)
+                    or (not self.is_plus_strand and intron.end > cds.end)):
+                start = intron.end
+            else:
+                break
+        return start
+
     def resolve_errors(self):
         for i, group in enumerate(self.groups):
             # the case of no transcript for a super locus
@@ -420,7 +433,9 @@ class GFFErrorHandling(object):
 
                     if introns:
                         # the case of wrong 3p phase
-                        len_3p_exon = abs(cds.end - transcript['introns'][-1].end)
+                        if transcript['transcript_feature'].given_name == 'Aco009693.1.v3':
+                            import pudb; pudb.set_trace()
+                        len_3p_exon = abs(cds.end - self._3p_cds_start(transcript))
                         if cds.phase_3p != len_3p_exon % 3:
                             self._add_overlapping_error(i, cds, '3p', types.MISMATCHED_PHASE_3P)
 

@@ -1,6 +1,7 @@
+import os
+import sys
 import logging
 import argparse
-import os
 
 from geenuff.applications.importer import ImportController
 from geenuff.base import orm
@@ -54,7 +55,7 @@ def main(args):
                         format='%(asctime)s - %(message)s',
                         datefmt='%d-%b-%y %H:%M:%S')
     # log to file and stderr simultaneously
-    logging.getLogger().addHandler(logging.StreamHandler())
+    logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 
     controller = ImportController(database_path=paths.db_out, replace_db=args.replace_db)
     genome_args = {}
