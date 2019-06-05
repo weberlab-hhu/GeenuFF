@@ -178,7 +178,8 @@ class Feature(Base):
         CheckConstraint('start >= 0 and end >= -1 and phase >= 0 and phase < 3',
                         name='check_start_end_phase'),
         # if start_is_biological_start is True, phase has to be 0
-        CheckConstraint('not start_is_biological_start or phase = 0', name='check_phase_bio_start'),
+        CheckConstraint('phase is NULL or (not start_is_biological_start or phase = 0)',
+                        name='check_phase_bio_start'),
         # check start/end order depending on is_plus_strand
         CheckConstraint('(is_plus_strand and start <= end) or (not is_plus_strand and end <= start)',
                         name='start_end_order')

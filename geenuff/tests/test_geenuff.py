@@ -206,39 +206,77 @@ def test_feature_has_its_things():
     # test feature with nothing much set
     g = Genome()
     c = Coordinate(start=1, end=30, seqid='abc', genome=g)
-    f = Feature(coordinate=c)
+    f = Feature(coordinate=c,
+                start=1,
+                end=30,
+                start_is_biological_start=True,
+                end_is_biological_end=True,
+                is_plus_strand=True)
     sess.add_all([f, c])
     sess.commit()
 
-    assert f.is_plus_strand is None
     assert f.source is None
     assert f.score is None
     # test feature with
-    f1 = Feature(is_plus_strand=False, start=3, end=-1, coordinate=c)
+    f1 = Feature(coordinate=c,
+                 start=3,
+                 end=-1,
+                 start_is_biological_start=True,
+                 end_is_biological_end=True,
+                 is_plus_strand=False)
     assert not f1.is_plus_strand
     assert f1.start == 3
     assert f1.end == -1
     sess.add(f1)
     sess.commit()
+
     # test too low of start / end coordinates raise an error
-    f_should_fail = Feature(is_plus_strand=True, start=-5, end=10, coordinate=c)
+    f_should_fail = Feature(coordinate=c,
+                            start=-5,
+                            end=10,
+                            start_is_biological_start=True,
+                            end_is_biological_end=True,
+                            is_plus_strand=False)
+    sess.add(f_should_fail)
+    with pytest.raises(sqlalchemy.exc.IntegrityError):
+        sess.commit()
+    sess.rollback()
+    f_should_fail = Feature(coordinate=c,
+                            start=5,
+                            end=-2,
+                            start_is_biological_start=True,
+                            end_is_biological_end=True,
+                            is_plus_strand=False)
     sess.add(f_should_fail)
     with pytest.raises(sqlalchemy.exc.IntegrityError):
         sess.commit()
     sess.rollback()
 
-    f_should_fail = Feature(is_plus_strand=False, start=5, end=-2, coordinate=c)
-    sess.add(f_should_fail)
-    with pytest.raises(sqlalchemy.exc.IntegrityError):
-        sess.commit()
-    sess.rollback()
     # test wrong class as parameter
     with pytest.raises(KeyError):
         f2 = Feature(coordinate=f)
 
-    f2 = Feature(is_plus_strand=-1)  # note that 0, and 1 are accepted
+    f2 = Feature(coordinate=c,
+                 start=1,
+                 end=3,
+                 start_is_biological_start=True,
+                 end_is_biological_end=True,
+                 is_plus_strand=-1)  # note that 0, and 1 are accepted
     sess.add(f2)
     with pytest.raises(sqlalchemy.exc.StatementError):
+        sess.commit()
+    sess.rollback()
+
+    # check 'phase is NULL or (not start_is_biological_start or phase = 0)'
+    f = Feature(coordinate=c,
+                start=1,
+                end=3,
+                start_is_biological_start=True,
+                end_is_biological_end=True,
+                is_plus_strand=True,
+                phase=1)
+    sess.add(f)
+    with pytest.raises(sqlalchemy.exc.IntegrityError):
         sess.commit()
     sess.rollback()
 
