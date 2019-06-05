@@ -386,6 +386,55 @@ class GFFErrorHandling(object):
             self.groups.sort(key=lambda g: g['super_locus'].start, reverse=not self.is_plus_strand)
         self.controller = controller
 
+    def _check_sl_neighbor_status(self, slg_prev, slg):
+        """checks whether two neighboring super loci overlap and if yes under which conditions.
+        Returns one of the following values depending on the relationship:
+
+        'normal': no overlap in any way
+        'nested': sl is a fully nested gene inside sl_prev (no further disambiguation done)
+        'overlap': the sl overlap but without errors on both sides
+        'overap_error': the sl overlap and at least one of the sl has an utr error at
+                        the side of the overlap
+        """
+
+        def _have_overlap_errors(slg_prev, slg):
+            for error in slg_prev['errors']:
+                if error.feature_type == types.MISSING_UTR_3P:
+                    return True
+            for error in slg['errors']:
+                if error.feature_type == types.MISSING_UTR_5P:
+                    return True
+            return False
+
+        sl_prev = slg_prev['super_locus']
+        sl = slg['super_locus']
+        nested_msg = 'nested super loci: {} and {}'
+        overlap_msg = 'overlapping, non nested super loci: {} and {}'
+        overlap_e_msg = 'overlapping, non nested super loci with error: {} and {}'
+        if self.is_plus_strand and sl_prev.end > sl.start:
+            if sl_prev.end > sl.end:
+                logging.info('+ ' + nested_msg.format(sl_prev.given_name, sl.given_name))
+                return 'nested'
+            else:
+                if _have_overlap_errors(slg_prev, slg):
+                    logging.info('+ ' + overlap_e_msg.format(sl_prev.given_name, sl.given_name))
+                    return 'overlap_error'
+                else:
+                    logging.info('+ ' + overlap_msg.format(sl_prev.given_name, sl.given_name))
+                    return 'overlap'
+        elif not self.is_plus_strand and sl_prev.end < sl.start:
+            if sl_prev.end < sl.end:
+                logging.info('- ' + nested_msg.format(sl_prev.given_name, sl.given_name))
+                return 'nested'
+            else:
+                if _have_overlap_errors(slg_prev, slg):
+                    logging.info('- ' + overlap_e_msg.format(sl_prev.given_name, sl.given_name))
+                    return 'overlap_error'
+                else:
+                    logging.info('- ' + overlap_msg.format(sl_prev.given_name, sl.given_name))
+                    return 'overlap'
+        return 'normal'
+
     def _3p_cds_start(self, transcript):
         """returns the start of the 3p most cds feature"""
         cds = transcript['cds']
@@ -431,6 +480,10 @@ class GFFErrorHandling(object):
                     if cds.phase_5p != 0:
                         self._add_overlapping_error(i, cds, '5p', types.WRONG_PHASE_5P)
 
+                    # the case of overlapping sl
+                    if i > 0:
+                        self._check_sl_neighbor_status(self.groups[i - 1], group)
+
                     if introns:
                         # the case of wrong 3p phase
                         len_3p_exon = abs(cds.end - self._3p_cds_start(transcript))
@@ -464,35 +517,48 @@ class GFFErrorHandling(object):
                         for intron in faulty_introns:
                             introns.remove(intron)
 
+        # remove all errors that are in the wrong order (caused by overlapping super loci)
+        # these can only be removed now as they were needed for further processing
+        self._remove_backwards_errors()
+
+    def _remove_backwards_errors(self):
+        def is_backwards(e):
+            return ((self.is_plus_strand and e.end < e.start)
+                    or (not self.is_plus_strand and e.end > e.start))
+
+        for group in self.groups:
+            full_len = len(group['errors'])
+            group['errors'] = [e for e in group['errors'] if not is_backwards(e)]
+            n_removed = full_len - len(group['errors'])
+            if n_removed > 0:
+                msg = ('removed {count} backwards error(s) from overlapping super loci: '
+                       'seqid: {seqid}, {geneid}').format(
+                           count=n_removed,
+                           seqid=self.coord.seqid,
+                           geneid=group['super_locus'].given_name)
+                logging.info(msg)
+
     def _add_error(self, i, start, end, is_plus_strand, error_type):
+        error_i = FeatureImporter(self.coord,
+                                  is_plus_strand,
+                                  error_type,
+                                  start=start,
+                                  end=end,
+                                  controller=self.controller)
+        self.errors.append(error_i)
+        # error msg
         if is_plus_strand:
             strand_str = 'plus'
         else:
             strand_str = 'minus'
-        if (is_plus_strand and end < start) or (not is_plus_strand and end > start):
-            msg = ('skipping error in nested gene: seqid: {seqid}, {geneid}, on {strand} strand, '
-                   'with type: {type}').format(seqid=self.coord.seqid,
-                                               geneid=self.groups[i]['super_locus'].given_name,
-                                               strand=strand_str,
-                                               type=error_type)
-            logging.warning(msg)
-        else:
-            error_i = FeatureImporter(self.coord,
-                                      is_plus_strand,
-                                      error_type,
-                                      start=start,
-                                      end=end,
-                                      controller=self.controller)
-            self.errors.append(error_i)
-            # error msg
-            msg = ('marked as erroneous: seqid: {seqid}, {start}--{end}:{geneid}, on {strand} strand, '
-                   'with type: {type}').format(seqid=self.coord.seqid,
-                                               start=start,
-                                               end=end,
-                                               geneid=self.groups[i]['super_locus'].given_name,
-                                               strand=strand_str,
-                                               type=error_type)
-            logging.warning(msg)
+        msg = ('marked as erroneous: seqid: {seqid}, {start}--{end}:{geneid}, on {strand} strand, '
+               'with type: {type}').format(seqid=self.coord.seqid,
+                                           start=start,
+                                           end=end,
+                                           geneid=self.groups[i]['super_locus'].given_name,
+                                           strand=strand_str,
+                                           type=error_type)
+        logging.warning(msg)
 
     def _add_overlapping_error(self, i, handler, direction, error_type):
         """Constructs an error features that overlaps halfway to the next super locus

@@ -52,6 +52,7 @@ def main(args):
     paths = PathFinder(args.db_path, args.basedir, fasta=args.fasta, gff=args.gff3)
     logging.basicConfig(filename=paths.problems_out,
                         filemode='w',
+                        level=logging.INFO,
                         format='%(asctime)s - %(message)s',
                         datefmt='%d-%b-%y %H:%M:%S')
     # log to file and stderr simultaneously
