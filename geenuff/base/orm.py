@@ -11,7 +11,7 @@ Base = declarative_base()
 class Genome(Base):
     __tablename__ = 'genome'
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True)  # do not index, too few rows
     species = Column(String)
     accession = Column(String)
     version = Column(String)
@@ -28,7 +28,7 @@ class Genome(Base):
 class Coordinate(Base):
     __tablename__ = 'coordinate'
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, index=True)
     sequence = Column(String)
     start = Column(Integer, nullable=False)
     end = Column(Integer, nullable=False)
@@ -56,7 +56,7 @@ class SuperLocus(Base):
     # AKA this if you have to go searching through a graph for parents/children, at least said graph will have
     # a max size defined at SuperLoci
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, index=True)
     given_name = Column(String)
     aliases = Column(String)
     type = Column(Enum(types.SuperLocusAll))
@@ -84,7 +84,7 @@ association_protein_to_feature = Table('association_protein_to_feature', Base.me
 class Transcript(Base):
     __tablename__ = 'transcript'
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, index=True)
     given_name = Column(String)
 
     type = Column(Enum(types.TranscriptLevelAll))
@@ -104,7 +104,7 @@ class Transcript(Base):
 class TranscriptPiece(Base):
     __tablename__ = 'transcript_piece'
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, index=True)
     given_name = Column(String)
 
     position = Column(Integer, nullable=False)
@@ -127,7 +127,7 @@ class TranscriptPiece(Base):
 class Protein(Base):
     __tablename__ = 'protein'
 
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, index=True)
     given_name = Column(String)
     # type can only be 'protein' so far as I know..., so skipping
     super_locus_id = Column(Integer, ForeignKey('super_locus.id'), nullable=False)
@@ -145,7 +145,7 @@ class Protein(Base):
 class Feature(Base):
     __tablename__ = 'feature'
     # basic attributes
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key=True, index=True)
     given_name = Column(String)
     type = Column(Enum(types.OnSequence))
 
