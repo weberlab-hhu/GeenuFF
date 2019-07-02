@@ -391,13 +391,15 @@ class GFFErrorHandling(object):
         Returns one of the following values depending on the relationship:
 
         'normal': no overlap in any way
-        'nested': sl is a fully nested gene inside sl_prev (no further disambiguation done)
         'overlap': the sl overlap but without errors on both sides
         'overlap_error_3p': the sl 3p of the overlap has an utr error
         'overlap_error_5p': the sl 5p of the overlap has an utr error
         'overlap_error_both': both sl have an utr error at the overlap
+        'nested': sl is a fully nested gene inside sl_prev
+        'nested_error_3p': the nested gene has an 3p utr error
+        'nested_error_5p': the nested gene has an 5p utr error
+        'nested_error_both': the nested gene has utr errors on both ends
         """
-
         def _overlap_error_status(slg_prev, slg):
             status = 'overlap'
             for error in slg_prev['errors']:
@@ -414,26 +416,39 @@ class GFFErrorHandling(object):
                     break
             return status
 
+        def _nested_error_status(slg):
+            error_types = [e.feature_type for e in slg['errors']]
+            if types.MISSING_UTR_3P in error_types and types.MISSING_UTR_5P in error_types:
+                return 'nested_error_both'
+            if types.MISSING_UTR_3P in error_types:
+                return 'nested_error_3p'
+            if types.MISSING_UTR_5P in error_types:
+                return 'nested_error_5p'
+            return 'nested'
+
         sl_prev = slg_prev['super_locus']
         sl = slg['super_locus']
-        nested_msg = 'nested super loci: {} and {}'
-        overlap_msg = ', non nested super loci: {} and {}'
+        overlap_msg = 'overlapping super loci: {} and {} (not nested), type: '
         overlap_msg_format = overlap_msg.format(sl_prev.given_name, sl.given_name)
+        nested_msg = 'nested super loci: {} inside {}, type: '
+        nested_msg_format = nested_msg.format(sl.given_name, sl_prev.given_name)
         if self.is_plus_strand and sl_prev.end > sl.start:
             if sl_prev.end > sl.end:
-                logging.info(nested_msg.format(sl_prev.given_name, sl.given_name))
-                return 'nested'
+                nested_status = _nested_error_status(slg)
+                logging.info(nested_msg_format + nested_status)
+                return nested_status
             else:
                 overlap_status = _overlap_error_status(slg_prev, slg)
-                logging.info(overlap_status + overlap_msg_format)
+                logging.info(overlap_msg_format + overlap_status)
                 return overlap_status
         elif not self.is_plus_strand and sl_prev.end < sl.start:
             if sl_prev.end < sl.end:
-                logging.info(nested_msg.format(sl_prev.given_name, sl.given_name))
-                return 'nested'
+                nested_status = _nested_error_status(slg)
+                logging.info(nested_msg_format + nested_status)
+                return nested_status
             else:
                 overlap_status = _overlap_error_status(slg_prev, slg)
-                logging.info(overlap_status + overlap_msg_format)
+                logging.info(overlap_msg_format + overlap_status)
                 return overlap_status
         return 'normal'
 
@@ -492,7 +507,17 @@ class GFFErrorHandling(object):
                         elif status == 'overlap_error_3p' or status == 'overlap_error_both':
                             self._add_overlapping_error(i, group['super_locus'], '5p',
                                                         types.SL_OVERLAP_ERROR)
-
+                        elif status.startswith('nested_error'):
+                            # remove all missing 3p/5p errors as they have to be wrong and are
+                            # not needed further down the road
+                            # we could try to add error halfway to the intron border but
+                            # 1. it is not guaranteed that there is such an intron
+                            # 2. there could be multiple ones in different transcripts
+                            # due to that complexity we are content with adding no errors
+                            group['errors'] = [e for e in group['errors']
+                                               if e.feature_type not in [
+                                                   types.MISSING_UTR_3P, types.MISSING_UTR_5P
+                                               ]]
                     if introns:
                         # the case of wrong 3p phase
                         len_3p_exon = abs(cds.end - self._3p_cds_start(transcript))
