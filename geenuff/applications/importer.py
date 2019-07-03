@@ -612,7 +612,7 @@ class GFFErrorHandling(object):
                 if self.is_plus_strand:
                     anchor_5p = 0
                 else:
-                    anchor_5p = sl.coord.end
+                    anchor_5p = sl.coord.length
 
         # set correct downstream error end point
         if direction in ['3p', 'whole']:
@@ -621,7 +621,7 @@ class GFFErrorHandling(object):
                 anchor_3p = self._halfway_mark(sl, sl_next)
             else:
                 if self.is_plus_strand:
-                    anchor_3p = sl.coord.end
+                    anchor_3p = sl.coord.length
                 else:
                     anchor_3p = -1
 
@@ -834,8 +834,7 @@ class FastaImporter(object):
             seqid = fasta_header.split(id_delim)[0]
             # todo, parallelize sequence & annotation format, then import directly from ~Slice
             coord = orm.Coordinate(sequence=seq,
-                                   start=0,
-                                   end=len(seq),
+                                   length=len(seq),
                                    seqid=seqid,
                                    sha1=helpers.sequence_hash(seq),
                                    genome=self.genome)

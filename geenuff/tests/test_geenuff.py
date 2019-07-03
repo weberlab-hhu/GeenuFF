@@ -112,7 +112,7 @@ def test_annogenome2coordinate_relation():
     """
     sess = mk_memory_session()
     g = Genome(species='Athaliana', version='1.2', acquired_from='Phytozome12')
-    coord = Coordinate(start=0, end=30, seqid='abc', genome=g)
+    coord = Coordinate(seqid='abc', genome=g)
     assert g is coord.genome
     # actually put everything in db
     sess.add(coord)
@@ -142,25 +142,20 @@ def test_coordinate_constraints():
     g = Genome()
 
     # should be ok
-    coors = Coordinate(start=0, end=30, seqid='abc', genome=g)
-    coors2 = Coordinate(start=0, end=1, seqid='abcd', genome=g)
+    coors = Coordinate(length=30, seqid='abc', genome=g)
+    coors2 = Coordinate(length=400, seqid='abcd', genome=g)
     sess.add_all([coors, coors2])
     sess.commit()
 
     # start/end constraints
-    coors_bad1 = Coordinate(start=-12, end=30, seqid='abc', genome=g)
-    coors_bad2 = Coordinate(start=100, end=30, seqid='abcd', genome=g)
-    coors_bad3 = Coordinate(start=1, end=30, genome=g)
+    coors_bad1 = Coordinate(length=-12, seqid='abc', genome=g)
+    coors_bad2 = Coordinate(genome=g)
     with pytest.raises(IntegrityError):
         sess.add(coors_bad1)  # start below 1
         sess.commit()
     sess.rollback()
     with pytest.raises(IntegrityError):
-        sess.add(coors_bad2)  # end below start
-        sess.commit()
-    sess.rollback()
-    with pytest.raises(IntegrityError):
-        sess.add(coors_bad3)
+        sess.add(coors_bad2)  # no seqid
         sess.commit()
 
 
@@ -168,15 +163,15 @@ def test_coordinate_insert():
     """Test what happens when we insert two coordinates"""
     sess = mk_memory_session()
     g = Genome()
-    coords = Coordinate(start=1, end=30, seqid='abc', genome=g)
-    coords2 = Coordinate(start=11, end=330, seqid='def', genome=g)
+    coords = Coordinate(length=10, seqid='abc', genome=g)
+    coords2 = Coordinate(length=11, seqid='def', genome=g)
     sl = SuperLocus()
     f0 = Feature(coordinate=coords)
     f1 = Feature(coordinate=coords2)
     # should be ok
     sess.add_all([g, sl, coords, coords2, f0, f1])
-    assert f0.coordinate.start == 1
-    assert f1.coordinate.end == 330
+    assert f0.coordinate.length == 10
+    assert f1.coordinate.length == 11
 
 
 def test_many2many_with_features():
@@ -205,7 +200,7 @@ def test_feature_has_its_things():
     sess = mk_memory_session()
     # test feature with nothing much set
     g = Genome()
-    c = Coordinate(start=1, end=30, seqid='abc', genome=g)
+    c = Coordinate(length=30, seqid='abc', genome=g)
     f = Feature(coordinate=c,
                 start=1,
                 end=30,
@@ -288,8 +283,8 @@ def test_partially_remove_coordinate():
     sess = mk_memory_session()
     g = Genome()
     place_holder = Genome()
-    coord0 = Coordinate(start=1, end=30, seqid='abc', genome=g)
-    coord1 = Coordinate(start=11, end=330, seqid='def', genome=g)
+    coord0 = Coordinate(length=30, seqid='abc', genome=g)
+    coord1 = Coordinate(length=330, seqid='def', genome=g)
     sess.add_all([g, coord0, coord1])
     sess.commit()
     assert len(g.coordinates) == 2
@@ -337,7 +332,7 @@ def test_order_pieces():
     """
     sess = mk_memory_session()
     g = Genome(species='Athaliana', version='1.2', acquired_from='Phytozome12')
-    coor = Coordinate(seqid='a', start=1, end=1000, genome=g)
+    coor = Coordinate(seqid='a', length=1000, genome=g)
     sess.add_all([g, coor])
     sess.commit()
     # setup one transcript handler with pieces
@@ -370,17 +365,14 @@ def test_fasta_import():
     coords = controller.session.query(Coordinate).all()
     assert len(coords) == 5
     assert coords[0].seqid == '1'
-    assert coords[0].start == 0
-    assert coords[0].end == 405
+    assert coords[0].length == 405
     assert coords[0].sha1 == 'dc6f3ba2b0c08f7d08053837b810f86cbaa06f38'
     assert coords[0].sequence == 'N' * 405
     assert coords[1].seqid == 'abc'
-    assert coords[1].start == 0
-    assert coords[1].end == 808
+    assert coords[1].length == 808
     assert coords[1].sequence == 'AAGGCCTT' * 101
     assert coords[2].seqid == 'test123'
-    assert coords[2].start == 0
-    assert coords[2].end == 100
+    assert coords[2].length == 100
     assert coords[2].sequence == 'A' * 100
 
 

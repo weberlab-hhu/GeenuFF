@@ -30,8 +30,7 @@ class Coordinate(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     sequence = Column(String)
-    start = Column(Integer, nullable=False)
-    end = Column(Integer, nullable=False)
+    length = Column(Integer)
     seqid = Column(String, nullable=False)
     sha1 = Column(String)
     genome_id = Column(Integer, ForeignKey('genome.id'), nullable=False)
@@ -41,12 +40,11 @@ class Coordinate(Base):
 
     __table_args__ = (
         UniqueConstraint('genome_id', 'seqid', name='unique_coords_per_genome'),
-        CheckConstraint(start >= 0, name='check_start_1plus'),
-        CheckConstraint(end > start, name='check_end_gr_start'),
+        CheckConstraint('length >= 0', name='check_positive_length'),
     )
 
     def __repr__(self):
-        return '<Coordinate {}, {}:{}--{}>'.format(self.id, self.seqid, self.start, self.end)
+        return '<Coordinate {}, seqid: {}, len: {}>'.format(self.id, self.seqid, self.length)
 
 
 class SuperLocus(Base):
