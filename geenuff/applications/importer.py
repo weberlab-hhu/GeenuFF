@@ -650,11 +650,11 @@ class GFFErrorHandling(object):
                 if error_5p == error_3p == 0:
                     out = True
             elif direction == '3p':
-                if error_5p == error_3p == coordinate.end:
+                if error_5p == error_3p == coordinate.length:
                     out = True
         else:
             if direction == '5p':
-                if error_5p == error_3p == coordinate.end - 1:
+                if error_5p == error_3p == coordinate.length - 1:
                     out = True
             elif direction == '3p':
                 if error_5p == error_3p == -1:
