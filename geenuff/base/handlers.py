@@ -1,5 +1,4 @@
 import copy
-from types import GeneratorType
 
 from . import orm
 from . import types

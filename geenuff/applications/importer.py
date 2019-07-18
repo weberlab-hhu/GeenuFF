@@ -10,7 +10,7 @@ from .. import orm
 from .. import types
 from .. import helpers
 from ..base.helpers import (get_strand_direction, get_geenuff_start_end, has_start_codon,
-                            has_stop_codon)
+                            has_stop_codon, in_enum_values)
 
 
 # core queue prep
@@ -118,7 +118,7 @@ class OrganizedGeenuffImporterGroup(object):
             # create transcript feature handler
             tf_i = FeatureImporter(self.coord,
                                    is_plus_strand,
-                                   types.TRANSCRIPT_FEATURE,
+                                   types.GEENUFF_TRANSCRIPT,
                                    given_name=t_id,
                                    score=score,
                                    source=source,
@@ -146,7 +146,7 @@ class OrganizedGeenuffImporterGroup(object):
                     phase_3p = t_entries['cds'][0].phase
                 cds_i = FeatureImporter(self.coord,
                                         is_plus_strand,
-                                        types.CODING,
+                                        types.GEENUFF_CDS,
                                         phase_5p=phase_5p,
                                         phase_3p=phase_3p,
                                         score=score,
@@ -174,7 +174,7 @@ class OrganizedGeenuffImporterGroup(object):
                     if gff_start - gff_end != 1:
                         intron_i = FeatureImporter(self.coord,
                                                    is_plus_strand,
-                                                   types.INTRON,
+                                                   types.GEENUFF_INTRON,
                                                    score=score,
                                                    source=source,
                                                    controller=self.controller)
@@ -254,21 +254,16 @@ class OrganizedGFFEntryGroup(object):
     def add_gff_entry_group(self, entries):
         latest_transcript = None
         for entry in list(entries):
-            if helpers.in_enum_values(entry.type, types.SuperLocusAll):
+            if in_enum_values(entry.type, types.SuperLocusAll):
                 assert 'super_locus' not in self.entries
                 self.entries['super_locus'] = entry
-            elif helpers.in_enum_values(entry.type, types.TranscriptLevelAll):
+            elif in_enum_values(entry.type, types.TranscriptLevelAll):
                 self.entries['transcripts'][entry] = {'exons': [], 'cds': []}
                 latest_transcript = entry
             elif entry.type == types.EXON:
                 self.entries['transcripts'][latest_transcript]['exons'].append(entry)
             elif entry.type == types.CDS:
                 self.entries['transcripts'][latest_transcript]['cds'].append(entry)
-            elif entry.type in [types.FIVE_PRIME_UTR, types.THREE_PRIME_UTR]:
-                # ignore these features but do not throw error
-                pass
-            else:
-                raise ValueError("problem handling entry of type {}".format(entry.type))
 
         # set the coordinate
         self.coord = self.fasta_importer.gffid_to_coords[self.entries['super_locus'].seqid]
@@ -327,14 +322,14 @@ class OrganizedGFFEntries(object):
         self.organized_entries[seqid].append(gene_group)
 
     def _useful_gff_entries(self):
-        skipable = [x.value for x in types.IgnorableFeatures]
+        skipable = [x.value for x in types.IgnorableGFFFeatures]
         reader = self._gff_gen()
         for entry in reader:
             if entry.type not in skipable:
                 yield entry
 
     def _gff_gen(self):
-        known = [x.value for x in types.AllKnown]
+        known = [x.value for x in types.AllKnownGFFFeatures]
         reader = gffhelper.read_gff_file(self.gff_file)
         for entry in reader:
             if entry.type not in known:

@@ -36,15 +36,6 @@ def setup_data_handler(handler_type, data_type, **kwargs):
     return data, handler
 
 
-def cleaned_commited_features(sess):
-    all_features = sess.query(Feature).all()
-    allowed_types = [
-        types.TRANSCRIPT_FEATURE, types.CODING, types.INTRON, types.TRANS_INTRON, types.ERROR
-    ]
-    clean_datas = [x for x in all_features if x.type.value in allowed_types]
-    return clean_datas
-
-
 # Do not implement as __eq__ to not change __hash__ behavior
 def matching_super_loci(s1, s2):
     if not isinstance(s1, s2.__class__):
@@ -585,7 +576,7 @@ def test_case_1():
     assert orm_object_in_list(protein, sl_objects)
 
     feature = Feature(given_name='x1',
-                      type=types.OnSequence.transcript_feature,
+                      type=types.GeenuffFeature.geenuff_transcript,
                       start=0,
                       end=120,
                       start_is_biological_start=True,
@@ -595,7 +586,7 @@ def test_case_1():
                       coordinate=coords[0])
     assert orm_object_in_list(feature, sl_objects)
     feature = Feature(given_name=None,
-                      type=types.OnSequence.coding,
+                      type=types.GeenuffFeature.geenuff_cds,
                       start=10,
                       end=120,
                       start_is_biological_start=True,
@@ -605,7 +596,7 @@ def test_case_1():
                       coordinate=coords[0])
     assert orm_object_in_list(feature, sl_objects)
     feature = Feature(given_name=None,
-                      type=types.OnSequence.intron,
+                      type=types.GeenuffFeature.geenuff_intron,
                       start=21,
                       end=110,
                       start_is_biological_start=True,
@@ -623,7 +614,7 @@ def test_case_1():
     assert orm_object_in_list(protein, sl_objects)
 
     feature = Feature(given_name='y1',
-                      type=types.OnSequence.transcript_feature,
+                      type=types.GeenuffFeature.geenuff_transcript,
                       start=0,
                       end=400,
                       start_is_biological_start=True,
@@ -633,7 +624,7 @@ def test_case_1():
                       coordinate=coords[0])
     assert orm_object_in_list(feature, sl_objects)
     feature = Feature(given_name=None,
-                      type=types.OnSequence.coding,
+                      type=types.GeenuffFeature.geenuff_cds,
                       start=10,
                       end=301,
                       start_is_biological_start=True,
@@ -643,7 +634,7 @@ def test_case_1():
                       coordinate=coords[0])
     assert orm_object_in_list(feature, sl_objects)
     feature = Feature(given_name=None,
-                      type=types.OnSequence.intron,
+                      type=types.GeenuffFeature.geenuff_intron,
                       start=21,
                       end=110,
                       start_is_biological_start=True,
@@ -653,7 +644,7 @@ def test_case_1():
                       coordinate=coords[0])
     assert orm_object_in_list(feature, sl_objects)
     feature = Feature(given_name=None,
-                      type=types.OnSequence.intron,
+                      type=types.GeenuffFeature.geenuff_intron,
                       start=120,
                       end=200,
                       start_is_biological_start=True,
@@ -671,7 +662,7 @@ def test_case_1():
     assert orm_object_in_list(protein, sl_objects)
 
     feature = Feature(given_name='z1',
-                      type=types.OnSequence.transcript_feature,
+                      type=types.GeenuffFeature.geenuff_transcript,
                       start=110,
                       end=120,
                       start_is_biological_start=True,
@@ -681,7 +672,7 @@ def test_case_1():
                       coordinate=coords[0])
     assert orm_object_in_list(feature, sl_objects)
     feature = Feature(given_name=None,
-                      type=types.OnSequence.coding,
+                      type=types.GeenuffFeature.geenuff_cds,
                       start=110,
                       end=120,
                       start_is_biological_start=False,
@@ -721,7 +712,7 @@ def test_case_8():
     assert orm_object_in_list(protein, sl_objects)
 
     feature = Feature(given_name='x8',
-                      type=types.OnSequence.transcript_feature,
+                      type=types.GeenuffFeature.geenuff_transcript,
                       start=1749,
                       end=1548,
                       start_is_biological_start=True,
@@ -731,7 +722,7 @@ def test_case_8():
                       coordinate=coords[1])
     assert orm_object_in_list(feature, sl_objects)
     feature = Feature(given_name=None,
-                      type=types.OnSequence.coding,
+                      type=types.GeenuffFeature.geenuff_cds,
                       start=1724,
                       end=1573,
                       start_is_biological_start=False,
@@ -741,7 +732,7 @@ def test_case_8():
                       coordinate=coords[1])
     assert orm_object_in_list(feature, sl_objects)
     feature = Feature(given_name=None,
-                      type=types.OnSequence.intron,
+                      type=types.GeenuffFeature.geenuff_intron,
                       start=1718,
                       end=1649,
                       start_is_biological_start=True,
@@ -759,7 +750,7 @@ def test_case_8():
     assert orm_object_in_list(protein, sl_objects)
 
     feature = Feature(given_name='y8',
-                      type=types.OnSequence.transcript_feature,
+                      type=types.GeenuffFeature.geenuff_transcript,
                       start=1749,
                       end=1548,
                       start_is_biological_start=True,
@@ -769,7 +760,7 @@ def test_case_8():
                       coordinate=coords[1])
     assert orm_object_in_list(feature, sl_objects)
     feature = Feature(given_name=None,
-                      type=types.OnSequence.coding,
+                      type=types.GeenuffFeature.geenuff_cds,
                       start=1729,
                       end=1699,
                       start_is_biological_start=True,
@@ -779,7 +770,7 @@ def test_case_8():
                       coordinate=coords[1])
     assert orm_object_in_list(feature, sl_objects)
     feature = Feature(given_name=None,
-                      type=types.OnSequence.intron,
+                      type=types.GeenuffFeature.geenuff_intron,
                       start=1678,
                       end=1599,
                       start_is_biological_start=True,
@@ -821,23 +812,16 @@ def test_gff_grouper():
 
 # section: types
 def test_enum_non_inheritance():
-    allknown = [x.name for x in list(types.AllKnown)]
-    allnice = [x.name for x in list(types.AllKeepable)]
+    allknowngff = [x.name for x in list(types.AllKnownGFFFeatures)]
     # check that some random bits made it in to all
-    assert 'missing_utr_3p' in allknown
-    assert 'region' in allknown
-
-    # check that some annoying bits are not in nice set
-    for not_nice in ['transcript', 'primary_transcript', 'exon', 'five_prime_UTR', 'CDS']:
-        assert not_nice not in allnice
-        assert not_nice in allknown
-
+    assert 'region' in allknowngff
+    assert 'exon' in allknowngff
     # check nothing is there twice
-    assert len(set(allknown)) == len(allknown)
+    assert len(set(allknowngff)) == len(allknowngff)
 
 
 def test_enums_name_val_match():
-    for x in types.AllKnown:
+    for x in types.AllKnownGFFFeatures:
         assert x.name == x.value
 
 

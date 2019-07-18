@@ -145,7 +145,7 @@ class Feature(Base):
     # basic attributes
     id = Column(Integer, primary_key=True, index=True)
     given_name = Column(String)
-    type = Column(Enum(types.OnSequence))
+    type = Column(Enum(types.GeenuffFeature))
 
     start = Column(Integer, nullable=False)
     start_is_biological_start = Column(Boolean, nullable=False)
