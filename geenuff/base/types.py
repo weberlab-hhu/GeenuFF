@@ -53,25 +53,30 @@ TranscriptLevelInput = make_enum('TranscriptLevelInput', TRANSCRIPT, PRIMARY_TRA
 TranscriptLevelAll = join_to_enum('TranscriptLevelAll', TranscriptLevelNice, TranscriptLevelInput)
 
 # other features
-#TRANSCRIPTION_START_SITE = 'TSS'  # transcription_start_site
-#TRANSCRIPTION_TERMINATION_SITE = 'TTS'  # transcription_termination_site
 EXON = 'exon'
 FIVE_PRIME_UTR = 'five_prime_UTR'
 THREE_PRIME_UTR = 'three_prime_UTR'
 CDS = 'CDS'
-#START_CODON = 'start_codon'
-#STOP_CODON = 'stop_codon'
-#INTRON = 'intron'
 REGION = 'region'
 CHROMOSOME = 'chromosome'
 SUPERCONTIG = 'supercontig'
 MATCH = 'match'
 CDNA_MATCH = 'cDNA_match'
+# ignorable from Augustus
+START_CODON = 'start_codon'
+STOP_CODON = 'stop_codon'
+INTRON = 'intron'
+TRANSCRIPTION_START_SITE = 'transcription_start_site'  # transcription_start_site
+TRANSCRIPTION_TERMINATION_SITE = 'transcription_end_site'  # transcription_termination_site
+FIVE_PRIME_UTR_LOWER = 'five_prime_utr'
+THREE_PRIME_UTR_LOWER = 'three_prime_utr'
 
 IgnorableGFFFeatures = make_enum('IgnorableGFFFeatures', REGION, CHROMOSOME, SUPERCONTIG, MATCH,
-                                 CDNA_MATCH, FIVE_PRIME_UTR, THREE_PRIME_UTR)
+                                 CDNA_MATCH, FIVE_PRIME_UTR, THREE_PRIME_UTR, START_CODON, STOP_CODON, INTRON,
+                                 TRANSCRIPTION_START_SITE, TRANSCRIPTION_TERMINATION_SITE, FIVE_PRIME_UTR_LOWER,
+                                 THREE_PRIME_UTR_LOWER)
 UsefulGFFSequenceFeatures = make_enum('UsefulGFFSequenceFeatures', EXON, CDS)
-UsefulGFFFeatures = join_to_enum('KeepableGFFFeatures', SuperLocusAll, TranscriptLevelNice,
+UsefulGFFFeatures = join_to_enum('KeepableGFFFeatures', SuperLocusAll, TranscriptLevelAll,
                                  UsefulGFFSequenceFeatures)
 AllKnownGFFFeatures = join_to_enum('AllKnownGFFFeatures', IgnorableGFFFeatures, UsefulGFFFeatures)
 
