@@ -76,7 +76,7 @@ IgnorableGFFFeatures = make_enum('IgnorableGFFFeatures', REGION, CHROMOSOME, SUP
                                  TRANSCRIPTION_START_SITE, TRANSCRIPTION_TERMINATION_SITE, FIVE_PRIME_UTR_LOWER,
                                  THREE_PRIME_UTR_LOWER)
 UsefulGFFSequenceFeatures = make_enum('UsefulGFFSequenceFeatures', EXON, CDS)
-UsefulGFFFeatures = join_to_enum('KeepableGFFFeatures', SuperLocusAll, TranscriptLevelAll,
+UsefulGFFFeatures = join_to_enum('UsefulGFFFeatures', SuperLocusAll, TranscriptLevelAll,
                                  UsefulGFFSequenceFeatures)
 AllKnownGFFFeatures = join_to_enum('AllKnownGFFFeatures', IgnorableGFFFeatures, UsefulGFFFeatures)
 
