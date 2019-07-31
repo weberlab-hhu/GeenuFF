@@ -68,6 +68,8 @@ STOP_CODON = 'stop_codon'
 INTRON = 'intron'
 TRANSCRIPTION_START_SITE = 'transcription_start_site'  # transcription_start_site
 TRANSCRIPTION_TERMINATION_SITE = 'transcription_end_site'  # transcription_termination_site
+TRANSCRIPTION_START_SITE2 = 'tss'  # transcription_start_site (older Augustus version)
+TRANSCRIPTION_TERMINATION_SITE2 = 'tts'  # transcription_termination_site
 FIVE_PRIME_UTR_LOWER = 'five_prime_utr'
 THREE_PRIME_UTR_LOWER = 'three_prime_utr'
 
