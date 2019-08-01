@@ -11,7 +11,7 @@ from geenuff.base import types as gtypes
 class FastaExportController(ExportController):
     def __init__(self, db_path_in, with_features_only=True):
         super().__init__(db_path_in, with_features_only)
-        print(self.session)
+        print(self.session, file=sys.stderr)
         self.export_seqs = []
 
     def get_seq(self, export_sequence):
@@ -28,7 +28,7 @@ class FastaExportController(ExportController):
         out = '>' + export_sequence.seqid
         seq = self.get_seq(export_sequence)
         for subseq in chunk_str(seq, 80):
-            out += '\n' + subseq
+            out += '\n' + ''.join(subseq)
         return out
 
     @staticmethod
@@ -43,11 +43,16 @@ class FastaExportController(ExportController):
 
     def write_fa(self, fa_out):
         # again, simple and probably horribly inefficient
-        with open(fa_out, 'w') as f:
-            f.write(self.fmt_seq(self.export_seqs[0]))
-            for export_seq in self.export_seqs[1:]:
-                f.write('\n')
-                f.write(self.fmt_seq(export_seq))
+        if fa_out is None:
+            handle_out = sys.stdout
+        else:
+            handle_out = open(fa_out, "w")
+        handle_out.write(self.fmt_seq(self.export_seqs[0]))
+        for export_seq in self.export_seqs[1:]:
+            handle_out.write('\n')
+            handle_out.write(self.fmt_seq(export_seq))
+        handle_out.close()
+
 
     def prep_intron_exports(self):
         # which genomes to export
@@ -57,9 +62,13 @@ class FastaExportController(ExportController):
             .filter(Feature.type == gtypes.GEENUFF_INTRON)\
             .filter(Feature.coordinate_id.in_(coord_ids))
         for intron in introns:
+            if intron.given_name is not None:
+                seqid = intron.given_name
+            else:
+                seqid = "intron_{0:06d}".format(intron.id)
             self.export_seqs.append(
                 mk_one_fragment_seq(
-                    intron.given_name,
+                    seqid,
                     intron.coordinate_id,
                     intron.start,
                     intron.end,
@@ -69,6 +78,7 @@ class FastaExportController(ExportController):
 
 
 def mk_one_fragment_seq(seqid, coordinate_id, start, end, is_plus_strand):
+    assert seqid is not None, "{} {} {} {} {}".format(seqid, coordinate_id, start, end, is_plus_strand)
     export_seq = ExportSeq(seqid=seqid)
     fragment = ExportSeqFragment(start=start,
                                  end=end,
@@ -115,7 +125,7 @@ if __name__ == "__main__":
                         help='Path to the Geenuff SQLite input database.')
     parser.add_argument('-m', '--mode', type=str, required=True,
                         help="which type of sequence to export, one of {}".format(implemented_modes))
-    parser.add_argument('-o', '--out', type=str, default=sys.stdout,
+    parser.add_argument('-o', '--out', type=str,
                         help="output fasta file path, (default is stdout)")
     parser.add_argument('--genomes', type=str, default='',
                         help='Comma separated list of species names to be exported. '
