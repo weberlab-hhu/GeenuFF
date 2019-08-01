@@ -76,7 +76,7 @@ THREE_PRIME_UTR_LOWER = 'three_prime_utr'
 IgnorableGFFFeatures = make_enum('IgnorableGFFFeatures', REGION, CHROMOSOME, SUPERCONTIG, MATCH,
                                  CDNA_MATCH, FIVE_PRIME_UTR, THREE_PRIME_UTR, START_CODON, STOP_CODON, INTRON,
                                  TRANSCRIPTION_START_SITE, TRANSCRIPTION_TERMINATION_SITE, FIVE_PRIME_UTR_LOWER,
-                                 THREE_PRIME_UTR_LOWER)
+                                 THREE_PRIME_UTR_LOWER, TRANSCRIPTION_START_SITE2, TRANSCRIPTION_TERMINATION_SITE2)
 UsefulGFFSequenceFeatures = make_enum('UsefulGFFSequenceFeatures', EXON, CDS)
 UsefulGFFFeatures = join_to_enum('UsefulGFFFeatures', SuperLocusAll, TranscriptLevelAll,
                                  UsefulGFFSequenceFeatures)
