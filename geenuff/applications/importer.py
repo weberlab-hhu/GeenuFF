@@ -53,7 +53,7 @@ class InsertCounterHolder(object):
 
 
 class OrganizedGeenuffImporterGroup(object):
-    """Stores the handler objects for a super locus in an organized fassion.
+    """Stores the handler objects for a super locus in an organized fashion.
     The format is similar to the one of OrganizedGFFEntryGroup, but it stores objects
     according to the Geenuff way of saving genomic annotations. This format can then
     be checked for errors and changed accordingly before being inserted into the db.
@@ -693,18 +693,24 @@ class ImportController(object):
         if appending_to_db:
             InsertCounterHolder.sync_counters_with_db(self.session)
 
-    def make_genome(self, genome_args={}):
+    def make_genome(self, genome_args=None):
+        if genome_args is None:
+            genome_args = {}
         genome = orm.Genome(**genome_args)
         self.latest_fasta_importer = FastaImporter(genome)
         self.session.add(genome)
         self.session.commit()
 
-    def add_genome(self, fasta_path, gff_path, genome_args={}, clean_gff=True):
+    def add_genome(self, fasta_path, gff_path, genome_args=None, clean_gff=True):
+        if genome_args is None:
+            genome_args = {}
         self.clean_tmp_data()
         self.add_sequences(fasta_path, genome_args)
         self.add_gff(gff_path, clean=clean_gff)
 
-    def add_sequences(self, seq_path, genome_args={}):
+    def add_sequences(self, seq_path, genome_args=None):
+        if genome_args is None:
+            genome_args = {}
         if self.latest_genome is None:
             self.make_genome(genome_args)
 
