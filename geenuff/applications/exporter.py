@@ -12,13 +12,9 @@ from geenuff.base import types
 
 
 class ExportController(object):
-    def __init__(self, db_path_in, with_features_only=True):
+    def __init__(self, db_path_in):
         self.db_path_in = db_path_in
         self._mk_session()
-        if with_features_only:
-            self.coordinate_query = self._coords_with_feature_query()
-        else:
-            self.coordinate_query = self._all_coords_query()
 
     def _mk_session(self):
         self.engine = create_engine(full_db_path(self.db_path_in), echo=False)
@@ -38,15 +34,17 @@ class ExportController(object):
     def _all_coords_query(self):
         return self.session.query(Coordinate.id)
 
-    def _get_coords_by_genome(self, genomes, exclude):
-        coordinate_ids_of_interest = self.coordinate_query()
+    def _get_coords_by_genome(self, genomes, exclude, include_without_features=False):
+        if include_without_features:
+            coordinate_ids_of_interest = self._all_coords_query()
+        else:
+            coordinate_ids_of_interest = self._coords_with_feature_query()
         if genomes:
             print('Selecting the following genomes: {}'.format(genomes), file=sys.stderr)
             all_coord_ids = (self.session.query(Coordinate.id)
                              .join(Genome, Genome.id == Coordinate.genome_id)
                              .filter(Genome.species.in_(genomes))
-                             .filter(Coordinate.id.in_(coordinate_ids_of_interest))
-                             .all())
+                             .filter(Coordinate.id.in_(coordinate_ids_of_interest)))
         else:
             if exclude:
                 print('Selecting all genomes from {} except: {}'.format(self.db_path_in, exclude),
@@ -54,12 +52,11 @@ class ExportController(object):
                 all_coord_ids = (self.session.query(Coordinate.id)
                                  .join(Genome, Genome.id == Coordinate.genome_id)
                                  .filter(Genome.species.notin_(exclude))
-                                 .filter(Coordinate.id.in_(coordinate_ids_of_interest))
-                                 .all())
+                                 .filter(Coordinate.id.in_(coordinate_ids_of_interest)))
             else:
                 print('Selecting all genomes from {}'.format(self.db_path_in),
                       file=sys.stderr)
-                all_coord_ids = coordinate_ids_of_interest.all()
+                all_coord_ids = coordinate_ids_of_interest
 
         return all_coord_ids
 

@@ -3,14 +3,15 @@ import argparse
 import sys
 
 from geenuff.applications.exporter import ExportController
-from geenuff.base.orm import Coordinate, Feature
+from geenuff.base.orm import Coordinate, Feature, SuperLocus, Transcript, TranscriptPiece, \
+    association_transcript_piece_to_feature
 from geenuff.base.helpers import reverse_complement, chunk_str
 from geenuff.base import types as gtypes
 
 
 class FastaExportController(ExportController):
-    def __init__(self, db_path_in, with_features_only=True):
-        super().__init__(db_path_in, with_features_only)
+    def __init__(self, db_path_in):
+        super().__init__(db_path_in)
         print(self.session, file=sys.stderr)
         self.export_seqs = []
 
@@ -53,14 +54,13 @@ class FastaExportController(ExportController):
             handle_out.write(self.fmt_seq(export_seq))
         handle_out.close()
 
-
-    def prep_intron_exports(self):
+    def prep_intron_exports(self, genomes, exclude):
         # which genomes to export
-        coord_ids = self._coords_with_feature_query()
+        coord_ids = self._get_coords_by_genome(genomes, exclude)
         # introns from those genomes
         introns = self.session.query(Feature)\
             .filter(Feature.type == gtypes.GEENUFF_INTRON)\
-            .filter(Feature.coordinate_id.in_(coord_ids))
+            .filter(Feature.coordinate_id.in_(coord_ids)).all()
         for intron in introns:
             if intron.given_name is not None:
                 seqid = intron.given_name
@@ -75,6 +75,32 @@ class FastaExportController(ExportController):
                     intron.is_plus_strand
                 )
             )
+
+    def prep_intron_exports2(self, genomes, exclude):
+        # which genomes to export
+        coord_ids = self._get_coords_by_genome(genomes, exclude)
+        super_loci = self.session.query(SuperLocus).all()
+
+        for sl in super_loci:
+            pass
+
+    def get_super_loci_by_coords(self, coord_ids):
+        out = self.session.query(SuperLocus)\
+            .join(Transcript)\
+            .join(TranscriptPiece)\
+            .join(association_transcript_piece_to_feature)\
+            .join(Feature)\
+            .filter(Feature.coordinate_id._in(coord_ids))
+        return out
+
+    def coord_ids_from_sl(self, sl_id):
+        print(self.session.query(Transcript.super_locus_id).all(), '?', file=sys.stderr)
+        out = self.session.query(Coordinate)\
+            .join(Feature) \
+            .join(association_transcript_piece_to_feature)\
+            .join(TranscriptPiece)\
+            .join(Transcript).filter(Transcript.super_locus_id == sl_id).all()
+        return out
 
 
 def mk_one_fragment_seq(seqid, coordinate_id, start, end, is_plus_strand):
@@ -112,9 +138,9 @@ def main(args):
     if args.mode != "introns":
         raise NotImplementedError("I lied, only mode=introns is implemented so far, not {}".format(args.mode))
     else:
-        controller = FastaExportController(args.db_path_in,
-                                           with_features_only=True)
-        controller.prep_intron_exports()
+        controller = FastaExportController(args.db_path_in)
+        controller.prep_intron_exports(args.genomes, args.exclude_genomes)
+        print(controller.coord_ids_from_sl(1), file=sys.stderr)
         controller.write_fa(args.out)
 
 
