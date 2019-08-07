@@ -34,7 +34,7 @@ class ExportController(object):
     def _all_coords_query(self):
         return self.session.query(Coordinate.id)
 
-    def _get_coords_by_genome(self, genomes, exclude, include_without_features=False):
+    def _get_coords_by_genome_query(self, genomes, exclude, include_without_features=False):
         if include_without_features:
             coordinate_ids_of_interest = self._all_coords_query()
         else:
@@ -190,11 +190,11 @@ class RangeMaker(object):
         return self._ranges_by_type(types.GEENUFF_CDS)
 
     def intronic_ranges(self):
-        return self._ranges_by_type(types.INTRON)
+        return self._ranges_by_type(types.GEENUFF_INTRON)
 
     def cis_exonic_ranges(self):  # AKA exon
         transcribeds = self._ranges_by_type(types.GEENUFF_TRANSCRIPT)
-        introns = self._ranges_by_type(types.INTRON)
+        introns = self._ranges_by_type(types.GEENUFF_INTRON)
         exons = self._subtract_ranges(subtract_from=transcribeds, to_subtract=introns)
         return exons
 
@@ -202,7 +202,7 @@ class RangeMaker(object):
         # todo, somewhere, maybe not here, consider further consistency checking
         #  e.g. (that all CODING regions are within TRANSCRIBED regions)
         translateds = self._ranges_by_type(types.GEENUFF_CDS)
-        introns = self._ranges_by_type(types.INTRON)
+        introns = self._ranges_by_type(types.GEENUFF_INTRON)
         coding_exons = self._subtract_ranges(subtract_from=translateds, to_subtract=introns)
         return coding_exons
 
@@ -243,7 +243,7 @@ class RangeMaker(object):
         return self.get_by_type_and_bearing(types.GEENUFF_CDS, target_start_not_end=True)
 
     def intron_start_sites(self):  # AKA Donor splice site
-        return self.get_by_type_and_bearing(types.INTRON, target_start_not_end=True)
+        return self.get_by_type_and_bearing(types.GEENUFF_INTRON, target_start_not_end=True)
 
     def transcription_end_sites(self):
         return self.get_by_type_and_bearing(types.GEENUFF_TRANSCRIPT, target_start_not_end=False)
@@ -252,5 +252,5 @@ class RangeMaker(object):
         return self.get_by_type_and_bearing(types.GEENUFF_CDS, target_start_not_end=False)
 
     def intron_end_sites(self):  # AKA follows acceptor splice site
-        return self.get_by_type_and_bearing(types.INTRON, target_start_not_end=False)
+        return self.get_by_type_and_bearing(types.GEENUFF_INTRON, target_start_not_end=False)
 

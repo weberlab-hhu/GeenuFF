@@ -54,53 +54,50 @@ class FastaExportController(ExportController):
             handle_out.write(self.fmt_seq(export_seq))
         handle_out.close()
 
+    def transcript_length(self, transcript):
+        """calculates total and coding length """
+        pass  # todo
+
     def prep_intron_exports(self, genomes, exclude):
         # which genomes to export
-        coord_ids = self._get_coords_by_genome(genomes, exclude)
-        # introns from those genomes
-        introns = self.session.query(Feature)\
-            .filter(Feature.type == gtypes.GEENUFF_INTRON)\
-            .filter(Feature.coordinate_id.in_(coord_ids)).all()
-        for intron in introns:
-            if intron.given_name is not None:
-                seqid = intron.given_name
-            else:
-                seqid = "intron_{0:06d}".format(intron.id)
-            self.export_seqs.append(
-                mk_one_fragment_seq(
-                    seqid,
-                    intron.coordinate_id,
-                    intron.start,
-                    intron.end,
-                    intron.is_plus_strand
-                )
-            )
-
-    def prep_intron_exports2(self, genomes, exclude):
-        # which genomes to export
-        coord_ids = self._get_coords_by_genome(genomes, exclude)
-        super_loci = self.session.query(SuperLocus).all()
+        coord_ids = self._get_coords_by_genome_query(genomes, exclude)
+        super_loci = self.get_super_loci_by_coords(coord_ids).all()
 
         for sl in super_loci:
-            pass
+            super_locus = self.session.query(SuperLocus).filter(SuperLocus.id == sl[0]).first()
+            # todo, once JOIN output exists, drop all these loops
+            print(super_locus, file=sys.stderr)
+            for transcript in super_locus.transcripts:
+                # todo, if transcript is longest_transcript
+                for tps in transcript.transcript_pieces:
+                    for feature in tps.features:
+                        if feature.type.value == gtypes.GEENUFF_INTRON:
+                            if feature.given_name is not None:
+                                seqid = feature.given_name
+                            else:
+                                seqid = "intron_{0:06d}".format(feature.id)
+                            self.export_seqs.append(
+                                mk_one_fragment_seq(
+                                    seqid,
+                                    feature.coordinate_id,
+                                    feature.start,
+                                    feature.end,
+                                    feature.is_plus_strand
+                                )
+                            )
 
     def get_super_loci_by_coords(self, coord_ids):
-        out = self.session.query(SuperLocus)\
-            .join(Transcript)\
-            .join(TranscriptPiece)\
-            .join(association_transcript_piece_to_feature)\
-            .join(Feature)\
-            .filter(Feature.coordinate_id._in(coord_ids))
-        return out
-
-    def coord_ids_from_sl(self, sl_id):
-        print(self.session.query(Transcript.super_locus_id).all(), '?', file=sys.stderr)
-        out = self.session.query(Coordinate)\
-            .join(Feature) \
-            .join(association_transcript_piece_to_feature)\
-            .join(TranscriptPiece)\
-            .join(Transcript).filter(Transcript.super_locus_id == sl_id).all()
-        return out
+        sess = self.session  # shortcut
+        # surprisingly not that bad, a minute or two for 55 genomes
+        # todo, join instead of IN and keep results
+        q = sess.query(Feature.id).filter(Feature.coordinate_id.in_(coord_ids))
+        q = sess.query(association_transcript_piece_to_feature.c.transcript_piece_id)\
+            .filter(association_transcript_piece_to_feature.c.feature_id.in_(q)).distinct()
+        q = sess.query(TranscriptPiece.transcript_id)\
+            .filter(TranscriptPiece.id.in_(q)).distinct()
+        q = sess.query(Transcript.super_locus_id)\
+            .filter(Transcript.id.in_(q)).distinct()
+        return q
 
 
 def mk_one_fragment_seq(seqid, coordinate_id, start, end, is_plus_strand):
@@ -140,7 +137,10 @@ def main(args):
     else:
         controller = FastaExportController(args.db_path_in)
         controller.prep_intron_exports(args.genomes, args.exclude_genomes)
-        print(controller.coord_ids_from_sl(1), file=sys.stderr)
+        coords_ids = controller._get_coords_by_genome_query(args.genomes, args.exclude_genomes)
+        x = controller.get_super_loci_by_coords(coords_ids)
+        print(x, file=sys.stderr)
+        print(x.all(), "hmmm", file=sys.stderr)
         controller.write_fa(args.out)
 
 
