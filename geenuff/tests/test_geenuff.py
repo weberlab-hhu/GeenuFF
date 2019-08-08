@@ -580,7 +580,7 @@ def test_case_1():
                       start=0,
                       end=120,
                       start_is_biological_start=True,
-                      end_is_biological_end=True,
+                      end_is_biological_end=False,
                       is_plus_strand=True,
                       phase=0,
                       coordinate=coords[0])
@@ -665,8 +665,8 @@ def test_case_1():
                       type=types.GeenuffFeature.geenuff_transcript,
                       start=110,
                       end=120,
-                      start_is_biological_start=True,
-                      end_is_biological_end=True,
+                      start_is_biological_start=False,
+                      end_is_biological_end=False,
                       is_plus_strand=True,
                       phase=0,
                       coordinate=coords[0])

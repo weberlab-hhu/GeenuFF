@@ -481,9 +481,11 @@ class GFFErrorHandling(object):
                     # the case of missing of implicit UTR ranges
                     # the solution is similar to the one above
                     if cds.start == transcript['transcript_feature'].start:
-                        self._add_overlapping_error(i, cds, '5p', types.MISSING_UTR_5P)
+                        self._add_overlapping_error(i, cds, '5p', types.MISSING_UTR_5P,
+                                                    mark_other_handlers=[transcript['transcript_feature']])
                     if cds.end == transcript['transcript_feature'].end:
-                        self._add_overlapping_error(i, cds, '3p', types.MISSING_UTR_3P)
+                        self._add_overlapping_error(i, cds, '3p', types.MISSING_UTR_3P,
+                                                    mark_other_handlers=[transcript['transcript_feature']])
 
                     # the case of missing start/stop codon
                     if not has_start_codon(cds.coord.sequence, cds.start, self.is_plus_strand):
@@ -591,13 +593,16 @@ class GFFErrorHandling(object):
                                            type=error_type)
         logging.warning(msg)
 
-    def _add_overlapping_error(self, i, handler, direction, error_type):
+    def _add_overlapping_error(self, i, handler, direction, error_type, mark_other_handlers=None):
         """Constructs an error features that overlaps halfway to the next super locus
         in the given direction from the given handler if possible. Otherwise mark until the end.
         If the direction is 'whole', the handler parameter is ignored.
 
         Also sets handler.start_is_biological_start=False (or the end) if necessary
         """
+        if mark_other_handlers is None:
+            mark_other_handlers = []
+
         assert direction in ['5p', '3p', 'whole']
         sl = self.groups[i]['super_locus']
 
@@ -626,13 +631,17 @@ class GFFErrorHandling(object):
         if direction == '5p':
             error_5p = anchor_5p
             error_3p = handler.start
-            if isinstance(handler, FeatureImporter):
-                handler.start_is_biological_start = False
+            for h in [handler] + mark_other_handlers:
+                if isinstance(h, FeatureImporter):
+                    h.start_is_biological_start = False
+
         elif direction == '3p':
             error_5p = handler.end
             error_3p = anchor_3p
-            if isinstance(handler, FeatureImporter):
-                handler.end_is_biological_end = False
+            for h in [handler] + mark_other_handlers:
+                if isinstance(h, FeatureImporter):
+                    h.end_is_biological_end = False
+
         elif direction == 'whole':
             error_5p = anchor_5p
             error_3p = anchor_3p
