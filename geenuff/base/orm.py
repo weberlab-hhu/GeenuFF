@@ -25,6 +25,7 @@ class Genome(Base):
     def __repr__(self):
         return '<Genome {}, species: {}>'.format(self.id, self.species)
 
+
 class Coordinate(Base):
     __tablename__ = 'coordinate'
 
@@ -78,6 +79,11 @@ association_protein_to_feature = Table('association_protein_to_feature', Base.me
     Column('feature_id', Integer, ForeignKey('feature.id'), nullable=False)
 )
 
+association_transcript_to_protein = Table('association_transcript_to_protein', Base.metadata,
+    Column('transcript_id', Integer, ForeignKey('transcript.id'), nullable=False),
+    Column('protein_id', Integer, ForeignKey('protein.id'), nullable=False)
+)
+
 
 class Transcript(Base):
     __tablename__ = 'transcript'
@@ -91,6 +97,9 @@ class Transcript(Base):
     super_locus = relationship('SuperLocus', back_populates='transcripts')
 
     transcript_pieces = relationship('TranscriptPiece', back_populates='transcript')
+
+    proteins = relationship('Protein', secondary=association_transcript_to_protein,
+                            back_populates='transcripts')
 
     def __repr__(self):
         return '<Transcript, {}, "{}" of type {}, with {} pieces>'.format(self.id,
@@ -133,6 +142,9 @@ class Protein(Base):
 
     features = relationship('Feature', secondary=association_protein_to_feature,
                             back_populates='proteins')
+
+    transcripts = relationship('Transcript', secondary=association_transcript_to_protein,
+                               back_populates='proteins')
 
     def __repr__(self):
         return '<Protein {}, given_name: \'{}\', super_locus_id: {}>'.format(self.id,

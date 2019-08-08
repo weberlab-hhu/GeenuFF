@@ -26,10 +26,13 @@ class InsertionQueue(helpers.QueueController):
             orm.association_transcript_piece_to_feature.insert())
         self.association_protein_to_feature = helpers.CoreQueue(
             orm.association_protein_to_feature.insert())
+        self.association_transcript_to_protein = helpers.CoreQueue(
+            orm.association_transcript_to_protein.insert())
 
         self.ordered_queues = [
             self.super_locus, self.transcript, self.transcript_piece, self.protein, self.feature,
-            self.association_transcript_piece_to_feature, self.association_protein_to_feature
+            self.association_transcript_piece_to_feature, self.association_protein_to_feature,
+            self.association_transcript_to_protein
         ]
 
 
@@ -741,9 +744,12 @@ class ImportController(object):
                     # if coding transcript
                     if 'protein' in transcripts:
                         transcripts['protein'].add_to_queue()
-                        tf.insert_feature_protein_association(transcripts['protein'].id)
+                        transcripts['protein'].insert_transcript_protein_association(transcripts['transcript'].id)
+                        transcripts['cds'].insert_feature_protein_association(transcripts['protein'].id)
                         transcripts['cds'].add_to_queue()
                         transcripts['cds'].insert_feature_piece_association(tp.id)
+                    # if there are introns
+                    if 'introns' in transcripts:
                         for intron in transcripts['introns']:
                             intron.add_to_queue()
                             intron.insert_feature_piece_association(tp.id)
@@ -1023,6 +1029,15 @@ class ProteinImporter(Insertable):
             'super_locus_id': self.super_locus_id,
         }
         return d
+
+    def insert_transcript_protein_association(self, transcript_id):
+        transcript2protein = {
+            'transcript_id': transcript_id,
+            'protein_id': self.id,
+        }
+
+        self.controller.insertion_queues.association_transcript_to_protein.\
+            queue.append(transcript2protein)
 
     def __repr__(self):
         return helpers.get_repr('ProteinImporter', self._get_params_dict())
