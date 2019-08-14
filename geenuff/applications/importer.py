@@ -455,12 +455,21 @@ class GFFErrorHandling(object):
         cds = transcript['cds']
         start = cds.start
         # introns are ordered by coordinate with no respect to strand
-        for intron in transcript['introns']:
-            if ((self.is_plus_strand and intron.end < cds.end)
-                    or (not self.is_plus_strand and intron.end > cds.end)):
-                start = intron.end
-            else:
-                break
+        intron_ends = [x.end for x in transcript["introns"]]
+        if self.is_plus_strand:
+            i_ends_within = [i for i in intron_ends if cds.start < i < cds.end]
+            if i_ends_within:
+                start = max(i_ends_within)
+        else:
+            i_ends_within = [i for i in intron_ends if cds.end < i < cds.start]
+            if i_ends_within:
+                start = min(i_ends_within)
+        #for intron in transcript['introns']:
+        #    if ((self.is_plus_strand and intron.end < cds.end)
+        #            or (not self.is_plus_strand and intron.end > cds.end)):
+        #        start = intron.end
+        #    else:
+        #        break
         return start
 
     def resolve_errors(self):
