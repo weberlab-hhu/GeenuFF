@@ -5,7 +5,8 @@ import intervaltree
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from geenuff.base.orm import Coordinate, Genome, Feature
+from geenuff.base.orm import Coordinate, Genome, Feature, Transcript, TranscriptPiece, \
+    association_transcript_piece_to_feature
 from geenuff.base.handlers import TranscriptHandlerBase, SuperLocusHandlerBase
 from geenuff.base.helpers import full_db_path
 from geenuff.base import types
@@ -60,6 +61,19 @@ class ExportController(object):
 
         return all_coord_ids
 
+    def get_super_loci_by_coords(self, coord_ids):
+        sess = self.session  # shortcut
+        # surprisingly not that bad, a minute or two for 55 genomes
+        # todo, join instead of IN and keep results
+        q = sess.query(Feature.id).filter(Feature.coordinate_id.in_(coord_ids))
+        q = sess.query(association_transcript_piece_to_feature.c.transcript_piece_id)\
+            .filter(association_transcript_piece_to_feature.c.feature_id.in_(q)).distinct()
+        q = sess.query(TranscriptPiece.transcript_id)\
+            .filter(TranscriptPiece.id.in_(q)).distinct()
+        q = sess.query(Transcript.super_locus_id)\
+            .filter(Transcript.id.in_(q)).distinct()
+        return q
+
 
 def positional_match(feature, previous):
     return feature.pos_cmp_key() == previous.pos_cmp_key()
@@ -103,6 +117,9 @@ class Range(TranscriptCoordinate):
                          is_plus_strand=is_plus_strand,
                          start=start)
         self.end = end
+
+    def sequence_chunk_info(self):
+        return self.coordinate_id, self.piece_position, self.is_plus_strand
 
     def sort_key(self):
         return self.piece_position, self._sort_pos(self.start), self._sort_pos(self.end)
@@ -266,16 +283,23 @@ class RangeMaker(TranscriptHandlerBase):
 
 
 class SuperLocusRanger(SuperLocusHandlerBase):
-    def __init__(self, data=None, setup_range_makers=True):
+    def __init__(self, data=None, longest=False, setup_range_makers=True):
         super().__init__(data)
+        self.logest = longest
         self.range_makers = []
+        self.exp_range_makers = []
         if setup_range_makers:
-            self.setup_range_makers()
+            self.setup_range_makers(longest)
 
-    def setup_range_makers(self):
+    def setup_range_makers(self, longest):
         for transcript in self.data.transcripts:
             range_maker = RangeMaker(transcript)
             self.range_makers.append(range_maker)
+        if not longest:
+            self.exp_range_makers = self.range_makers
+        else:
+            long_transcript, _ = self.get_longest_transcript()
+            self.exp_range_makers = [long_transcript]
 
     def get_longest_transcript(self):
         """identify which transcript in this super locus is longest (with introns removed)"""
