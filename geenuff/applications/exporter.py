@@ -111,12 +111,13 @@ class TranscriptCoordinate(object):
 
 class Range(TranscriptCoordinate):
     """holds (and helps sort) a start-end range with the sequence, piece position, and direction"""
-    def __init__(self, coordinate_id, piece_position, start, end, is_plus_strand):
+    def __init__(self, coordinate_id, piece_position, start, end, is_plus_strand, given_name=None):
         super().__init__(coordinate_id=coordinate_id,
                          piece_position=piece_position,
                          is_plus_strand=is_plus_strand,
                          start=start)
         self.end = end
+        self.given_name = given_name
 
     def sequence_chunk_info(self):
         return self.coordinate_id, self.piece_position, self.is_plus_strand
@@ -149,7 +150,8 @@ class RangeMaker(TranscriptHandlerBase):
                                     start=feature.start,
                                     end=feature.end,
                                     is_plus_strand=feature.is_plus_strand,
-                                    piece_position=piece.position))
+                                    piece_position=piece.position,
+                                    given_name=feature.given_name))
 
         return ranges
 

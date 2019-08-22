@@ -4,14 +4,16 @@ import argparse
 from geenuff.applications.exporters.sequence import FastaExportController
 
 def main(args):
-    if args.mode != "introns":
-        raise NotImplementedError("I lied, only mode=introns is implemented so far, not {}".format(args.mode))
-    else:
-        controller = FastaExportController(args.db_path_in, args.longest)
+    controller = FastaExportController(args.db_path_in, args.longest)
+    if args.mode == "introns":
         controller.prep_intron_exports(args.genomes, args.exclude_genomes)
-        coords_ids = controller._get_coords_by_genome_query(args.genomes, args.exclude_genomes)
-        x = controller.get_super_loci_by_coords(coords_ids)
-        controller.write_fa(args.out)
+    elif args.mode == "pre-mRNA":
+        controller.prep_transcript_exports(args.genomes, args.exclude_genomes)
+    else:
+        raise NotImplementedError("I lied, only mode=introns, pre-mRNA is implemented so far, not {}".format(args.mode))
+    coords_ids = controller._get_coords_by_genome_query(args.genomes, args.exclude_genomes)
+    #x = controller.get_super_loci_by_coords(coords_ids)
+    controller.write_fa(args.out)
 
 
 if __name__ == "__main__":

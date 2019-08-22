@@ -52,6 +52,28 @@ class FastaExportController(ExportController):
         handle_out.close()
 
     def prep_intron_exports(self, genomes, exclude):
+
+        def range_function(range_maker):
+            return range_maker.intronic_ranges()
+
+        def id_function(i, range):
+            del range
+            return "intron_{0:06d}".format(i)
+
+        self._prep_geenuff_features(genomes, exclude, range_function, id_function)
+
+    def prep_transcript_exports(self, genomes, exclude):
+
+        def range_function(range_maker):
+            return range_maker.transcribed_ranges()
+
+        def id_function(i, range):
+            del i
+            return range.given_name
+
+        self._prep_geenuff_features(genomes, exclude, range_function, id_function)
+
+    def _prep_geenuff_features(self, genomes, exclude, range_function, id_function):
         # which genomes to export
         coord_ids = self._get_coords_by_genome_query(genomes, exclude)
         super_loci = self.get_super_loci_by_coords(coord_ids).all()
@@ -62,11 +84,10 @@ class FastaExportController(ExportController):
             # todo, once JOIN output exists, drop all these loops
             print(super_locus, file=sys.stderr)
             for range_maker in sl_ranger.exp_range_makers:
-                # todo, if transcript is longest_transcript
-                introns = range_maker.intronic_ranges()
+                introns = range_function(range_maker)
 
                 for intron in introns:
-                    seqid = "intron_{0:06d}".format(i)
+                    seqid = id_function(i, intron)
                     self.export_seqs.append(
                         mk_one_fragment_seq(
                             seqid,
