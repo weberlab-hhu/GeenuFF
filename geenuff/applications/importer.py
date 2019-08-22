@@ -26,10 +26,13 @@ class InsertionQueue(helpers.QueueController):
             orm.association_transcript_piece_to_feature.insert())
         self.association_protein_to_feature = helpers.CoreQueue(
             orm.association_protein_to_feature.insert())
+        self.association_transcript_to_protein = helpers.CoreQueue(
+            orm.association_transcript_to_protein.insert())
 
         self.ordered_queues = [
             self.super_locus, self.transcript, self.transcript_piece, self.protein, self.feature,
-            self.association_transcript_piece_to_feature, self.association_protein_to_feature
+            self.association_transcript_piece_to_feature, self.association_protein_to_feature,
+            self.association_transcript_to_protein
         ]
 
 
@@ -452,12 +455,15 @@ class GFFErrorHandling(object):
         cds = transcript['cds']
         start = cds.start
         # introns are ordered by coordinate with no respect to strand
-        for intron in transcript['introns']:
-            if ((self.is_plus_strand and intron.end < cds.end)
-                    or (not self.is_plus_strand and intron.end > cds.end)):
-                start = intron.end
-            else:
-                break
+        intron_ends = [x.end for x in transcript["introns"]]
+        if self.is_plus_strand:
+            i_ends_within = [i for i in intron_ends if cds.start < i < cds.end]
+            if i_ends_within:
+                start = max(i_ends_within)
+        else:
+            i_ends_within = [i for i in intron_ends if cds.end < i < cds.start]
+            if i_ends_within:
+                start = min(i_ends_within)
         return start
 
     def resolve_errors(self):
@@ -478,9 +484,11 @@ class GFFErrorHandling(object):
                     # the case of missing of implicit UTR ranges
                     # the solution is similar to the one above
                     if cds.start == transcript['transcript_feature'].start:
-                        self._add_overlapping_error(i, cds, '5p', types.MISSING_UTR_5P)
+                        self._add_overlapping_error(i, cds, '5p', types.MISSING_UTR_5P,
+                                                    mark_other_handlers=[transcript['transcript_feature']])
                     if cds.end == transcript['transcript_feature'].end:
-                        self._add_overlapping_error(i, cds, '3p', types.MISSING_UTR_3P)
+                        self._add_overlapping_error(i, cds, '3p', types.MISSING_UTR_3P,
+                                                    mark_other_handlers=[transcript['transcript_feature']])
 
                     # the case of missing start/stop codon
                     if not has_start_codon(cds.coord.sequence, cds.start, self.is_plus_strand):
@@ -588,13 +596,16 @@ class GFFErrorHandling(object):
                                            type=error_type)
         logging.warning(msg)
 
-    def _add_overlapping_error(self, i, handler, direction, error_type):
+    def _add_overlapping_error(self, i, handler, direction, error_type, mark_other_handlers=None):
         """Constructs an error features that overlaps halfway to the next super locus
         in the given direction from the given handler if possible. Otherwise mark until the end.
         If the direction is 'whole', the handler parameter is ignored.
 
         Also sets handler.start_is_biological_start=False (or the end) if necessary
         """
+        if mark_other_handlers is None:
+            mark_other_handlers = []
+
         assert direction in ['5p', '3p', 'whole']
         sl = self.groups[i]['super_locus']
 
@@ -623,13 +634,17 @@ class GFFErrorHandling(object):
         if direction == '5p':
             error_5p = anchor_5p
             error_3p = handler.start
-            if isinstance(handler, FeatureImporter):
-                handler.start_is_biological_start = False
+            for h in [handler] + mark_other_handlers:
+                if isinstance(h, FeatureImporter):
+                    h.start_is_biological_start = False
+
         elif direction == '3p':
             error_5p = handler.end
             error_3p = anchor_3p
-            if isinstance(handler, FeatureImporter):
-                handler.end_is_biological_end = False
+            for h in [handler] + mark_other_handlers:
+                if isinstance(h, FeatureImporter):
+                    h.end_is_biological_end = False
+
         elif direction == 'whole':
             error_5p = anchor_5p
             error_3p = anchor_3p
@@ -741,9 +756,12 @@ class ImportController(object):
                     # if coding transcript
                     if 'protein' in transcripts:
                         transcripts['protein'].add_to_queue()
-                        tf.insert_feature_protein_association(transcripts['protein'].id)
+                        transcripts['protein'].insert_transcript_protein_association(transcripts['transcript'].id)
+                        transcripts['cds'].insert_feature_protein_association(transcripts['protein'].id)
                         transcripts['cds'].add_to_queue()
                         transcripts['cds'].insert_feature_piece_association(tp.id)
+                    # if there are introns
+                    if 'introns' in transcripts:
                         for intron in transcripts['introns']:
                             intron.add_to_queue()
                             intron.insert_feature_piece_association(tp.id)
@@ -1023,6 +1041,15 @@ class ProteinImporter(Insertable):
             'super_locus_id': self.super_locus_id,
         }
         return d
+
+    def insert_transcript_protein_association(self, transcript_id):
+        transcript2protein = {
+            'transcript_id': transcript_id,
+            'protein_id': self.id,
+        }
+
+        self.controller.insertion_queues.association_transcript_to_protein.\
+            queue.append(transcript2protein)
 
     def __repr__(self):
         return helpers.get_repr('ProteinImporter', self._get_params_dict())

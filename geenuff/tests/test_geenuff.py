@@ -580,7 +580,7 @@ def test_case_1():
                       start=0,
                       end=120,
                       start_is_biological_start=True,
-                      end_is_biological_end=True,
+                      end_is_biological_end=False,
                       is_plus_strand=True,
                       phase=0,
                       coordinate=coords[0])
@@ -665,8 +665,8 @@ def test_case_1():
                       type=types.GeenuffFeature.geenuff_transcript,
                       start=110,
                       end=120,
-                      start_is_biological_start=True,
-                      end_is_biological_end=True,
+                      start_is_biological_start=False,
+                      end_is_biological_end=False,
                       is_plus_strand=True,
                       phase=0,
                       coordinate=coords[0])
@@ -782,6 +782,31 @@ def test_case_8():
 
     # test if we have no extra objects
     assert not sl_objects
+
+
+def test_non_coding_intron():
+    """checks non coding introns are handled correctly (don't cause mismatched_ending_phase err when there is none)"""
+    # test data has been simplified from an augustus run that previously resulted in erroneous masks
+    controller = ImportController(database_path='sqlite:///:memory:')
+    controller.add_genome('testdata/exonexonCDS.fa', 'testdata/exonexonCDS.gff3', clean_gff=True)
+    # one gene model on the + strand
+    features = controller.session.query(Feature).filter(Feature.coordinate_id == 1).all()
+    assert len(features) == 3
+    transcript = [f for f in features if f.type.value == types.GEENUFF_TRANSCRIPT][0]
+    cds = [f for f in features if f.type.value == types.GEENUFF_CDS][0]
+    intron = [f for f in features if f.type.value == types.GEENUFF_INTRON][0]
+    assert (transcript.start, transcript.end) == (922, 4056)
+    assert (cds.start, cds.end) == (2081, 3695)
+    assert (intron.start, intron.end) == (1415, 2041)
+    # one gene model on the - strand
+    features = controller.session.query(Feature).filter(Feature.coordinate_id == 2).all()
+    assert len(features) == 3
+    transcript = [f for f in features if f.type.value == types.GEENUFF_TRANSCRIPT][0]
+    cds = [f for f in features if f.type.value == types.GEENUFF_CDS][0]
+    intron = [f for f in features if f.type.value == types.GEENUFF_INTRON][0]
+    assert (transcript.start, transcript.end) == (3459, 334)
+    assert (cds.start, cds.end) == (2194, 478)
+    assert (intron.start, intron.end) == (3310, 2195)
 
 
 def test_gff_gen():
