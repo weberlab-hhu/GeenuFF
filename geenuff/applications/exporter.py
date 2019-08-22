@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from geenuff.base.orm import Coordinate, Genome, Feature
-from geenuff.base.handlers import TranscriptHandlerBase
+from geenuff.base.handlers import TranscriptHandlerBase, SuperLocusHandlerBase
 from geenuff.base.helpers import full_db_path
 from geenuff.base import types
 
@@ -115,17 +115,11 @@ class Range(TranscriptCoordinate):
                                                                              self.end)
 
 
-class RangeMaker(object):
+class RangeMaker(TranscriptHandlerBase):
     """Interprets a transcript as ordered flattened ranges from its features"""
-    def __init__(self, transcript, super_locus, session=None):
-        assert isinstance(transcript, TranscriptHandlerBase)
-        #self.status = TranscriptStatusBase()
-        self.transcript = transcript
-        self.session = session
-        self.super_locus = super_locus
 
     def feature_piece_pairs(self):
-        for piece in self.transcript.data.transcript_pieces:
+        for piece in self.data.transcript_pieces:
             for feature in piece.features:
                 yield feature, piece
 
@@ -201,6 +195,7 @@ class RangeMaker(object):
     def translated_exonic_ranges(self):  # AKA CDS
         # todo, somewhere, maybe not here, consider further consistency checking
         #  e.g. (that all CODING regions are within TRANSCRIBED regions)
+        # todo, return separately if CDS features are connected to different proteins
         translateds = self._ranges_by_type(types.GEENUFF_CDS)
         introns = self._ranges_by_type(types.GEENUFF_INTRON)
         coding_exons = self._subtract_ranges(subtract_from=translateds, to_subtract=introns)
@@ -225,7 +220,7 @@ class RangeMaker(object):
 
     def get_by_type_and_bearing(self, target_type, target_start_not_end, target_is_biological=True):
         out = []
-        for piece in self.transcript.data.transcribed_pieces:
+        for piece in self.data.transcribed_pieces:
             for feature in piece.features:
                 if feature.type.value == target_type:
                     at, is_bio = self._get_transition(feature, target_start_not_end)
@@ -254,3 +249,44 @@ class RangeMaker(object):
     def intron_end_sites(self):  # AKA follows acceptor splice site
         return self.get_by_type_and_bearing(types.GEENUFF_INTRON, target_start_not_end=False)
 
+    @staticmethod
+    def _sum_range_lengths(ranges):
+        out = 0
+        for arange in ranges:
+            out += abs(arange.end - arange.start)  # abs should make it work on - strand
+        return out
+
+    def sum_exonic_lengths(self):
+        ranges = self.cis_exonic_ranges()
+        return self._sum_range_lengths(ranges)
+
+    def sum_exonic_cds_lengths(self):
+        ranges = self.translated_exonic_ranges()
+        return self._sum_range_lengths(ranges)
+
+
+class SuperLocusRanger(SuperLocusHandlerBase):
+    def __init__(self, data=None, setup_range_makers=True):
+        super().__init__(data)
+        self.range_makers = []
+        if setup_range_makers:
+            self.setup_range_makers()
+
+    def setup_range_makers(self):
+        for transcript in self.data.transcripts:
+            range_maker = RangeMaker(transcript)
+            self.range_makers.append(range_maker)
+
+    def get_longest_transcript(self):
+        """identify which transcript in this super locus is longest (with introns removed)"""
+        transcript, length = None, 0
+        for range_maker in self.range_makers:
+            rm_length = range_maker.sum_exonic_lengths()
+            if rm_length > length:
+                transcript = range_maker
+                length = rm_length
+        return transcript, length
+
+    def get_longest_protein_in_transcript(self):
+        """identify which transcript, protein_id makes longest final coding sequence (introns rm) in this super locus"""
+        pass

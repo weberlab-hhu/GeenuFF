@@ -7,6 +7,7 @@ from geenuff.base.orm import Coordinate, Feature, SuperLocus, Transcript, Transc
     association_transcript_piece_to_feature
 from geenuff.base.helpers import reverse_complement, chunk_str
 from geenuff.base import types as gtypes
+from geenuff.applications.exporter import RangeMaker, SuperLocusRanger
 
 
 class FastaExportController(ExportController):
@@ -62,29 +63,28 @@ class FastaExportController(ExportController):
         # which genomes to export
         coord_ids = self._get_coords_by_genome_query(genomes, exclude)
         super_loci = self.get_super_loci_by_coords(coord_ids).all()
-
+        i = 0
         for sl in super_loci:
             super_locus = self.session.query(SuperLocus).filter(SuperLocus.id == sl[0]).first()
+            sl_ranger = SuperLocusRanger(super_locus)
             # todo, once JOIN output exists, drop all these loops
             print(super_locus, file=sys.stderr)
-            for transcript in super_locus.transcripts:
+            for range_maker in sl_ranger.range_makers:
                 # todo, if transcript is longest_transcript
-                for tps in transcript.transcript_pieces:
-                    for feature in tps.features:
-                        if feature.type.value == gtypes.GEENUFF_INTRON:
-                            if feature.given_name is not None:
-                                seqid = feature.given_name
-                            else:
-                                seqid = "intron_{0:06d}".format(feature.id)
-                            self.export_seqs.append(
-                                mk_one_fragment_seq(
-                                    seqid,
-                                    feature.coordinate_id,
-                                    feature.start,
-                                    feature.end,
-                                    feature.is_plus_strand
-                                )
-                            )
+                introns = range_maker.intronic_ranges()
+
+                for intron in introns:
+                    seqid = "intron_{0:06d}".format(i)
+                    self.export_seqs.append(
+                        mk_one_fragment_seq(
+                            seqid,
+                            intron.coordinate_id,
+                            intron.start,
+                            intron.end,
+                            intron.is_plus_strand
+                        )
+                    )
+                    i += 1
 
     def get_super_loci_by_coords(self, coord_ids):
         sess = self.session  # shortcut
