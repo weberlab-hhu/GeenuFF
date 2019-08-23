@@ -11,7 +11,7 @@ def main(args):
         controller.prep_transcript_exports(args.genomes, args.exclude_genomes)
     else:
         raise NotImplementedError("I lied, only mode=introns, pre-mRNA is implemented so far, not {}".format(args.mode))
-    coords_ids = controller._get_coords_by_genome_query(args.genomes, args.exclude_genomes)
+    #coords_ids = controller._get_coords_by_genome_query(args.genomes, args.exclude_genomes)
     #x = controller.get_super_loci_by_coords(coords_ids)
     controller.write_fa(args.out)
 

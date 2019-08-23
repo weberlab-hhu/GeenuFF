@@ -5,6 +5,7 @@ from geenuff.base.orm import Coordinate, SuperLocus
 from geenuff.base.helpers import reverse_complement, chunk_str
 from geenuff.applications.exporter import SuperLocusRanger
 
+
 class FastaExportController(ExportController):
     def __init__(self, db_path_in, longest=False):
         super().__init__(db_path_in)
@@ -15,11 +16,14 @@ class FastaExportController(ExportController):
     def get_seq(self, export_sequence):
         # simple and probably horribly inefficient
         out = []
-        for seq_piece in export_sequence.pieces:
-            coordinate = self.session.query(Coordinate).filter(Coordinate.id == seq_piece.coord_id).first()
-            sequence = coordinate.sequence
-            for fragment in seq_piece.fragments:
-                out += self.get_seq_fragment(fragment, sequence)
+        last_coordinate, sequence = None, None
+        for a_range in export_sequence.ranges:
+            coord_id = a_range.coordinate_id
+            if last_coordinate != coord_id:
+                coordinate = self.session.query(Coordinate).filter(Coordinate.id == coord_id).first()
+                sequence = coordinate.sequence
+            out += self.get_seq_fragment(a_range, sequence)
+            last_coordinate = coord_id
         return out
 
     def fmt_seq(self, export_sequence):
@@ -45,10 +49,9 @@ class FastaExportController(ExportController):
             handle_out = sys.stdout
         else:
             handle_out = open(fa_out, "w")
-        handle_out.write(self.fmt_seq(self.export_seqs[0]))
-        for export_seq in self.export_seqs[1:]:
-            handle_out.write('\n')
+        for export_seq in self.export_seqs:
             handle_out.write(self.fmt_seq(export_seq))
+            handle_out.write('\n')
         handle_out.close()
 
     def prep_intron_exports(self, genomes, exclude):
@@ -84,51 +87,17 @@ class FastaExportController(ExportController):
             # todo, once JOIN output exists, drop all these loops
             print(super_locus, file=sys.stderr)
             for range_maker in sl_ranger.exp_range_makers:
-                introns = range_function(range_maker)
-
-                for intron in introns:
-                    seqid = id_function(i, intron)
+                features = range_function(range_maker)
+                for feature in features:
+                    seqid = id_function(i, feature)
                     self.export_seqs.append(
-                        mk_one_fragment_seq(
-                            seqid,
-                            intron.coordinate_id,
-                            intron.start,
-                            intron.end,
-                            intron.is_plus_strand
-                        )
+                        ExportSeq(seqid=seqid,
+                                  ranges=[feature])
                     )
                     i += 1
 
 
-
-
-def mk_one_fragment_seq(seqid, coordinate_id, start, end, is_plus_strand):
-    assert seqid is not None, "{} {} {} {} {}".format(seqid, coordinate_id, start, end, is_plus_strand)
-    export_seq = ExportSeq(seqid=seqid)
-    fragment = ExportSeqFragment(start=start,
-                                 end=end,
-                                 is_plus_strand=is_plus_strand)
-    seq_piece = ExportSeqPiece(coord_id=coordinate_id)
-    seq_piece.fragments = [fragment]
-    export_seq.pieces = [seq_piece]
-    return export_seq
-
-
 class ExportSeq(object):
-    def __init__(self, seqid):
+    def __init__(self, seqid, ranges):
         self.seqid = seqid
-        self.pieces = []
-
-
-class ExportSeqPiece(object):
-    def __init__(self, coord_id):
-        self.coord_id = coord_id
-        self.fragments = []
-
-
-class ExportSeqFragment(object):
-    def __init__(self, start, end, is_plus_strand):
-        self.start = start
-        self.end = end
-        self.is_plus_strand = is_plus_strand
-
+        self.ranges = ranges

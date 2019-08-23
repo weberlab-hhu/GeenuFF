@@ -199,19 +199,19 @@ class RangeMaker(TranscriptHandlerBase):
     def transcribed_ranges(self):
         return self._ranges_by_type(types.GEENUFF_TRANSCRIPT)
 
-    def translated_ranges(self):
+    def cds_ranges(self):
         return self._ranges_by_type(types.GEENUFF_CDS)
 
     def intronic_ranges(self):
         return self._ranges_by_type(types.GEENUFF_INTRON)
 
-    def cis_exonic_ranges(self):  # AKA exon
+    def exonic_ranges(self):  # AKA exon
         transcribeds = self._ranges_by_type(types.GEENUFF_TRANSCRIPT)
         introns = self._ranges_by_type(types.GEENUFF_INTRON)
         exons = self._subtract_ranges(subtract_from=transcribeds, to_subtract=introns)
         return exons
 
-    def translated_exonic_ranges(self):  # AKA CDS
+    def cds_exonic_ranges(self):  # AKA CDS
         # todo, somewhere, maybe not here, consider further consistency checking
         #  e.g. (that all CODING regions are within TRANSCRIBED regions)
         # todo, return separately if CDS features are connected to different proteins
@@ -221,9 +221,9 @@ class RangeMaker(TranscriptHandlerBase):
         return coding_exons
 
     def untranslated_exonic_ranges(self):  # AKA UTR
-        exons = self.cis_exonic_ranges()
-        translateds = self._ranges_by_type(types.GEENUFF_CDS)
-        utrs = self._subtract_ranges(subtract_from=exons, to_subtract=translateds)
+        exons = self.exonic_ranges()
+        geenuff_cds = self._ranges_by_type(types.GEENUFF_CDS)
+        utrs = self._subtract_ranges(subtract_from=exons, to_subtract=geenuff_cds)
         return utrs
 
     # point transitions (sites)
@@ -250,19 +250,19 @@ class RangeMaker(TranscriptHandlerBase):
                                                         start=at))
         return out
 
-    def transcription_start_sites(self):
+    def transcript_start_sites(self):
         return self.get_by_type_and_bearing(types.GEENUFF_TRANSCRIPT, target_start_not_end=True)
 
-    def translation_start_sites(self):  # AKA start codon
+    def cds_start_sites(self):  # AKA start codons
         return self.get_by_type_and_bearing(types.GEENUFF_CDS, target_start_not_end=True)
 
     def intron_start_sites(self):  # AKA Donor splice site
         return self.get_by_type_and_bearing(types.GEENUFF_INTRON, target_start_not_end=True)
 
-    def transcription_end_sites(self):
+    def transcript_end_sites(self):
         return self.get_by_type_and_bearing(types.GEENUFF_TRANSCRIPT, target_start_not_end=False)
 
-    def translation_end_sites(self):  # AKA follows stop codon
+    def cds_end_sites(self):  # AKA follows stop codons
         return self.get_by_type_and_bearing(types.GEENUFF_CDS, target_start_not_end=False)
 
     def intron_end_sites(self):  # AKA follows acceptor splice site
@@ -276,11 +276,11 @@ class RangeMaker(TranscriptHandlerBase):
         return out
 
     def sum_exonic_lengths(self):
-        ranges = self.cis_exonic_ranges()
+        ranges = self.exonic_ranges()
         return self._sum_range_lengths(ranges)
 
     def sum_exonic_cds_lengths(self):
-        ranges = self.translated_exonic_ranges()
+        ranges = self.cds_exonic_ranges()
         return self._sum_range_lengths(ranges)
 
 
