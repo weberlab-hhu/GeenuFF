@@ -133,6 +133,16 @@ class Range(TranscriptCoordinate):
                                                                              self.end)
 
 
+class ExportGroup(object):
+    """Holds a named list of ordered ranges"""
+    def __init__(self, seqid, ranges=None):
+        if ranges is None:
+            self.ranges = []
+        else:
+            self.ranges = ranges
+        self.seqid = seqid
+
+
 class RangeMaker(TranscriptHandlerBase):
     """Interprets a transcript as ordered flattened ranges from its features"""
 
@@ -195,36 +205,57 @@ class RangeMaker(TranscriptHandlerBase):
     def _resort_subtracted(subtracted_ranges):
         return sorted(subtracted_ranges, key=lambda x: x.sort_key())
 
+    @staticmethod
+    def _one_range_one_group(ranges):
+        return [ExportGroup(seqid=r.given_name, ranges=[r]) for r in ranges]
+
     # common 'interpretations' or extractions of transcript-related data
+    # all of the following methods should return a ready "ExportGroup" that has all the ordered ranges
+    # that need to be combined to form a sequence, and an id for this sequence
     def transcribed_ranges(self):
-        return self._ranges_by_type(types.GEENUFF_TRANSCRIPT)
+        return [ExportGroup(seqid=self.data.given_id, ranges=self._ranges_by_type(types.GEENUFF_TRANSCRIPT))]
 
     def cds_ranges(self):
-        return self._ranges_by_type(types.GEENUFF_CDS)
+        return self._one_range_one_group(self._ranges_by_type(types.GEENUFF_CDS))
 
     def intronic_ranges(self):
-        return self._ranges_by_type(types.GEENUFF_INTRON)
+        return self._one_range_one_group(self._ranges_by_type(types.GEENUFF_INTRON))
 
     def exonic_ranges(self):  # AKA exon
         transcribeds = self._ranges_by_type(types.GEENUFF_TRANSCRIPT)
         introns = self._ranges_by_type(types.GEENUFF_INTRON)
         exons = self._subtract_ranges(subtract_from=transcribeds, to_subtract=introns)
-        return exons
+        return self._one_range_one_group(exons)
 
     def cds_exonic_ranges(self):  # AKA CDS
         # todo, somewhere, maybe not here, consider further consistency checking
         #  e.g. (that all CODING regions are within TRANSCRIBED regions)
         # todo, return separately if CDS features are connected to different proteins
-        translateds = self._ranges_by_type(types.GEENUFF_CDS)
+        geenuff_cds = self._ranges_by_type(types.GEENUFF_CDS)
         introns = self._ranges_by_type(types.GEENUFF_INTRON)
-        coding_exons = self._subtract_ranges(subtract_from=translateds, to_subtract=introns)
-        return coding_exons
+        coding_exons = self._subtract_ranges(subtract_from=geenuff_cds, to_subtract=introns)
+        return self._one_range_one_group(coding_exons)
 
     def untranslated_exonic_ranges(self):  # AKA UTR
         exons = self.exonic_ranges()
         geenuff_cds = self._ranges_by_type(types.GEENUFF_CDS)
         utrs = self._subtract_ranges(subtract_from=exons, to_subtract=geenuff_cds)
-        return utrs
+        return self._one_range_one_group(utrs)
+
+    def mature_RNA(self):
+        exons = self.exonic_ranges()
+        return [ExportGroup(seqid=self.data.given_id, ranges=[x.ranges[0] for x in exons])]
+
+    def mature_CDS(self):
+        # todo, operon logic!!
+        cds = self.cds_exonic_ranges()
+        return [ExportGroup(seqid=self.data.given_id + '_cds', ranges=[x.ranges[0] for x in cds])]
+
+    def utr3p(self):
+        pass  # todo
+
+    def utr5p(self):
+        pass  # todo
 
     # point transitions (sites)
     @staticmethod
@@ -282,6 +313,13 @@ class RangeMaker(TranscriptHandlerBase):
     def sum_exonic_cds_lengths(self):
         ranges = self.cds_exonic_ranges()
         return self._sum_range_lengths(ranges)
+
+
+MODES = {"mRNA": RangeMaker.mature_RNA,
+         "pre-mRNA": RangeMaker.transcribed_ranges,
+         "CDS": RangeMaker.mature_CDS,
+         "exons": RangeMaker.exonic_ranges,
+         "introns": RangeMaker.intronic_ranges}
 
 
 class SuperLocusRanger(SuperLocusHandlerBase):

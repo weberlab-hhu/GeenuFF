@@ -2,7 +2,7 @@ import sys
 
 from geenuff.applications.exporter import ExportController
 from geenuff.base.orm import Coordinate, SuperLocus
-from geenuff.base.helpers import reverse_complement, chunk_str
+from geenuff.base.helpers import reverse_complement, chunk_str, Counter
 from geenuff.applications.exporter import SuperLocusRanger
 
 
@@ -12,6 +12,7 @@ class FastaExportController(ExportController):
         print(self.session, file=sys.stderr)
         self.export_seqs = []
         self.longest = longest
+        self.id_counter = Counter()
 
     def get_seq(self, export_sequence):
         # simple and probably horribly inefficient
@@ -87,9 +88,10 @@ class FastaExportController(ExportController):
             # todo, once JOIN output exists, drop all these loops
             print(super_locus, file=sys.stderr)
             for range_maker in sl_ranger.exp_range_makers:
-                features = range_function(range_maker)
-                for feature in features:
-                    seqid = id_function(i, feature)
+                export_groups = range_function(range_maker)
+                for group in export_groups:
+                    if group.seqid is None:
+                        group.seqid = self.id_counter()
                     self.export_seqs.append(
                         ExportSeq(seqid=seqid,
                                   ranges=[feature])
