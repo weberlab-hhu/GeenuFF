@@ -2,13 +2,12 @@
 import argparse
 
 from geenuff.applications.exporters.sequence import FastaExportController
-
+from geenuff.applications.exporter import MODES
 def main(args):
     controller = FastaExportController(args.db_path_in, args.longest)
-    if args.mode == "introns":
-        controller.prep_intron_exports(args.genomes, args.exclude_genomes)
-    elif args.mode == "pre-mRNA":
-        controller.prep_transcript_exports(args.genomes, args.exclude_genomes)
+    if args.mode in MODES:
+        controller.prep_ranges(args.genomes, args.exclude_genomes,
+                               MODES[args.mode])
     else:
         raise NotImplementedError("I lied, only mode=introns, pre-mRNA is implemented so far, not {}".format(args.mode))
     #coords_ids = controller._get_coords_by_genome_query(args.genomes, args.exclude_genomes)
@@ -17,7 +16,7 @@ def main(args):
 
 
 if __name__ == "__main__":
-    implemented_modes = ["mRNA", "pre-mRNA", "CDS", "introns", "exons", "UTR"]
+    implemented_modes = list(MODES.keys())  # ["mRNA", "pre-mRNA", "CDS", "introns", "exons", "UTR"]
     parser = argparse.ArgumentParser()
     parser.add_argument('--db-path-in', type=str, required=True,
                         help='Path to the Geenuff SQLite input database.')

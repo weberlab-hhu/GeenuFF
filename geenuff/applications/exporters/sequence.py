@@ -3,7 +3,7 @@ import sys
 from geenuff.applications.exporter import ExportController
 from geenuff.base.orm import Coordinate, SuperLocus
 from geenuff.base.helpers import reverse_complement, chunk_str, Counter
-from geenuff.applications.exporter import SuperLocusRanger
+from geenuff.applications.exporter import SuperLocusRanger, ExportGroup
 
 
 class FastaExportController(ExportController):
@@ -77,7 +77,7 @@ class FastaExportController(ExportController):
 
         self._prep_geenuff_features(genomes, exclude, range_function, id_function)
 
-    def _prep_geenuff_features(self, genomes, exclude, range_function, id_function):
+    def prep_ranges(self, genomes, exclude, range_function):
         # which genomes to export
         coord_ids = self._get_coords_by_genome_query(genomes, exclude)
         super_loci = self.get_super_loci_by_coords(coord_ids).all()
@@ -91,11 +91,8 @@ class FastaExportController(ExportController):
                 export_groups = range_function(range_maker)
                 for group in export_groups:
                     if group.seqid is None:
-                        group.seqid = self.id_counter()
-                    self.export_seqs.append(
-                        ExportSeq(seqid=seqid,
-                                  ranges=[feature])
-                    )
+                        group.seqid = 'unnamed_{0:08d}'.format(self.id_counter())
+                    self.export_seqs.append(group)
                     i += 1
 
 

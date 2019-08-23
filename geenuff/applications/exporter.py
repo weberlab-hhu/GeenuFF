@@ -213,7 +213,7 @@ class RangeMaker(TranscriptHandlerBase):
     # all of the following methods should return a ready "ExportGroup" that has all the ordered ranges
     # that need to be combined to form a sequence, and an id for this sequence
     def transcribed_ranges(self):
-        return [ExportGroup(seqid=self.data.given_id, ranges=self._ranges_by_type(types.GEENUFF_TRANSCRIPT))]
+        return [ExportGroup(seqid=self.data.given_name, ranges=self._ranges_by_type(types.GEENUFF_TRANSCRIPT))]
 
     def cds_ranges(self):
         return self._one_range_one_group(self._ranges_by_type(types.GEENUFF_CDS))
@@ -244,12 +244,12 @@ class RangeMaker(TranscriptHandlerBase):
 
     def mature_RNA(self):
         exons = self.exonic_ranges()
-        return [ExportGroup(seqid=self.data.given_id, ranges=[x.ranges[0] for x in exons])]
+        return [ExportGroup(seqid=self.data.given_name, ranges=[x.ranges[0] for x in exons])]
 
     def mature_CDS(self):
         # todo, operon logic!!
         cds = self.cds_exonic_ranges()
-        return [ExportGroup(seqid=self.data.given_id + '_cds', ranges=[x.ranges[0] for x in cds])]
+        return [ExportGroup(seqid=self.data.given_name + '_cds', ranges=[x.ranges[0] for x in cds])]
 
     def utr3p(self):
         pass  # todo
@@ -307,11 +307,11 @@ class RangeMaker(TranscriptHandlerBase):
         return out
 
     def sum_exonic_lengths(self):
-        ranges = self.exonic_ranges()
+        ranges = [x.ranges[0] for x in self.exonic_ranges()]
         return self._sum_range_lengths(ranges)
 
     def sum_exonic_cds_lengths(self):
-        ranges = self.cds_exonic_ranges()
+        ranges = [x.ranges[0] for x in self.cds_exonic_ranges()]
         return self._sum_range_lengths(ranges)
 
 
