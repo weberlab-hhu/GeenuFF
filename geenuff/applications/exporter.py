@@ -6,16 +6,19 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from geenuff.base.orm import Coordinate, Genome, Feature, Transcript, TranscriptPiece, \
-    association_transcript_piece_to_feature
+    association_transcript_piece_to_feature, SuperLocus
 from geenuff.base.handlers import TranscriptHandlerBase, SuperLocusHandlerBase
-from geenuff.base.helpers import full_db_path
+from geenuff.base.helpers import full_db_path, Counter
 from geenuff.base import types
 
 
 class ExportController(object):
-    def __init__(self, db_path_in):
+    def __init__(self, db_path_in, longest=False):
         self.db_path_in = db_path_in
         self._mk_session()
+        self.longest = longest
+        self.id_counter = Counter()
+        self.export_ranges = []
 
     def _mk_session(self):
         self.engine = create_engine(full_db_path(self.db_path_in), echo=False)
@@ -73,6 +76,28 @@ class ExportController(object):
         q = sess.query(Transcript.super_locus_id)\
             .filter(Transcript.id.in_(q)).distinct()
         return q
+
+    def gen_ranges(self, genomes, exclude, range_function):
+        # which genomes to export
+        coord_ids = self._get_coords_by_genome_query(genomes, exclude)
+        super_loci = self.get_super_loci_by_coords(coord_ids).all()
+        i = 0
+        for sl in super_loci:
+            super_locus = self.session.query(SuperLocus).filter(SuperLocus.id == sl[0]).first()
+            sl_ranger = SuperLocusRanger(super_locus, longest=self.longest)
+            # todo, once JOIN output exists, drop all these loops
+            print(super_locus, file=sys.stderr)
+            for range_maker in sl_ranger.exp_range_makers:
+                export_groups = range_function(range_maker)
+                for group in export_groups:
+                    if group.seqid is None:
+                        group.seqid = 'unnamed_{0:08d}'.format(self.id_counter())
+                    yield group
+                    i += 1
+
+    def prep_ranges(self, genomes, exclude, range_function):
+        for arange in self.gen_ranges(genomes, exclude, range_function):
+            self.export_ranges.append(arange)
 
 
 def positional_match(feature, previous):

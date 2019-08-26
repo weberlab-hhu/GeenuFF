@@ -1,18 +1,13 @@
 import sys
 
 from geenuff.applications.exporter import ExportController
-from geenuff.base.orm import Coordinate, SuperLocus
-from geenuff.base.helpers import reverse_complement, chunk_str, Counter
-from geenuff.applications.exporter import SuperLocusRanger, ExportGroup
+from geenuff.base.orm import Coordinate
+from geenuff.base.helpers import reverse_complement, chunk_str
 
 
 class FastaExportController(ExportController):
     def __init__(self, db_path_in, longest=False):
-        super().__init__(db_path_in)
-        print(self.session, file=sys.stderr)
-        self.export_seqs = []
-        self.longest = longest
-        self.id_counter = Counter()
+        super().__init__(db_path_in, longest)
 
     def get_seq(self, export_sequence):
         # simple and probably horribly inefficient
@@ -50,53 +45,10 @@ class FastaExportController(ExportController):
             handle_out = sys.stdout
         else:
             handle_out = open(fa_out, "w")
-        for export_seq in self.export_seqs:
+        for export_seq in self.export_ranges:
             handle_out.write(self.fmt_seq(export_seq))
             handle_out.write('\n')
         handle_out.close()
 
-    def prep_intron_exports(self, genomes, exclude):
-
-        def range_function(range_maker):
-            return range_maker.intronic_ranges()
-
-        def id_function(i, range):
-            del range
-            return "intron_{0:06d}".format(i)
-
-        self._prep_geenuff_features(genomes, exclude, range_function, id_function)
-
-    def prep_transcript_exports(self, genomes, exclude):
-
-        def range_function(range_maker):
-            return range_maker.transcribed_ranges()
-
-        def id_function(i, range):
-            del i
-            return range.given_name
-
-        self._prep_geenuff_features(genomes, exclude, range_function, id_function)
-
-    def prep_ranges(self, genomes, exclude, range_function):
-        # which genomes to export
-        coord_ids = self._get_coords_by_genome_query(genomes, exclude)
-        super_loci = self.get_super_loci_by_coords(coord_ids).all()
-        i = 0
-        for sl in super_loci:
-            super_locus = self.session.query(SuperLocus).filter(SuperLocus.id == sl[0]).first()
-            sl_ranger = SuperLocusRanger(super_locus, longest=self.longest)
-            # todo, once JOIN output exists, drop all these loops
-            print(super_locus, file=sys.stderr)
-            for range_maker in sl_ranger.exp_range_makers:
-                export_groups = range_function(range_maker)
-                for group in export_groups:
-                    if group.seqid is None:
-                        group.seqid = 'unnamed_{0:08d}'.format(self.id_counter())
-                    self.export_seqs.append(group)
-                    i += 1
 
 
-class ExportSeq(object):
-    def __init__(self, seqid, ranges):
-        self.seqid = seqid
-        self.ranges = ranges
