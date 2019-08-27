@@ -89,16 +89,14 @@ class OrganizedGeenuffImporterGroup(object):
     def _parse_gff_entries(self, entries):
         """Changes the GFF format into the GeenuFF format. Does all the parsing."""
         sl = entries['super_locus']
-        # these attr are the same for all geenuff importers going to be created
-        is_plus_strand = get_strand_direction(sl)
-        score = sl.score
-        source = sl.source
 
-        sl_start, sl_end = get_geenuff_start_end(sl.start, sl.end, is_plus_strand)
+        sl_is_plus_strand = get_strand_direction(sl)
+
+        sl_start, sl_end = get_geenuff_start_end(sl.start, sl.end, sl_is_plus_strand)
         sl_i = self.importers['super_locus'] = SuperLocusImporter(entry_type=sl.type,
                                                                   given_name=sl.get_ID(),
                                                                   coord=self.coord,
-                                                                  is_plus_strand=is_plus_strand,
+                                                                  is_plus_strand=sl_is_plus_strand,
                                                                   start=sl_start,
                                                                   end=sl_end,
                                                                   controller=self.controller)
@@ -108,6 +106,7 @@ class OrganizedGeenuffImporterGroup(object):
             if len(t.get_Parent()) > 1:
                 raise NotImplementedError
             t_id = t.get_ID()
+            t_is_plus_strand = get_strand_direction(t)
             # create transcript handler
             t_i = TranscriptImporter(entry_type=t.type,
                                      given_name=t_id,
@@ -120,11 +119,11 @@ class OrganizedGeenuffImporterGroup(object):
                                            controller=self.controller)
             # create transcript feature handler
             tf_i = FeatureImporter(self.coord,
-                                   is_plus_strand,
+                                   t_is_plus_strand,
                                    types.GEENUFF_TRANSCRIPT,
                                    given_name=t_id,
-                                   score=score,
-                                   source=source,
+                                   score=t.score,
+                                   source=t.source,
                                    controller=self.controller)
             tf_i.set_start_end_from_gff(t.start, t.end)
 
@@ -135,25 +134,26 @@ class OrganizedGeenuffImporterGroup(object):
 
             # if it is not a non-coding gene or something like that
             if t_entries['cds']:
+                assert all([t_is_plus_strand == get_strand_direction(x) for x in t_entries['cds']])
                 # create protein handler
                 protein_id = self._get_protein_id_from_cds_list(t_entries['cds'])
                 p_i = ProteinImporter(given_name=protein_id,
                                       super_locus_id=sl_i.id,
                                       controller=self.controller)
                 # create coding features from exon limits
-                if is_plus_strand:
+                if t_is_plus_strand:
                     phase_5p = t_entries['cds'][0].phase
                     phase_3p = t_entries['cds'][-1].phase
                 else:
                     phase_5p = t_entries['cds'][-1].phase
                     phase_3p = t_entries['cds'][0].phase
                 cds_i = FeatureImporter(self.coord,
-                                        is_plus_strand,
+                                        t_is_plus_strand,
                                         types.GEENUFF_CDS,
                                         phase_5p=phase_5p,
                                         phase_3p=phase_3p,
-                                        score=score,
-                                        source=source,
+                                        score=t.score,
+                                        source=t.source,
                                         controller=self.controller)
                 gff_start = t_entries['cds'][0].start
                 gff_end = t_entries['cds'][-1].end
@@ -169,6 +169,8 @@ class OrganizedGeenuffImporterGroup(object):
                 exons = t_entries['exons']
                 introns = []
                 for i in range(len(exons) - 1):
+                    e_is_plus_strand = get_strand_direction(exons[i])
+                    assert e_is_plus_strand == t_is_plus_strand  # todo, replace asserts with error masking
                     # the introns are delimited by the surrounding exons
                     # the first base of an intron in right after the last exononic base
                     gff_start = exons[i].end + 1
@@ -176,14 +178,14 @@ class OrganizedGeenuffImporterGroup(object):
                     # ignore introns that would come from directly adjacent exons
                     if gff_start - gff_end != 1:
                         intron_i = FeatureImporter(self.coord,
-                                                   is_plus_strand,
+                                                   e_is_plus_strand,
                                                    types.GEENUFF_INTRON,
-                                                   score=score,
-                                                   source=source,
+                                                   score=exons[i].score,
+                                                   source=exons[i].source,
                                                    controller=self.controller)
                         intron_i.set_start_end_from_gff(gff_start, gff_end)
                         introns.append(intron_i)
-                if is_plus_strand:
+                if t_is_plus_strand:
                     t_importers['introns'] = introns
                 else:
                     t_importers['introns'] = introns[::-1]
@@ -283,7 +285,7 @@ class OrganizedGFFEntryGroup(object):
 
 
 class OrganizedGFFEntries(object):
-    """Structures the gff entries comming from gffhelper by seqid and gene. Also does some
+    """Structures the gff entries coming from gffhelper by seqid and gene. Also does some
     basic gff value cleanup.
     The entries are organized in the following way:
 
@@ -530,7 +532,7 @@ class GFFErrorHandling(object):
                         faulty_introns = []
                         for j, intron in enumerate(introns):
                             # the case of overlapping exons
-                            if ((self.is_plus_strand and intron.end < intron.start)
+                            if ((transcript['transcript_feature'].is_plus_strand and intron.end < intron.start)
                                     or (not self.is_plus_strand and intron.end > intron.start)):
                                 # mark the overlapping cds regions as errors
                                 if j > 0:
