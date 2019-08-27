@@ -213,6 +213,8 @@ class RangeMaker(TranscriptHandlerBase):
     def _subtract_ranges(self, subtract_from, to_subtract):
         keep_trees = self._make_trees(subtract_from)
         subtract_trees = self._make_trees(to_subtract)
+        if not subtract_trees:
+            return self._resort_subtracted(subtract_from)
         subtracted = []
         for key in keep_trees:
             for chop_out in subtract_trees[key]:
@@ -249,6 +251,7 @@ class RangeMaker(TranscriptHandlerBase):
     def exonic_ranges(self):  # AKA exon
         transcribeds = self._ranges_by_type(types.GEENUFF_TRANSCRIPT)
         introns = self._ranges_by_type(types.GEENUFF_INTRON)
+        print(introns)
         exons = self._subtract_ranges(subtract_from=transcribeds, to_subtract=introns)
         return self._one_range_one_group(exons)
 
@@ -274,7 +277,7 @@ class RangeMaker(TranscriptHandlerBase):
     def mature_CDS(self):
         # todo, operon logic!!
         cds = self.cds_exonic_ranges()
-        return [ExportGroup(seqid=self.data.given_name + '_cds', ranges=[x.ranges[0] for x in cds])]
+        return [ExportGroup(seqid=self.data.given_name, ranges=[x.ranges[0] for x in cds])]
 
     def utr3p(self):
         pass  # todo
