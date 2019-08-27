@@ -549,7 +549,6 @@ class GFFErrorHandling(object):
                             elif abs(intron.end - intron.start) < 60:
                                 self._add_error(i, intron.start, intron.end, self.is_plus_strand,
                                                 types.TOO_SHORT_INTRON)
-                                faulty_introns.append(intron)
                         # do not save faulty introns, the error should be descriptive enough
                         for intron in faulty_introns:
                             introns.remove(intron)
