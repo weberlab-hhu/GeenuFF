@@ -1,23 +1,9 @@
 import os
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy import func
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.exc import IntegrityError
-import sqlalchemy
-
-from .. import orm
-from .. import types
-from .. import helpers
-from ..base.orm import (Genome, Feature, Coordinate, Transcript, TranscriptPiece, SuperLocus,
-                        Protein)
-from ..base.handlers import SuperLocusHandlerBase, TranscriptHandlerBase
-from ..applications.importer import ImportController, InsertCounterHolder, OrganizedGFFEntries
+from ..applications.importer import ImportController
 from ..applications.exporters.sequence import FastaExportController
 from ..applications.exporters.lengths import LengthExportController
 from ..applications.exporter import MODES
-from .test_geenuff import mk_memory_session
-from ..applications.exporter import TranscriptHandlerBase
 
 EXPORTING_DB = 'testdata/exporting.sqlite3'
 
@@ -62,12 +48,6 @@ def compare2controllers(expect, econtroller, lcontroller):
 
 def test_get_intron_seqs():
     """checks that expected intron sequences are produced"""
-    # test data has been simplified from an augustus run that previously resulted in erroneous masks
-    # and from a partial gene model in the Rcommumnis genome
-    econtroller, lcontroller = seq_len_controllers('introns')
-    # expect [(fa_id (samtools faidx), length, sequence)]
-    # and the fa_id is just for knowing where it went wrong if it does
-    assert len(econtroller.export_ranges) == len(lcontroller.export_ranges) == 11
     expect = [("Chr1:195000-199000:1543-2114", 572,
                "GTACTTCCAAATCTTCAATTTTGATTCTAAAGATTGGTCCTTTTACTCTGTTTCTCAATT"
                "TGAGTTTTAGGTATTCTTTGATTTTGTATTGGTTTCATTCTAAATATTCATCCTTTACTC"
@@ -95,7 +75,13 @@ def test_get_intron_seqs():
                "GTATACAAAACAATTTGCCTTTACGTTTTTACATTTCTTTAAGAGTTTGAAACATGTCTA"
                "AAGCTGGGATAATATTTTTGCAG")]
     expect += expect[:4] + expect[5:6]
-    print(len(expect), 'len expect')
+
+    # test data has been simplified from an augustus run that previously resulted in erroneous masks
+    # and from a partial gene model in the Rcommumnis genome
+    econtroller, lcontroller = seq_len_controllers('introns')
+    # expect [(fa_id (samtools faidx), length, sequence)]
+    # and the fa_id is just for knowing where it went wrong if it does
+    assert len(econtroller.export_ranges) == len(lcontroller.export_ranges) == 11
     compare2controllers(expect, econtroller, lcontroller)
     # and now just the longest (1st & 3rd)
     econtroller, lcontroller = seq_len_controllers('introns', longest=True)
@@ -104,8 +90,7 @@ def test_get_intron_seqs():
 
 
 def test_get_exons():
-    econtroller, lcontroller = seq_len_controllers('exons')
-    assert len(econtroller.export_ranges) == len(lcontroller.export_ranges) == 14
+    """checks that individual expected exon sequences are produced"""
     expect = [("Chr1:195000-199000:780-1542", 763,
                "AAGCCTTTCTCTTTAAATTCGTTATCGTTTTTTTTATTTTATCAATTTAATCTTTTTATT"
                "TGTTTTGTTCTTCCTCGATTCAACACTCGATGCTGTGACAAAGCCCAGATTTTGGCCGGA"
@@ -184,6 +169,9 @@ def test_get_exons():
                 "CCTTAAGACTGTAAAAAATGAACGAGCAACTATTTCAACACTTCAAGCTAAAAATGGATT"
                 "TAGATGGGATGATACTGCAACAAAATATGTTTATGATGAACAAATGATGGTAAGCATTCT"
                 "TAATAA")]
+
+    econtroller, lcontroller = seq_len_controllers('exons')
+    assert len(econtroller.export_ranges) == len(lcontroller.export_ranges) == 14
     compare2controllers(expect, econtroller, lcontroller)
     # and now just the longest (1st & 3rd)
     econtroller, lcontroller = seq_len_controllers('exons', longest=True)
@@ -193,6 +181,7 @@ def test_get_exons():
 
 
 def test_get_mRNA():
+    """tests that exons are propperly spliced into mRNA sequence"""
     expect = [("AT1G01540.2.TAIR10", 1920,
                "AAGCCTTTCTCTTTAAATTCGTTATCGTTTTTTTTATTTTATCAATTTAATCTTTTTATTTGTTTTGTTC"
                "TTCCTCGATTCAACACTCGATGCTGTGACAAAGCCCAGATTTTGGCCGGAAAGTTTTGTGTGTTTCCGGC"
@@ -267,6 +256,7 @@ def test_get_mRNA():
 
 
 def test_get_pre_mRNA():
+    """tests returning sequence of raw transcript (transcription start-end)"""
     expect = [("Chr1:195000-199000:780-3684", 2905,
                "AAGCCTTTCTCTTTAAATTCGTTATCGTTTTTTTTATTTTATCAATTTAATCTTTTTATT"
                "TGTTTTGTTCTTCCTCGATTCAACACTCGATGCTGTGACAAAGCCCAGATTTTGGCCGGA"
@@ -383,6 +373,7 @@ def test_get_pre_mRNA():
 
 
 def test_get_CDS():
+    """test production of CDS sequence, ignoring phase"""
     expect = [("AT1G01540.2.TAIR10", 1419,
                "ATGTCGGTGTACGACGCTGCTTTCCTTAATACAGAGCTTTCGAAACCGACATCGATTTTTGGTCTCCGGC"
                "TATGGGTCGTGATCGGAATCTTACTTGGATCTCTAATTGTCATCGCACTCTTTCTTCTCTCCCTCTGCTT"
