@@ -4,7 +4,7 @@ from geenuff.applications.exporter import ExportController
 from geenuff.base.handlers import SuperLocusHandlerBase, TranscriptHandlerBase, CoordinateHandlerBase, \
     FeatureHandlerBase
 
-from geenuff.base.orm import Coordinate, Transcript
+from geenuff.base.orm import Coordinate, Transcript, SuperLocus
 from geenuff.base.helpers import reverse_complement, chunk_str
 
 
@@ -44,7 +44,7 @@ class FeatureJsonable(FeatureHandlerBase, ToJsonable):
         assert transcript is not None, "needed to get the protein id"
         out = self.pre_to_jsonable(self.data)
         out['type'] = data.type.value
-        out['is_full_contained'] = self.is_fully_contained(coordinate, start, end, is_plus_strand)
+        out['is_fully_contained'] = self.is_fully_contained(coordinate, start, end, is_plus_strand)
         out['overlaps'] = self.overlaps(coordinate, start, end, is_plus_strand)
         out['protein_id'] = self.protein_ids(transcript)
         return out
@@ -143,6 +143,7 @@ class TranscriptJsonable(TranscriptHandlerBase, ToJsonable):
 
 class SuperLocusJsonable(SuperLocusHandlerBase, ToJsonable):
     def __init__(self, data=None):
+        print(type(data))
         FeatureHandlerBase.__init__(self, data)
         ToJsonable.__init__(self)
         self.transcript_handlers = self._mk_transcript_handlers()
@@ -172,12 +173,35 @@ class SuperLocusJsonable(SuperLocusHandlerBase, ToJsonable):
         return out
 
 
+class CoordinateJsonable(CoordinateHandlerBase):
+    def to_jsonable(self, start, end):
+        return {'id': self.data.id,
+                'seqid': self.data.seqid,
+                'sequence': self.data.sequence[start:end],
+                'start': start,
+                'end': end}
+
+
 class JsonExportController(ExportController):
     # todo, filter coordinate by start, end
     #  from orm obj (or join res) to json
 
-    def coordinate_range_to_jsonable(self):
-        pass
+    def coordinate_range_to_jsonable(self, species, seqid, start, end, is_plus_strand):
+        out = []
+        for coordinate in self.session.query(Coordinate).filter(Coordinate.seqid == seqid).all():
+            if coordinate.genome.species == species:
+                ch = CoordinateJsonable(coordinate)
+                res = {"coordinate_piece": ch.to_jsonable(start, end),
+                       'super_loci': []}
+                for sl in self.get_super_loci_by_coords([coordinate.id]):
+                    super_locus = self.session.query(SuperLocus).filter(SuperLocus.id == sl[0]).first()
+                    slh = SuperLocusJsonable(super_locus)
+                    if slh.overlaps(coordinate, start, end, is_plus_strand):
+                        res['super_loci'].append(slh.to_jsonable(slh.data, coordinate, start, end, is_plus_strand))
+                out.append(res)
+        return out
+
+
 
 
 

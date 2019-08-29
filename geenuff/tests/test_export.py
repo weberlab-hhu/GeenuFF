@@ -18,7 +18,8 @@ def prepare_and_cleanup():
 
     if not os.path.exists(EXPORTING_DB):
         controller = ImportController(database_path='sqlite:///' + EXPORTING_DB)
-        controller.add_genome('testdata/exporting.fa', 'testdata/exporting.gff3', clean_gff=True)
+        controller.add_genome('testdata/exporting.fa', 'testdata/exporting.gff3', clean_gff=True,
+                              genome_args={'species': 'dummy'})
     yield
     os.remove(EXPORTING_DB)
 
@@ -441,11 +442,18 @@ def test_get_json_feature():
     fh = FeatureJsonable(data=f)
     th = TranscriptJsonable(data=t)
     print(fh.to_jsonable(f, coord, 790, 3000, True, transcript=t))
-    print(json.dumps(th.to_jsonable(t, coord, 790, 3000, True), indent=2))
+    #print(json.dumps(th.to_jsonable(t, coord, 790, 3000, True), indent=2))
     print('------')
     sls = controller.session.query(orm.SuperLocus).all()
-    print(len(sls))
+    #print(len(sls))
     for sl in sls:
         slh = SuperLocusJsonable(sl)
-        print(json.dumps(slh.to_jsonable(sl, coord, 790, 3000, True), indent=2))
-    assert False
+        #print(json.dumps(slh.to_jsonable(sl, coord, 790, 3000, True), indent=2))
+    #print(controller.session.query(orm.Genome).all())
+    meh = controller.coordinate_range_to_jsonable('dummy', seqid='Chr1:195000-199000', start=1, end=3900, is_plus_strand=True)
+    assert len(meh) == 1
+    assert meh[0]['coordinate_piece']['seqid'] == 'Chr1:195000-199000'
+    assert len(meh[0]['coordinate_piece']['sequence']) == 3899
+    assert len(meh[0]['super_loci']) == 1
+    print(json.dumps(meh, indent=2))
+    # todo, slightly more thorough testing
