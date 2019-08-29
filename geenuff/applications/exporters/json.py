@@ -141,6 +141,35 @@ class TranscriptJsonable(TranscriptHandlerBase, ToJsonable):
         return out
 
 
+class SuperLocusJsonable(SuperLocusHandlerBase, ToJsonable):
+    def __init__(self, data=None):
+        FeatureHandlerBase.__init__(self, data)
+        ToJsonable.__init__(self)
+        self.transcript_handlers = self._mk_transcript_handlers()
+
+    def _mk_transcript_handlers(self):
+        return [TranscriptJsonable(x) for x in self.data.transcripts]
+
+    def is_fully_contained(self, coordinate, start, end, is_plus_strand):
+        if all([th.is_fully_contained(coordinate, start, end, is_plus_strand) for th in self.transcript_handlers]):
+            return True
+        else:
+            return False
+
+    def overlaps(self, coordinate, start, end, is_plus_strand):
+        if any([th.overlaps(coordinate, start, end, is_plus_strand) for th in self.transcript_handlers]):
+            return True
+        else:
+            return False
+
+    def to_jsonable(self, data, coordinate, start, end, is_plus_strand):
+        out = self.pre_to_jsonable(self.data)
+        out['type'] = self.data.type.value
+        out['is_fully_contained'] = self.is_fully_contained(coordinate, start, end, is_plus_strand)
+        out['overlaps'] = self.overlaps(coordinate, start, end, is_plus_strand)
+        out['transcripts'] = [th.to_jsonable(th, coordinate, start, end, is_plus_strand)
+                              for th in self.transcript_handlers]
+        return out
 
 
 class JsonExportController(ExportController):

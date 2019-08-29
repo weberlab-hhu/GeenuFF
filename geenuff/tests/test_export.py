@@ -3,7 +3,7 @@ import pytest
 from ..applications.importer import ImportController
 from ..applications.exporters.sequence import FastaExportController
 from ..applications.exporters.lengths import LengthExportController
-from ..applications.exporters.json import JsonExportController, FeatureJsonable, TranscriptJsonable
+from ..applications.exporters.json import JsonExportController, FeatureJsonable, TranscriptJsonable, SuperLocusJsonable
 from ..applications.exporter import MODES
 from geenuff.base import orm, types
 import json
@@ -442,5 +442,10 @@ def test_get_json_feature():
     th = TranscriptJsonable(data=t)
     print(fh.to_jsonable(f, coord, 790, 3000, True, transcript=t))
     print(json.dumps(th.to_jsonable(t, coord, 790, 3000, True), indent=2))
-
+    print('------')
+    sls = controller.session.query(orm.SuperLocus).all()
+    print(len(sls))
+    for sl in sls:
+        slh = SuperLocusJsonable(sl)
+        print(json.dumps(slh.to_jsonable(sl, coord, 790, 3000, True), indent=2))
     assert False
