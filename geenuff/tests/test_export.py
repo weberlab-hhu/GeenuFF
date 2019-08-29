@@ -3,7 +3,9 @@ import pytest
 from ..applications.importer import ImportController
 from ..applications.exporters.sequence import FastaExportController
 from ..applications.exporters.lengths import LengthExportController
+from ..applications.exporters.json import JsonExportController, FeatureJsonable
 from ..applications.exporter import MODES
+from geenuff.base import orm
 
 EXPORTING_DB = 'testdata/exporting.sqlite3'
 
@@ -427,3 +429,12 @@ def test_get_CDS():
     assert len(econtroller.export_ranges) == len(lcontroller.export_ranges) == 2
     expect = expect[:1] + expect[-1:]
     compare2controllers(expect, econtroller, lcontroller)
+
+
+def test_get_json_feature():
+    controller = JsonExportController(db_path_in='sqlite:///' + EXPORTING_DB)
+    f = controller.session.query(orm.Feature).first()
+    coord = controller.session.query(orm.Coordinate).first()
+    fh = FeatureJsonable(data=f)
+    print(fh.to_jsonable(f, coord, 790, 3000, True))
+    assert False
