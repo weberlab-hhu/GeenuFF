@@ -3,9 +3,10 @@ import pytest
 from ..applications.importer import ImportController
 from ..applications.exporters.sequence import FastaExportController
 from ..applications.exporters.lengths import LengthExportController
-from ..applications.exporters.json import JsonExportController, FeatureJsonable
+from ..applications.exporters.json import JsonExportController, FeatureJsonable, TranscriptJsonable
 from ..applications.exporter import MODES
-from geenuff.base import orm
+from geenuff.base import orm, types
+import json
 
 EXPORTING_DB = 'testdata/exporting.sqlite3'
 
@@ -433,8 +434,13 @@ def test_get_CDS():
 
 def test_get_json_feature():
     controller = JsonExportController(db_path_in='sqlite:///' + EXPORTING_DB)
-    f = controller.session.query(orm.Feature).first()
+    f = controller.session.query(orm.Feature).filter(orm.Feature.type == types.GEENUFF_CDS).first()
+    print(f.type)
+    t = f.transcript_pieces[0].transcript
     coord = controller.session.query(orm.Coordinate).first()
     fh = FeatureJsonable(data=f)
-    print(fh.to_jsonable(f, coord, 790, 3000, True))
+    th = TranscriptJsonable(data=t)
+    print(fh.to_jsonable(f, coord, 790, 3000, True, transcript=t))
+    print(json.dumps(th.to_jsonable(t, coord, 790, 3000, True), indent=2))
+
     assert False
