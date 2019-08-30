@@ -37,43 +37,43 @@ Types are:
 * too_short_intron
 * super_loci_overlap_error
 
-##### <>\is_biological\_<>:
-When true, these attributes mean the start, and end attributes
+##### start_is_biological_start and end_is_biological_end:
+When `True`, these attributes mean the start and end attributes
 of a feature correspond to a meaningful biological transition.
 * start: start of a region, inclusive
-  * transcription start site (1st transcribed bp)
-  * start codon, the A of the ATG
-  * donor splice site, first bp of intron
+  * geenuff_transcript --> transcription start site (1st transcribed bp)
+  * geenuff_cds --> start codon, the A of the ATG
+  * geenuf_intron --> donor splice site, first bp of intron
 * end: end of a region, exclusive (i.e. start of one there after)
-  * transcription termination site (1st non-transcribed bp)
-  * stop codon, first non-coding bp, e.g. the N in TGAN
-  * acceptor splice site (1st bp that is part of final transcript)
-* open/close status:
-  
-  for defining a _region_ these will work the same as start/end.
-  So every bp between intron: open_status and intron: close_status
-  belongs to an intron. However, these can be used when there is incomplete
-  information (e.g. the assembled sequence started in an intron, so the donor 
-  splice site is missing). If however, the status is set in the middle of a
-  sequence, this should generally be accompanied by an 'error mask' that 
-  indicates the approximate region with an unclear identity / where the missing
-  start/end feature may occur.
-* point:
-  
-  anything occurring at a single point / not defining a region.
-  OK, this has no current usage, but could be used, e.g. to mark
-  an expected small mistake (SNP/deletion) in the assembly as erroneous.  
+  * geenuff_transcript --> 1 after transcription termination site (1st non-transcribed bp)
+  * geenuf_cds --> 1 after stop codon, first non-coding bp, e.g. the N in TGAN
+  * geenuff_intron --> 1 after acceptor splice site (1st bp that is part of final transcript)
 
+When `False`, these attributes mean the start and end attributes
+of a feature either do not, or it is not known if they correspond
+to a biological transition, yet the region they delineate is
+confidently of the given type. 
 
+For instance, if the parser finds a gene model in a gff where the
+start of the first exon and the start of the first CDS (+ strand)
+have the same position (the A in ATG), then it is apparent that
+we are missing the 5' UTR, so for the geenuff_transcript feature
+the start_is_biological_start will be set to False, and an
+error mask will be added upstream of the CDS. We are still confident
+that all of the CDS must occur within the transcript, we know
+the start codon is part of the transcript region, but we mark that the start point
+itself is probably wrong, and mask the upstream range as it's 
+unclear what part of this is intergenic and which part UTR.
+ 
 #### feature start/end/at numbering
 
-Features, have just one coordinate, so two of them are used
+Features have start and end coordinates that
 to delineate a range. 
 
 The positioning of these features is in keeping with the common
 coordinate system: count from 0, start inclusive, end exclusive. 
-So, the "coding, start", is at the A, of the ATG, AKA the first
-coding base pair; while in contrast, the "coding, end" is
+So, the "geenuff_cds, start", is at the A, of the ATG, AKA the first
+coding base pair; while in contrast, the "geenuff_cds, end" is
 after the stop-codon, AKA, the first non-coding bp.
 
 ##### reverse complement
@@ -81,7 +81,7 @@ after the stop-codon, AKA, the first non-coding bp.
 Importantly, the coding-start should always point to the first
 A, of ATG, regardless of strand. This means the numeric coordinates
 have to change and unfortunately while one could take the
-sequence [1, 4) + strand, literally pop in 1 and 4 as python coordinates
+sequence \[1, 4) on the + strand, and directly use 1 and 4 as python coordinates
 and get the sequence; the same is not going to work on the minus strand.
 Instead: 
 
@@ -113,24 +113,24 @@ so reverse to the interpretation when on the - strand.
 
 Plus strand (+)
 
-| Common Name  | GFF | GFF start | GFF end |type| bearing| position |
+| Common Name  | GFF | GFF start | GFF end |geenuff type| bearing| position |
 | -------------|:----| ---------:|--------:|:---|:-------|--------:|
-| TSS, Transcription start site      | start 1st exon  |x| |transcribed|start|x - 1|
-| TTS, Transcription termination site| end last exon   | |x|transcribed|end  |x    |
-| 1st bp of start codon              | start 1st CDS   |x| |coding     |start|x - 1|
-| coding end                         | end last CDS    | |x|coding     |end  |x    |
+| TSS, Transcription start site      | start 1st exon  |x| |transcript |start|x - 1|
+| TTS, Transcription termination site| end last exon   | |x|transcript |end  |x    |
+| 1st bp of start codon              | start 1st CDS   |x| |cds        |start|x - 1|
+| coding end                         | end last CDS    | |x|cds        |end  |x    |
 | donor splice site (5' of intron)   |end non-last exon| |x|intron     |start|x    |
 | acceptor splice site (3' of intron)|start 2nd+ exon  |x| |intron     |end  |x - 1|
 
 
 Minus strand (-)
 
-| Common Name  | GFF | GFF start | GFF end |type| bearing| position|
+| Common Name  | GFF | GFF start | GFF end |genuff type| bearing| position|
 | -------------|:----| ---------:|--------:|:---|:-------|--------:|
-| TSS, Transcription start site      | end last exon   | |x|transcribed|start|x - 1|
-| TTS, Transcription termination site| start 1st exon  |x| |transcribed|end  |x - 2|
-| 1st bp of start codon              | end last CDS    | |x|coding     |start|x - 1|
-| coding end                         | start 1st CDS   |x| |coding     |end  |x - 2|
+| TSS, Transcription start site      | end last exon   | |x|transcript |start|x - 1|
+| TTS, Transcription termination site| start 1st exon  |x| |transcript |end  |x - 2|
+| 1st bp of start codon              | end last CDS    | |x|cds        |start|x - 1|
+| coding end                         | start 1st CDS   |x| |cds        |end  |x - 2|
 | donor splice site (5' of intron)   |start 2nd+ exon  |x| |intron     |start|x - 2|
 | acceptor splice site (3' of intron)|end non-last exon| |x|intron     |end  |x - 1|
 
