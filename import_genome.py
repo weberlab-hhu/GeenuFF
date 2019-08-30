@@ -12,20 +12,23 @@ class PathFinder(object):
     INPUT = 'input'
     OUTPUT = 'output'
 
-    def __init__(self, db_path, basedir, fasta=None, gff=None):
+    def __init__(self, db_path, basedir, fasta=None, gff=None, logfile=None):
         # directories
         self.db_out = db_path
         self.basedir = basedir
         self.input = '{}/{}/'.format(self.basedir, PathFinder.INPUT)
         self.output = '{}/{}/'.format(self.basedir, PathFinder.OUTPUT)
-        for dir in [self.basedir, self.input, self.output]:
-            os.makedirs(dir, exist_ok=True)
+        if args.basedir is not None:
+            for dir in [self.basedir, self.input, self.output]:
+                os.makedirs(dir, exist_ok=True)
+            self.problems_out = '{}import.log'.format(self.output)
         # files
         self.fasta_in = self._get_fa(fasta)
         self.gff_in = self._get_gff(gff)
         if not self.db_out:
             self.db_out = '{}geenuff.sqlite3'.format(self.output)
-        self.problems_out = '{}import.log'.format(self.output)
+        if logfile is not None:
+            self.problems_out = logfile
 
     def _get_fa(self, provided):
         if provided is not None:
@@ -50,7 +53,11 @@ class PathFinder(object):
 
 
 def main(args):
-    paths = PathFinder(args.db_path, args.basedir, fasta=args.fasta, gff=args.gff3)
+    if args.basedir is None:
+        assert all([x is not None for x in [args.fasta, args.gff3, args.db_path, args.log_file]]), \
+            "if basedir is none, all three custom input/output files must be manually specified with --gff3, " \
+            "--fasta, --log-file and --db_path parameters"
+    paths = PathFinder(args.db_path, args.basedir, fasta=args.fasta, gff=args.gff3, logfile=args.log_file)
     logging.basicConfig(filename=paths.problems_out,
                         filemode='w',
                         level=logging.INFO,
@@ -68,12 +75,14 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--basedir', help='organized output (& input) directory', required=True)
+    parser.add_argument('--basedir', help='organized output (& input) directory. If this is not set, all four custom'
+                        'input parameters must be set.')
 
-    custominput = parser.add_argument_group('Override default with custom input location:')
+    custominput = parser.add_argument_group('Override default with custom input/output location:')
     custominput.add_argument('--gff3', help='gff3 formatted file to parse / standardize')
     custominput.add_argument('--fasta', help='fasta file to parse standardize')
     custominput.add_argument('--db-path', help='path of the GeenuFF database')
+    custominput.add_argument('--log-file', help="output path for import log (default basedir/output/import.log)")
 
     parser.add_argument('--replace-db', action='store_true',
                         help=('whether to override a GeenuFF database found at '
