@@ -2,18 +2,44 @@
 ### features
 
 #### types
-Feature types will now be broken down into two pieces, namely
-type (transcribed, coding, intron, trans_intron, error) and
-bearing (start, end, open_status, close_status, point).
+Feature types differ somewhat from a gff, "geenuff_" has been 
+appended to names to reduce confusion where the meaning is not
+identical.
 
-##### new types:
-* transcribed: primarily transcription start & termination sites
-* coding: primarily start and stop codon
-* intron / trans intron: primarily donor splice site, acceptor splice site
-* error: mark start/end of region where the provided annotation is
-in question.
+##### core types:
+* geenuff_transcript: range of pre-mRNA / unspliced transcript
+* geenuff_cds: range between the start and stop codon (ignoring introns)
+* geenuff_intron / trans intron: range between a donor and acceptor splice site
 
-##### bearing:
+##### error types:
+These do not exist in a gff, but are used in geenuff to denote things
+that might be ambiguous or unknown about a gene model. 
+
+Currently errors are assigned when any obvious gene model inconsistency
+is encountered during gff parsing. Most error types
+are extended from the end of a known feature half way to the next
+gene model, while some internal errors (e.g. too_short_intron) can
+be assigned more precisesly. If gff format were not used as an intermediary
+and gene annotation was performed and stored directly in a geenuff structured
+database, all the errors could be assigned more precise ranges for any
+ambiguity.
+
+Types are:
+
+* missing_utr_5p
+* missing_utr_3p
+* empty_super_locus
+* missing_start_codon
+* missing_stop_codon
+* wrong_starting_phase 
+* mismatched_ending_phase
+* overlapping_exons
+* too_short_intron
+* super_loci_overlap_error
+
+##### <>\is_biological\_<>:
+When true, these attributes mean the start, and end attributes
+of a feature correspond to a meaningful biological transition.
 * start: start of a region, inclusive
   * transcription start site (1st transcribed bp)
   * start codon, the A of the ATG
