@@ -1,4 +1,5 @@
 import sys
+import json
 from abc import ABC, abstractmethod
 from geenuff.applications.exporter import ExportController
 from geenuff.base.handlers import SuperLocusHandlerBase, TranscriptHandlerBase, CoordinateHandlerBase, \
@@ -200,6 +201,9 @@ class JsonExportController(ExportController):
                         res['super_loci'].append(slh.to_jsonable(slh.data, coordinate, start, end, is_plus_strand))
                 out.append(res)
         return out
+
+    def coordinate_range_to_json(self, species, seqid, start, end, is_plus_strand):
+        return json.dumps(self.coordinate_range_to_jsonable(species, seqid, start, end, is_plus_strand))
 
 
 
