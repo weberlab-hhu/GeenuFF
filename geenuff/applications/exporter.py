@@ -291,9 +291,8 @@ class RangeMaker(TranscriptHandlerBase):
         i = 0
         for pre_utr in pre_utrs:
             utr = self._subtract_ranges(subtract_from=[pre_utr], to_subtract=introns)
-            out.append(ExportGroup(seqid='{}_UTR{02f}'.format(self.data.given_name, i), ))
+            out.append(ExportGroup(seqid='{}_UTR{:02d}'.format(self.data.given_name, i), ranges=utr))
             i += 1
-
 
     def utr3p(self):
         pass  # todo
