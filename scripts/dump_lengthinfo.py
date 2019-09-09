@@ -13,7 +13,10 @@ def main(args):
     else:
         raise NotImplementedError("Requested mode ({}) not in implemented types {}".format(args.mode,
                                                                                            list(MODES.keys())))
-    controller.write_lengths(args.out)
+    if args.stats_only:
+        controller.write_length_stats(args.out)
+    else:
+        controller.write_lengths(args.out)
 
 
 if __name__ == "__main__":
@@ -33,7 +36,8 @@ if __name__ == "__main__":
                              'If empty all genomes in the db are used.')
     parser.add_argument('-l', '--longest', action="store_true",
                         help="ignore all but the longest transcript per gene")
-    # todo, add options to output length statistics instead of all lengths
+    parser.add_argument('--stats_only', action="store_true",
+                        help="output summary statistics about the lengths instead of the lengths themselves")
     args = parser.parse_args()
 
     main(args)

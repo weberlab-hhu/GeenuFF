@@ -86,7 +86,6 @@ class ExportController(object):
             super_locus = self.session.query(SuperLocus).filter(SuperLocus.id == sl[0]).first()
             sl_ranger = SuperLocusRanger(super_locus, longest=self.longest)
             # todo, once JOIN output exists, drop all these loops
-            print(super_locus, file=sys.stderr)
             for range_maker in sl_ranger.exp_range_makers:
                 export_groups = range_function(range_maker)
                 for group in export_groups:
@@ -278,6 +277,23 @@ class RangeMaker(TranscriptHandlerBase):
         # todo, operon logic!!
         cds = self.cds_exonic_ranges()
         return [ExportGroup(seqid=self.data.given_name, ranges=[x.ranges[0] for x in cds])]
+
+    def mature_UTR(self):
+        # subtract CDS
+        # for each unprocessed UTR
+        #  --> export group
+        #  subtract introns
+        transcript = self._ranges_by_type(types.GEENUFF_TRANSCRIPT)
+        coding = self._ranges_by_type(types.GEENUFF_CDS)
+        introns = self._ranges_by_type(types.GEENUFF_INTRON)
+        pre_utrs = self._subtract_ranges(subtract_from=transcript, to_subtract=coding)
+        out = []
+        i = 0
+        for pre_utr in pre_utrs:
+            utr = self._subtract_ranges(subtract_from=[pre_utr], to_subtract=introns)
+            out.append(ExportGroup(seqid='{}_UTR{02f}'.format(self.data.given_name, i), ))
+            i += 1
+
 
     def utr3p(self):
         pass  # todo

@@ -3,13 +3,16 @@ import argparse
 
 from geenuff.applications.exporters.sequence import FastaExportController
 from geenuff.applications.exporter import MODES
+
+
 def main(args):
     controller = FastaExportController(args.db_path_in, args.longest)
     if args.mode in MODES:
         controller.prep_ranges(args.genomes, args.exclude_genomes,
                                MODES[args.mode])
     else:
-        raise NotImplementedError("I lied, only mode=introns, pre-mRNA is implemented so far, not {}".format(args.mode))
+        raise NotImplementedError("Requested mode ({}) not in implemented types {}".format(args.mode,
+                                                                                           list(MODES.keys())))
     #coords_ids = controller._get_coords_by_genome_query(args.genomes, args.exclude_genomes)
     #x = controller.get_super_loci_by_coords(coords_ids)
     controller.write_fa(args.out)
