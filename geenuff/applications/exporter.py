@@ -1,6 +1,7 @@
 import sys
 import copy
 import intervaltree
+import argparse
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -10,6 +11,34 @@ from geenuff.base.orm import Coordinate, Genome, Feature, Transcript, Transcript
 from geenuff.base.handlers import TranscriptHandlerBase, SuperLocusHandlerBase
 from geenuff.base.helpers import full_db_path, Counter
 from geenuff.base import types
+
+
+class ExportArgParser(object):
+    def __init__(self):
+        self.parser = argparse.ArgumentParser()
+        self.parser.add_argument('--db-path-in', type=str, required=True,
+                                 help='Path to the Geenuff SQLite input database.')
+        self.parser.add_argument('--genomes', type=str, default='',
+                                 help='Comma separated list of species names to be exported. '
+                                      'If empty all genomes in the db are used.')
+        self.parser.add_argument('--exclude-genomes', type=str, default='',
+                                 help='Comma separated list of species names to be excluded. '
+                                      'If empty all genomes in the db are used.')
+        self.parser.add_argument('-l', '--longest', action="store_true",
+                                 help="ignore all but the longest transcript per gene")
+        self.args = None
+
+    def parse_args(self):
+        self.args = self.parser.parse_args()
+
+
+class RangeArgParser(ExportArgParser):
+    def __init__(self):
+        super().__init__()
+        self.parser.add_argument('-m', '--mode', type=str, required=True,
+                                 help="which type of sequence to export, one of {}".format(list(MODES.keys())))
+        self.parser.add_argument('-o', '--out', type=str,
+                                 help="output fasta file path, (default is stdout)")
 
 
 class ExportController(object):
