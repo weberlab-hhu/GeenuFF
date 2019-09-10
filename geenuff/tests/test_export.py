@@ -8,7 +8,11 @@ from ..applications.exporter import MODES
 from geenuff.base import orm, types
 import json
 
-EXPORTING_DB = 'testdata/exporting.sqlite3'
+EXPORTING_PFX = 'testdata/exporting.'
+EXONEXONCDS_PFX = 'testdata/exonexonCDS.'
+
+EXPORTING_DB = EXPORTING_PFX + 'sqlite3'
+EXONEXONCDS_DB = EXONEXONCDS_PFX + 'sqlite3'
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -16,19 +20,21 @@ def prepare_and_cleanup():
     if not os.getcwd().endswith('GeenuFF/geenuff'):
         pytest.exit('Tests need to be run from GeenuFF/geenuff directory')
 
-    if not os.path.exists(EXPORTING_DB):
-        controller = ImportController(database_path='sqlite:///' + EXPORTING_DB)
-        controller.add_genome('testdata/exporting.fa', 'testdata/exporting.gff3', clean_gff=True,
-                              genome_args={'species': 'dummy'})
+    for pfx in [EXPORTING_PFX, EXONEXONCDS_PFX]:
+        if not os.path.exists(pfx + 'sqlite3'):
+            controller = ImportController(database_path='sqlite:///' + pfx + 'sqlite3')
+            controller.add_genome(pfx + 'fa', pfx + 'gff3', clean_gff=True,
+                                  genome_args={'species': 'dummy'})
     yield
-    os.remove(EXPORTING_DB)
+    for db in [EXPORTING_DB, EXONEXONCDS_DB]:
+        os.remove(db)
 
 
-def seq_len_controllers(mode, longest=False):
-    econtroller = FastaExportController(db_path_in='sqlite:///' + EXPORTING_DB, longest=longest)
+def seq_len_controllers(mode, longest=False, db=EXPORTING_DB):
+    econtroller = FastaExportController(db_path_in='sqlite:///' + db, longest=longest)
     econtroller.prep_ranges(range_function=MODES[mode], genomes=None, exclude=None)
 
-    lcontroller = LengthExportController(db_path_in='sqlite:///' + EXPORTING_DB, longest=longest)
+    lcontroller = LengthExportController(db_path_in='sqlite:///' + db, longest=longest)
     lcontroller.prep_ranges(range_function=MODES[mode], genomes=None, exclude=None)
     return econtroller, lcontroller
 
@@ -430,6 +436,80 @@ def test_get_CDS():
     econtroller, lcontroller = seq_len_controllers('CDS', longest=True)
     assert len(econtroller.export_ranges) == len(lcontroller.export_ranges) == 2
     expect = expect[:1] + expect[-1:]
+    compare2controllers(expect, econtroller, lcontroller)
+
+
+def test_get_spliced_UTRs():
+    expect = [('Chr1:195000-199000:780-979', 200,
+               "AAGCCTTTCTCTTTAAATTCGTTATCGTTTTTTTTATTTTATCAATTTAATCTTTTTATT"
+               "TGTTTTGTTCTTCCTCGATTCAACACTCGATGCTGTGACAAAGCCCAGATTTTGGCCGGA"
+               "AAGTTTTGTGTGTTTCCGGCGAAGAATGCGAAGAAACCGGAAGAATCTGTAACGGAATCT"
+               "AAGCTAAAAGTTAAAGTACG"),
+              ('Chr1:195000-199000:3384-3684', 301,
+               "AAAAAGAGAGTCACTTGGGTTAAGTGATTTCCACACGACCATTATATTTCATTTTTTTTT"
+               "CCGGTATATTATTGTCTCACTTACATAATATTTTCATTCTTTGGCTCTTCGAGTCTTGGC"
+               "CTTACGAAATTAACATTCTTCTTCTTTGTAACCTTTTGTCAACGATCACATTCACATGTC"
+               "ACTTATTAGATATTGTAATATGTAATGTTTGGACCGACGTCGAAGCATAAGCAGGTGATT"
+               "GGTCGATGGATCAAACTTATCGCTTTGGACGAAATGGACCACAATGATTCTTTTTTAGCT"
+               "C"),
+              ('Chr1:195000-199000:812-979', 168,
+               "TTTATTTTATCAATTTAATCTTTTTATTTGTTTTGTTCTTCCTCGATTCAACACTCGATG"
+               "CTGTGACAAAGCCCAGATTTTGGCCGGAAAGTTTTGTGTGTTTCCGGCGAAGAATGCGAA"
+               "GAAACCGGAAGAATCTGTAACGGAATCTAAGCTAAAAGTTAAAGTACG"),
+              ('', 579,
+               "ACAAATCTAGTGGATTGGCTTAAATCAATGGTGGGAAACCGAAGATCAGAAGAAGTTGTT"
+               "GATCCGAAAATACCCGAACCACCATCCTCAAAGGCTCTTAAACGAGTGTTGCTTGTAGCT"
+               "TTGCGTTGTGTGGATCCTGATGCGAACAAGAGACCTAAAATGGGTCATATCATACATATG"
+               "CTTGAAGCCGAAGATCTACTCTATCGCGATGAACGCCGAACAACAAGGGACCATGGAAGC"
+               "CGCGAGAGACAAGAGACAGCTGTGGTTGCTGCCGGTAGTGAAAGTGGTGAGAGCGGTTCA"
+               "CGGCATCATCAGCAAAAGCAAAGATGAAAAAAGAGAGTCACTTGGGTTAAGTGATTTCCA"
+               "CACGACCATTATATTTCATTTTTTTTTCCGGTATATTATTGTCTCACTTACATAATATTT"
+               "TCATTCTTTGGCTCTTCGAGTCTTGGCCTTACGAAATTAACATTCTTCTTCTTTGTAACC"
+               "TTTTGTCAACGATCACATTCACATGTCACTTATTAGATATTGTAATATGTAATGTTTGGA"
+               "CCGACGTCGAAGCATAAGCAGGTGATTGGTCGATGGATC"
+               )
+    ]
+
+    econtroller, lcontroller = seq_len_controllers('UTR')
+    assert len(econtroller.export_ranges) == len(lcontroller.export_ranges) == 4
+    compare2controllers(expect, econtroller, lcontroller)
+    # and now just the longest (1st & 3rd)
+    expect = expect[:2]
+    econtroller, lcontroller = seq_len_controllers('UTR', longest=True)
+    assert len(econtroller.export_ranges) == len(lcontroller.export_ranges) == 2
+    compare2controllers(expect, econtroller, lcontroller)
+    # and -strand UTRs as well (exonexoncds test data)
+    expect = [('Gm01:923-1415_Gm01:2042-2081', 533,
+               "TAACGGCGAAAACTTTGTGTCCACCGCCCAGCCCCTCGGCCAATCCCCCAAAACACAAAA"
+               "AACTGTTTTTAAAACATAAAAAAAAAACTCATAACATATGAATAATAATAACAATAAAAA"
+               "CTAAGAAGCAATAATTATTATTTAATTGTGCATTAAGATATGATTTAAGGGAGATAAGGG"
+               "GCTTGTAGAGAGGGTCCTTTCTTTCAGATCTTGCTCCAAAATCAGAACTACCAAAGCTTC"
+               "CATCTGATTTGCAGAGAGTTTTTTTTTTTTTTTTTCTTCTCAAGGGACCAACAGAGGCAA"
+               "CCAAGGACACTGTAGAGAGAGGAAAGTGGTTCTGTTCTTTCTGTGAGTAACATAACATGC"
+               "AATAGATACTATTATGTATAGAGAGAGAACAGAAGAGTTGAAGAAAGATTGTTGTTCAGT"
+               "TCGAAAAATTTGCCCATCAAGTACCCTTTTTCTGTTTTCATTTTTTGGTTGGTTTTGCTT"
+               "CCTATCCAACCCTGTTGTGGCGTTCCTGGATCGTTCTTCTCTGTGGCGGAGAC"
+               ),
+              ('Gm01:3696-4056', 361,
+               "AGCATTGAATTTTCAAAACACATTTTGATGCTTCGAGTCCAAGGAGTTGCACAACATTGA"
+               "TTGATCCATTGACACAGGATTCTTGCTAATTGGTACTTTGCCCCCCTTATTTCTTTCTGA"
+               "TATTTTTCTTTCAAAGGTTGGGGATGATGGGGACAAGATTCAGATATATTATTCAAGATT"
+               "AGCTGAAAAGTTTTCTGGGGAGGAGCTCTTTTGTCCTTTTTTTTGTTTTTTTTTCTTCCT"
+               "TTTATGTTTAAAATTTCAACCACTATTTTGTTACATTTAAATTGGCATCTTCCCCCATTT"
+               "CCATT"),
+              ('Gm01b:3312-3460_Gm01b:2196-2196', 150,
+               "CTCTGTCTGGACACTTCTAGCATGTAGTAAAAGATATACATATCCAACAAATTGTTAAAT"
+               "TTTAAATAATGTGTTATTTGTTTTTTAAAAACTATTTTCAGTTTTCAGCTAAAAAGGGAA"
+               "AAAAAAAACTGGCTTTGGATATTTTCCTGG"
+               ),
+              ('Gm01b:336-479', 144,
+               "AGTGATACACTACTACACAACATCATTGTATTTGTACCTTTTTTTTTAGTTGTTTTCTTG"
+               "TGTTTGTTTCGGCAAATAGAAGTTGATGTACATGGCATGTCTGATGTTTGTATTTTGTAC"
+               "CTAGAATAATGGAAACAATGCGTT"
+               )
+              ]
+    econtroller, lcontroller = seq_len_controllers('UTR', db=EXONEXONCDS_DB)
+    assert len(econtroller.export_ranges) == len(lcontroller.export_ranges) == 4
     compare2controllers(expect, econtroller, lcontroller)
 
 

@@ -293,6 +293,7 @@ class RangeMaker(TranscriptHandlerBase):
             utr = self._subtract_ranges(subtract_from=[pre_utr], to_subtract=introns)
             out.append(ExportGroup(seqid='{}_UTR{:02d}'.format(self.data.given_name, i), ranges=utr))
             i += 1
+        return out
 
     def utr3p(self):
         pass  # todo
@@ -362,7 +363,8 @@ MODES = {"mRNA": RangeMaker.mature_RNA,
          "pre-mRNA": RangeMaker.transcribed_ranges,
          "CDS": RangeMaker.mature_CDS,
          "exons": RangeMaker.exonic_ranges,
-         "introns": RangeMaker.intronic_ranges}
+         "introns": RangeMaker.intronic_ranges,
+         "UTR": RangeMaker.mature_UTR}
 
 
 class SuperLocusRanger(SuperLocusHandlerBase):
