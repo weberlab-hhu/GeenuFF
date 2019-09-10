@@ -38,7 +38,7 @@ class LengthExportController(ExportController):
             lengths.append(self.get_length(export_group))
 
         stats = basics(lengths)
-        quants = fmt_keys(quantiles(lengths), pfx="quantile")
+        quants = fmt_keys(quantiles(lengths), pfx="quantile_")
         nxes = fmt_keys(nx(lengths), pfx="N", sfx="")
 
         handle_out = self._as_file_handle(file_out)
@@ -89,7 +89,7 @@ def quantiles(lengths, x_vals=None):
 
     out = {}
     for key in x_vals:
-        out[key] = numpy.quantile(lengths, key)
+        out[key] = round(numpy.quantile(lengths, key), 1)
 
     return out
 
