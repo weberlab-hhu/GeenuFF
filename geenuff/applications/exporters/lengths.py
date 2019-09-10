@@ -2,7 +2,6 @@ import sys
 import numpy
 
 from geenuff.applications.exporter import ExportController
-from geenuff.base.orm import Coordinate
 
 
 class LengthExportController(ExportController):
@@ -17,13 +16,7 @@ class LengthExportController(ExportController):
             total += abs(arange.start - arange.end)
         return total
 
-    @staticmethod
-    def _as_file_handle(file_out):
-        if file_out is None:
-            handle_out = sys.stdout
-        else:
-            handle_out = open(file_out, "w")
-        return handle_out
+
 
     def write_lengths(self, file_out):
         handle_out = self._as_file_handle(file_out)

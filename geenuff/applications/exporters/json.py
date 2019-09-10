@@ -6,7 +6,6 @@ from geenuff.base.handlers import SuperLocusHandlerBase, TranscriptHandlerBase, 
     FeatureHandlerBase
 
 from geenuff.base.orm import Coordinate, Transcript, SuperLocus
-from geenuff.base.helpers import reverse_complement, chunk_str
 
 
 class ToJsonable(object):
@@ -191,6 +190,8 @@ class JsonExportController(ExportController):
         out = []
         for coordinate in self.session.query(Coordinate).filter(Coordinate.seqid == seqid).all():
             if coordinate.genome.species == species:
+                if end is None:  # if end is not specified, take whole sequence
+                    end = coordinate.length
                 ch = CoordinateJsonable(coordinate)
                 res = {"coordinate_piece": ch.to_jsonable(start, end),
                        'super_loci': []}
@@ -205,40 +206,13 @@ class JsonExportController(ExportController):
     def coordinate_range_to_json(self, species, seqid, start, end, is_plus_strand):
         return json.dumps(self.coordinate_range_to_jsonable(species, seqid, start, end, is_plus_strand))
 
+    def query_and_write(self, species, seqid, start, end, is_plus_strand, file_out, pretty=False):
+        jsonable = self.coordinate_range_to_jsonable(species, seqid, start, end, is_plus_strand)
+        if pretty:
+            dumps = json.dumps(jsonable, indent=2)
+        else:
+            dumps = json.dumps(jsonable)
 
-
-
-
-
-## target format reminder:
-#[{"coordinate_piece":
-#    {"id": int, "seqid": str, "sequence": str, "start": int, "end": int},
-# "super_loci":
-#    [{"id": str,
-#      "given_name": str,
-#      "is_fully_contained": bool,
-#      "overlaps": bool,
-#      "transcripts": [{"id": str,
-#                       "given_name": str,
-#                       "is_fully_contained": bool,
-#                       "overlaps": bool,
-#                       "features": [{"id": int,
-#                                     "given_name": str,
-#                                     "seqid": str,
-#                                     "protein_id", str,
-#                                     "type": enum,
-#                                     "start": int,
-#                                     "start_is_biological_start": bool,
-#                                     "end": int,
-#                                     "end_is_biological_end": bool,
-#                                     "score": float,
-#                                     "source": str,
-#                                     "phase": int (in {0, 1, 2}),
-#                                     "is_plus_strand": bool,
-#                                     "is_fully_contained": bool,
-#                                     "overlaps": bool
-#                                    }, ...]
-#                      }, ...]
-#     }, ...]
-#
-#}, ...]
+        handle_out = self._as_file_handle(file_out)
+        handle_out.write(dumps)
+        handle_out.close()

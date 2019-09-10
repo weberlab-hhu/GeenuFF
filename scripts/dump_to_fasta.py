@@ -1,6 +1,4 @@
 #! /usr/bin/env python3
-import argparse
-
 from geenuff.applications.exporters.sequence import FastaExportController
 from geenuff.applications.exporter import RangeArgParser, MODES
 

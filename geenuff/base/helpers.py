@@ -153,15 +153,19 @@ def get_seqids_from_gff(gfffile):
                 seqids.add(line.split('\t')[0])
     return seqids
 
-##### GFF start/end to GeenuFF #####
 
-def get_strand_direction(gffentry):
-    if gffentry.strand == '+':
+##### GFF start/end to GeenuFF #####
+def strand_as_bool(strand):
+    if strand == '+':
         return True
-    elif gffentry.strand == '-':
+    elif strand == '-':
         return False
     else:
-        raise ValueError('cannot interpret strand "{}"'.format(gffentry.strand))
+        raise ValueError('cannot interpret strand "{}"'.format(strand))
+
+
+def get_strand_direction(gffentry):
+    return strand_as_bool(gffentry.strand)
 
 
 def get_geenuff_start_end(gff_start, gff_end, is_plus_strand):

@@ -26,6 +26,9 @@ class ExportArgParser(object):
                                       'If empty all genomes in the db are used.')
         self.parser.add_argument('-l', '--longest', action="store_true",
                                  help="ignore all but the longest transcript per gene")
+        self.parser.add_argument('-o', '--out', type=str,
+                                 help="output fasta file path, (default is stdout)")
+
         self.args = None
 
     def parse_args(self):
@@ -37,8 +40,6 @@ class RangeArgParser(ExportArgParser):
         super().__init__()
         self.parser.add_argument('-m', '--mode', type=str, required=True,
                                  help="which type of sequence to export, one of {}".format(list(MODES.keys())))
-        self.parser.add_argument('-o', '--out', type=str,
-                                 help="output fasta file path, (default is stdout)")
 
 
 class ExportController(object):
@@ -48,6 +49,14 @@ class ExportController(object):
         self.longest = longest
         self.id_counter = Counter()
         self.export_ranges = []
+
+    @staticmethod
+    def _as_file_handle(file_out):
+        if file_out is None:
+            handle_out = sys.stdout
+        else:
+            handle_out = open(file_out, "w")
+        return handle_out
 
     def _mk_session(self):
         self.engine = create_engine(full_db_path(self.db_path_in), echo=False)

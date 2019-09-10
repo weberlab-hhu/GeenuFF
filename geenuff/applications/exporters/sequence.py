@@ -40,11 +40,7 @@ class FastaExportController(ExportController):
         return out
 
     def write_fa(self, fa_out):
-        # again, simple and probably horribly inefficient
-        if fa_out is None:
-            handle_out = sys.stdout
-        else:
-            handle_out = open(fa_out, "w")
+        handle_out = self._as_file_handle(fa_out)
         for export_seq in self.export_ranges:
             handle_out.write(self.fmt_seq(export_seq))
             handle_out.write('\n')
