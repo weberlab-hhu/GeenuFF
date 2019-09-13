@@ -6,7 +6,7 @@ from geenuff.applications.exporter import MODES, RangeArgParser
 class LengthArgParser(RangeArgParser):
     def __init__(self):
         super().__init__()
-        self.parser.add_argument('--stats_only', action="store_true",
+        self.parser.add_argument('--stats-only', action="store_true",
                                  help="output summary statistics about the lengths instead of the lengths themselves")
 
 
