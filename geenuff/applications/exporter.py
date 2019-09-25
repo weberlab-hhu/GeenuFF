@@ -12,7 +12,7 @@ from geenuff.base.helpers import full_db_path, Counter
 from geenuff.base import types
 
 
-class ExportController(object):
+class GeenuffExportController(object):
     def __init__(self, db_path_in, longest=False):
         self.db_path_in = db_path_in
         self._mk_session()
@@ -81,9 +81,8 @@ class ExportController(object):
         # which genomes to export
         coord_ids = self._get_coords_by_genome_query(genomes, exclude)
         super_loci = self.get_super_loci_by_coords(coord_ids).all()
-        i = 0
         for sl in super_loci:
-            super_locus = self.session.query(SuperLocus).filter(SuperLocus.id == sl[0]).first()
+            super_locus = self.session.query(SuperLocus).filter(SuperLocus.id == sl[0]).one()
             sl_ranger = SuperLocusRanger(super_locus, longest=self.longest)
             # todo, once JOIN output exists, drop all these loops
             print(super_locus, file=sys.stderr)
@@ -93,7 +92,6 @@ class ExportController(object):
                     if group.seqid is None:
                         group.seqid = 'unnamed_{0:08d}'.format(self.id_counter())
                     yield group
-                    i += 1
 
     def prep_ranges(self, genomes, exclude, range_function):
         for arange in self.gen_ranges(genomes, exclude, range_function):
@@ -240,7 +238,8 @@ class RangeMaker(TranscriptHandlerBase):
     # all of the following methods should return a ready "ExportGroup" that has all the ordered ranges
     # that need to be combined to form a sequence, and an id for this sequence
     def transcribed_ranges(self):
-        return [ExportGroup(seqid=self.data.given_name, ranges=self._ranges_by_type(types.GEENUFF_TRANSCRIPT))]
+        return [ExportGroup(seqid=self.data.given_name,
+                            ranges=self._ranges_by_type(types.GEENUFF_TRANSCRIPT))]
 
     def cds_ranges(self):
         return self._one_range_one_group(self._ranges_by_type(types.GEENUFF_CDS))

@@ -1,7 +1,7 @@
 import sys
 import json
 from abc import ABC, abstractmethod
-from geenuff.applications.exporter import ExportController
+from geenuff.applications.exporter import GeenuffExportController
 from geenuff.base.handlers import SuperLocusHandlerBase, TranscriptHandlerBase, CoordinateHandlerBase, \
     FeatureHandlerBase
 
@@ -183,7 +183,7 @@ class CoordinateJsonable(CoordinateHandlerBase):
                 'end': end}
 
 
-class JsonExportController(ExportController):
+class JsonExportController(GeenuffExportController):
     # todo, filter coordinate by start, end
     #  from orm obj (or join res) to json
 
