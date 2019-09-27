@@ -28,9 +28,6 @@ class GeenuffExportController(object):
     def get_coord_by_id(self, coord_id):
         return self.session.query(Coordinate).filter(Coordinate.id == coord_id).one()
 
-    def get_gc_content_of_coord(self, coord_id):
-        return gc_content
-
     def _check_genome_names(self, *argv):
         for names in argv:
             if names:
