@@ -45,42 +45,42 @@ class GeenuffExportController(object):
     def genome_query(self, genomes, exclude, return_super_loci=False, include_without_features=False):
         """Returns either a tuple of super_locis or a dict of coord_ids grouped by their genome"""
         self._check_genome_names(genomes, exclude)
-        if return_super_loci:
-            base_query = self.session.query(SuperLocus).distinct()
-        else:
-            base_query = self.session.query(Coordinate.id, Coordinate.length, Coordinate.genome_id)
         if include_without_features:
             coordinate_ids_of_interest = self._all_coords_query()
         else:
             coordinate_ids_of_interest = self._coords_with_feature_query()
 
-        base_query = (base_query
-                         .join(Genome, Genome.id == Coordinate.genome_id)
-                         .filter(Coordinate.id.in_(coordinate_ids_of_interest)))
+        if return_super_loci:
+            query = (self.session.query(SuperLocus).distinct()
+                        .join(Transcript, Transcript.super_locus_id == SuperLocus.id)
+                        .join(TranscriptPiece, TranscriptPiece.transcript_id == Transcript.id)
+                        .join(asso_tp_2_f, asso_tp_2_f.c.transcript_piece_id == TranscriptPiece.id)
+                        .join(Feature, asso_tp_2_f.c.feature_id == Feature.id)
+                        .join(Coordinate, Feature.coordinate_id == Coordinate.id))
+        else:
+            query = self.session.query(Coordinate.id, Coordinate.length, Coordinate.genome_id)
+
+        query = (query
+                    .join(Genome, Genome.id == Coordinate.genome_id)
+                    .filter(Coordinate.id.in_(coordinate_ids_of_interest)))
 
         if genomes:
             print('Selecting the following genomes: {}'.format(genomes), file=sys.stderr)
-            query = base_query.filter(Genome.species.in_(genomes))
+            query = query.filter(Genome.species.in_(genomes))
         else:
             if exclude:
                 print('Selecting all genomes from {} except: {}'.format(self.db_path_in, exclude),
                       file=sys.stderr)
-                query = base_query.filter(Genome.species.notin_(exclude))
+                query = query.filter(Genome.species.notin_(exclude))
             else:
                 print('Selecting all genomes from {}'.format(self.db_path_in), file=sys.stderr)
-                query = base_query
 
         if return_super_loci:
             query = (query
-                        .join(Feature, Feature.coordinate_id == Coordinate.id)
-                        .join(asso_tp_2_f, asso_tp_2_f.feature_id == Feature.id)
-                        .join(TranscriptPiece, TranscriptPiece.id == asso_tp_2_f.transcript_piece_id)
-                        .join(Transcript, Transcript.id == TranscriptPiece.transcript_id)
-                        .join(SuperLocus, SuperLocus.id == Transcript.super_locus_id)
                         .order_by(Genome.species)
                         .order_by(Coordinate.length.desc())
-                        .order_by(Feature.is_plus_strand())
-                        .order_by(Feature.start()))
+                        .order_by(Feature.is_plus_strand)
+                        .order_by(Feature.start))
             return query.all()
         else:
             all_coords = query.order_by(Genome.species).order_by(Coordinate.length.desc()).all()
