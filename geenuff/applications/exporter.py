@@ -89,6 +89,9 @@ class GeenuffExportController(object):
                 genome_coords[c[2]].append(c[:2])  # append (id, length)
             return genome_coords
 
+    def get_longest_transcript_features_of_coord(self, coord_id):
+        pass
+
     def gen_ranges(self, genomes, exclude, range_function):
         super_loci = self.genome_query(genomes, exclude, return_super_loci=True)
         for super_locus in super_loci:
@@ -361,17 +364,17 @@ MODES = {"mRNA": RangeMaker.mature_RNA,
 class SuperLocusRanger(SuperLocusHandlerBase):
     def __init__(self, data=None, longest=False, setup_range_makers=True):
         super().__init__(data)
-        self.logest = longest
+        self.longest = longest
         self.range_makers = []
         self.exp_range_makers = []
         if setup_range_makers:
-            self.setup_range_makers(longest)
+            self.setup_range_makers()
 
-    def setup_range_makers(self, longest):
+    def setup_range_makers(self):
         for transcript in self.data.transcripts:
             range_maker = RangeMaker(transcript)
             self.range_makers.append(range_maker)
-        if not longest:
+        if not self.longest:
             self.exp_range_makers = self.range_makers
         else:
             long_transcript, _ = self.get_longest_transcript()
