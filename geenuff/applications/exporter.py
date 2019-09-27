@@ -1,12 +1,13 @@
 import sys
 import copy
 import intervaltree
+from collections import defaultdict
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from geenuff.base.orm import Coordinate, Genome, Feature, Transcript, TranscriptPiece, \
-    association_transcript_piece_to_feature, SuperLocus
+from geenuff.base.orm import (Coordinate, Genome, Feature, Transcript, TranscriptPiece,
+    association_transcript_piece_to_feature as asso_tp_2_f, SuperLocus)
 from geenuff.base.handlers import TranscriptHandlerBase, SuperLocusHandlerBase
 from geenuff.base.helpers import full_db_path, Counter
 from geenuff.base import types
@@ -24,6 +25,12 @@ class GeenuffExportController(object):
         self.engine = create_engine(full_db_path(self.db_path_in), echo=False)
         self.session = sessionmaker(bind=self.engine)()
 
+    def get_coord_by_id(self, coord_id):
+        return self.session.query(Coordinate).filter(Coordinate.id == coord_id).one()
+
+    def get_gc_content_of_coord(self, coord_id):
+        return gc_content
+
     def _check_genome_names(self, *argv):
         for names in argv:
             if names:
@@ -38,51 +45,56 @@ class GeenuffExportController(object):
     def _all_coords_query(self):
         return self.session.query(Coordinate.id)
 
-    def _get_coords_by_genome_query(self, genomes, exclude, include_without_features=False):
+    def genome_query(self, genomes, exclude, return_super_loci=False, include_without_features=False):
+        """Returns either a tuple of super_locis or a dict of coord_ids grouped by their genome"""
+        self._check_genome_names(genomes, exclude)
+        if return_super_loci:
+            base_query = self.session.query(SuperLocus).distinct()
+        else:
+            base_query = self.session.query(Coordinate.id, Coordinate.length, Coordinate.genome_id)
         if include_without_features:
             coordinate_ids_of_interest = self._all_coords_query()
         else:
             coordinate_ids_of_interest = self._coords_with_feature_query()
+
+        base_query = (base_query
+                         .join(Genome, Genome.id == Coordinate.genome_id)
+                         .filter(Coordinate.id.in_(coordinate_ids_of_interest)))
+
         if genomes:
             print('Selecting the following genomes: {}'.format(genomes), file=sys.stderr)
-            all_coord_ids = (self.session.query(Coordinate.id)
-                             .join(Genome, Genome.id == Coordinate.genome_id)
-                             .filter(Genome.species.in_(genomes))
-                             .filter(Coordinate.id.in_(coordinate_ids_of_interest)))
+            query = base_query.filter(Genome.species.in_(genomes))
         else:
             if exclude:
                 print('Selecting all genomes from {} except: {}'.format(self.db_path_in, exclude),
                       file=sys.stderr)
-                all_coord_ids = (self.session.query(Coordinate.id)
-                                 .join(Genome, Genome.id == Coordinate.genome_id)
-                                 .filter(Genome.species.notin_(exclude))
-                                 .filter(Coordinate.id.in_(coordinate_ids_of_interest)))
+                query = base_query.filter(Genome.species.notin_(exclude))
             else:
-                print('Selecting all genomes from {}'.format(self.db_path_in),
-                      file=sys.stderr)
-                all_coord_ids = coordinate_ids_of_interest
+                print('Selecting all genomes from {}'.format(self.db_path_in), file=sys.stderr)
+                query = base_query
 
-        return all_coord_ids
-
-    def get_super_loci_by_coords(self, coord_ids):
-        sess = self.session  # shortcut
-        # surprisingly not that bad, a minute or two for 55 genomes
-        # todo, join instead of IN and keep results
-        q = sess.query(Feature.id).filter(Feature.coordinate_id.in_(coord_ids))
-        q = sess.query(association_transcript_piece_to_feature.c.transcript_piece_id)\
-            .filter(association_transcript_piece_to_feature.c.feature_id.in_(q)).distinct()
-        q = sess.query(TranscriptPiece.transcript_id)\
-            .filter(TranscriptPiece.id.in_(q)).distinct()
-        q = sess.query(Transcript.super_locus_id)\
-            .filter(Transcript.id.in_(q)).distinct()
-        return q
+        if return_super_loci:
+            query = (query
+                        .join(Feature, Feature.coordinate_id == Coordinate.id)
+                        .join(asso_tp_2_f, asso_tp_2_f.feature_id == Feature.id)
+                        .join(TranscriptPiece, TranscriptPiece.id == asso_tp_2_f.transcript_piece_id)
+                        .join(Transcript, Transcript.id == TranscriptPiece.transcript_id)
+                        .join(SuperLocus, SuperLocus.id == Transcript.super_locus_id)
+                        .order_by(Genome.species)
+                        .order_by(Coordinate.length.desc())
+                        .order_by(Feature.is_plus_strand())
+                        .order_by(Feature.start()))
+            return query.all()
+        else:
+            all_coords = query.order_by(Genome.species).order_by(Coordinate.length.desc()).all()
+            genome_coords = defaultdict(list)
+            for c in all_coords:
+                genome_coords[c[2]].append(c[:2])  # append (id, length)
+            return genome_coords
 
     def gen_ranges(self, genomes, exclude, range_function):
-        # which genomes to export
-        coord_ids = self._get_coords_by_genome_query(genomes, exclude)
-        super_loci = self.get_super_loci_by_coords(coord_ids).all()
-        for sl in super_loci:
-            super_locus = self.session.query(SuperLocus).filter(SuperLocus.id == sl[0]).one()
+        super_loci = self.genome_query(genomes, exclude, return_super_loci=True)
+        for super_locus in super_loci:
             sl_ranger = SuperLocusRanger(super_locus, longest=self.longest)
             # todo, once JOIN output exists, drop all these loops
             print(super_locus, file=sys.stderr)
