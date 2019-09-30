@@ -89,8 +89,16 @@ class GeenuffExportController(object):
                 genome_coords[c[2]].append(c[:2])  # append (id, length)
             return genome_coords
 
-    def get_longest_transcript_features_of_coord(self, coord_id):
-        pass
+    def longest_transcript_features_of_coord(self, coord_id):
+        features = (self.session.query(Feature)
+                       .join(Coordinate, Feature.coordinate_id == Coordinate.id)
+                       .join(asso_tp_2_f, asso_tp_2_f.feature_id == Feature.id)
+                       .join(TranscriptPiece, asso_tp_2_f.transcript_piece_id == TranscriptPiece.id)
+                       .join(Transcript, Transcript.id == TranscriptPiece.transcript_id)
+                       .filter(Coordinate.id == coord_id)
+                       .filter(Transcript.longest)
+                       .all())
+        return features
 
     def gen_ranges(self, genomes, exclude, range_function):
         super_loci = self.genome_query(genomes, exclude, return_super_loci=True)
