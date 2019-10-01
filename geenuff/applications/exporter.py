@@ -1,5 +1,6 @@
 import sys
 import copy
+import time
 import intervaltree
 from collections import defaultdict
 
@@ -42,34 +43,27 @@ class GeenuffExportController(object):
     def _all_coords_query(self):
         return self.session.query(Coordinate.id)
 
-    def genome_query(self, genomes, exclude, return_super_loci=False, include_without_features=False):
+    def genome_query(self, genomes, exclude, return_super_loci=False):
         """Returns either a tuple of super_locis or a dict of coord_ids grouped by their genome
         that each link to a list of features. If return_super_loci is False, only the features of the
         longest transcript are queried."""
         self._check_genome_names(genomes, exclude)
-        if include_without_features:
-            coordinate_ids_of_interest = self._all_coords_query()
-        else:
-            coordinate_ids_of_interest = self._coords_with_feature_query()
-
         if return_super_loci:
             query = (self.session.query(SuperLocus).distinct()
                         .join(Transcript, Transcript.super_locus_id == SuperLocus.id)
                         .join(TranscriptPiece, TranscriptPiece.transcript_id == Transcript.id)
                         .join(asso_tp_2_f, asso_tp_2_f.c.transcript_piece_id == TranscriptPiece.id)
                         .join(Feature, asso_tp_2_f.c.feature_id == Feature.id)
-                        .join(Coordinate, Feature.coordinate_id == Coordinate.id))
+                        .join(Coordinate, Feature.coordinate_id == Coordinate.id)
+                        .join(Genome, Genome.id == Coordinate.genome_id))
         else:
             query = (self.session.query(Feature, Coordinate.id, Coordinate.length, Coordinate.genome_id)
                         .join(Coordinate, Feature.coordinate_id == Coordinate.id)
                         .join(asso_tp_2_f, asso_tp_2_f.c.feature_id == Feature.id)
                         .join(TranscriptPiece, asso_tp_2_f.c.transcript_piece_id == TranscriptPiece.id)
                         .join(Transcript, TranscriptPiece.transcript_id == Transcript.id)
+                        .join(Genome, Genome.id == Coordinate.genome_id)
                         .filter(Transcript.longest == True))
-
-        query = (query
-                    .join(Genome, Genome.id == Coordinate.genome_id)
-                    .filter(Coordinate.id.in_(coordinate_ids_of_interest)))
 
         if genomes:
             print('Selecting the following genomes: {}'.format(genomes), file=sys.stderr)
@@ -90,6 +84,8 @@ class GeenuffExportController(object):
                         .order_by(Feature.start))
             return query.all()
         else:
+            print('Querying all relevant features...')
+            start = time.time()
             regular_features = (query
                                    .order_by(Genome.species)
                                    .order_by(Coordinate.length.desc())
@@ -106,6 +102,7 @@ class GeenuffExportController(object):
             elif exclude:
                 error_features_query = error_features_query.filter(Genome.species.notin_(genomes))
             error_features = error_features_query.all()
+            print('Query took {:.2f}s'.format(time.time() - start))
 
             all_coords_with_features = regular_features + error_features
             genome_coord_features = defaultdict(lambda: defaultdict(list))
