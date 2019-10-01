@@ -43,7 +43,9 @@ class GeenuffExportController(object):
         return self.session.query(Coordinate.id)
 
     def genome_query(self, genomes, exclude, return_super_loci=False, include_without_features=False):
-        """Returns either a tuple of super_locis or a dict of coord_ids grouped by their genome"""
+        """Returns either a tuple of super_locis or a dict of coord_ids grouped by their genome
+        that each link to a list of features. If return_super_loci is False, only the features of the
+        longest transcript are queried."""
         self._check_genome_names(genomes, exclude)
         if include_without_features:
             coordinate_ids_of_interest = self._all_coords_query()
@@ -58,7 +60,12 @@ class GeenuffExportController(object):
                         .join(Feature, asso_tp_2_f.c.feature_id == Feature.id)
                         .join(Coordinate, Feature.coordinate_id == Coordinate.id))
         else:
-            query = self.session.query(Coordinate.id, Coordinate.length, Coordinate.genome_id)
+            query = (self.session.query(Feature, Coordinate.id, Coordinate.length, Coordinate.genome_id)
+                        .join(Coordinate, Feature.coordinate_id == Coordinate.id)
+                        .join(asso_tp_2_f, asso_tp_2_f.c.feature_id == Feature.id)
+                        .join(TranscriptPiece, asso_tp_2_f.c.transcript_piece_id == TranscriptPiece.id)
+                        .join(Transcript, TranscriptPiece.transcript_id == Transcript.id)
+                        .filter(Transcript.longest == True))
 
         query = (query
                     .join(Genome, Genome.id == Coordinate.genome_id)
@@ -83,22 +90,28 @@ class GeenuffExportController(object):
                         .order_by(Feature.start))
             return query.all()
         else:
-            all_coords = query.order_by(Genome.species).order_by(Coordinate.length.desc()).all()
-            genome_coords = defaultdict(list)
-            for c in all_coords:
-                genome_coords[c[2]].append(c[:2])  # append (id, length)
-            return genome_coords
+            regular_features = (query
+                                   .order_by(Genome.species)
+                                   .order_by(Coordinate.length.desc())
+                                   .all())
+            # also getting the errors, which are not linked to a Transcript
+            error_type_values = [t.value for t in types.Errors]
+            error_features_query = (self.session.query(Feature, Coordinate.id, Coordinate.length,
+                                                       Coordinate.genome_id)
+                                       .join(Coordinate, Feature.coordinate_id == Coordinate.id)
+                                       .join(Genome, Genome.id == Coordinate.genome_id)
+                                       .filter(Feature.type.in_(error_type_values)))
+            if genomes:
+                error_features_query = error_features_query.filter(Genome.species.in_(genomes))
+            elif exclude:
+                error_features_query = error_features_query.filter(Genome.species.notin_(genomes))
+            error_features = error_features_query.all()
 
-    def longest_transcript_features_of_coord(self, coord_id):
-        features = (self.session.query(Feature)
-                       .join(Coordinate, Feature.coordinate_id == Coordinate.id)
-                       .join(asso_tp_2_f, asso_tp_2_f.feature_id == Feature.id)
-                       .join(TranscriptPiece, asso_tp_2_f.transcript_piece_id == TranscriptPiece.id)
-                       .join(Transcript, Transcript.id == TranscriptPiece.transcript_id)
-                       .filter(Coordinate.id == coord_id)
-                       .filter(Transcript.longest)
-                       .all())
-        return features
+            all_coords_with_features = regular_features + error_features
+            genome_coord_features = defaultdict(lambda: defaultdict(list))
+            for feature, coord_id, coord_len, genome_id in all_coords_with_features:
+                genome_coord_features[genome_id][(coord_id, coord_len)].append(feature)
+            return genome_coord_features
 
     def gen_ranges(self, genomes, exclude, range_function):
         super_loci = self.genome_query(genomes, exclude, return_super_loci=True)
