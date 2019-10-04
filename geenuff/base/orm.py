@@ -69,19 +69,19 @@ class SuperLocus(Base):
 
 
 association_transcript_piece_to_feature = Table('association_transcript_piece_to_feature', Base.metadata,
-    Column('transcript_piece_id', Integer, ForeignKey('transcript_piece.id'), nullable=False),
-    Column('feature_id', Integer, ForeignKey('feature.id'), nullable=False)
+    Column('transcript_piece_id', Integer, ForeignKey('transcript_piece.id'), nullable=False, index=True),
+    Column('feature_id', Integer, ForeignKey('feature.id'), nullable=False, index=True)
 )
 
 
 association_protein_to_feature = Table('association_protein_to_feature', Base.metadata,
-    Column('protein_id', Integer, ForeignKey('protein.id'), nullable=False),
-    Column('feature_id', Integer, ForeignKey('feature.id'), nullable=False)
+    Column('protein_id', Integer, ForeignKey('protein.id'), nullable=False, index=True),
+    Column('feature_id', Integer, ForeignKey('feature.id'), nullable=False, index=True)
 )
 
 association_transcript_to_protein = Table('association_transcript_to_protein', Base.metadata,
-    Column('transcript_id', Integer, ForeignKey('transcript.id'), nullable=False),
-    Column('protein_id', Integer, ForeignKey('protein.id'), nullable=False)
+    Column('transcript_id', Integer, ForeignKey('transcript.id'), nullable=False, index=True),
+    Column('protein_id', Integer, ForeignKey('protein.id'), nullable=False, index=True)
 )
 
 
@@ -92,6 +92,7 @@ class Transcript(Base):
     given_name = Column(String)
 
     type = Column(Enum(types.TranscriptLevelAll))
+    longest = Column(Boolean)
 
     super_locus_id = Column(Integer, ForeignKey('super_locus.id'), nullable=False)
     super_locus = relationship('SuperLocus', back_populates='transcripts')
