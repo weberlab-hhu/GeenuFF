@@ -190,6 +190,38 @@ class OrganizedGeenuffImporterGroup(object):
                 else:
                     t_importers['introns'] = introns[::-1]
             self.importers['transcripts'].append(t_importers)
+        self._set_longest_transript()
+
+    def _set_longest_transript(self):
+        """Looks for the transcript with the longest exon length (cds_length - sum(intron_lengths))
+        and sets the 'longest' parameters in all the TranscriptImporters. In case of a tie, the
+        first transcript found will be set as longest."""
+        def filter_coding_introns(cds_i, introns):
+            """Filters the non-coding introns out of introns"""
+            cds_range = sorted([cds_i.start, cds_i.end])
+            coding_introns = []
+            for intron in introns:
+                intron_range = sorted([intron.start, intron.end])
+                if min(cds_range[1], intron_range[1]) - max(cds_range[0], intron_range[0]) > 0:
+                    coding_introns.append(intron)
+            return coding_introns
+
+        max_exon_len = -1
+        longest_importer = None
+        for t in self.importers['transcripts']:
+            if 'cds' in t:
+                cds_len = abs(t['cds'].start - t['cds'].end)
+                coding_introns = filter_coding_introns(t['cds'], t['introns'])
+                intron_lengths = sum([abs(i.start - i.end) for i in coding_introns])
+                exon_len = cds_len - intron_lengths
+                if exon_len > max_exon_len:
+                    max_exon_len = exon_len
+                    longest_importer = t['transcript']
+        for t in self.importers['transcripts']:
+            if t['transcript'] is longest_importer:
+                t['transcript'].longest = True
+            else:
+                t['transcript'].longest = False
 
     @staticmethod
     def _get_protein_id_from_cds_entry(cds_entry):
@@ -975,12 +1007,13 @@ class FeatureImporter(Insertable):
 
 
 class TranscriptImporter(Insertable):
-    def __init__(self, entry_type, given_name, super_locus_id, controller):
+    def __init__(self, entry_type, given_name, super_locus_id, controller, longest=False):
         self.id = InsertCounterHolder.transcript()
         self.entry_type = entry_type
         self.given_name = given_name
         self.super_locus_id = super_locus_id
         self.controller = controller
+        self.longest = longest
 
     def add_to_queue(self):
         transcript = self._get_params_dict()
@@ -992,6 +1025,7 @@ class TranscriptImporter(Insertable):
             'type': self.entry_type,
             'given_name': self.given_name,
             'super_locus_id': self.super_locus_id,
+            'longest': self.longest,
         }
         return d
 

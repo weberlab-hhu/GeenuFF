@@ -1,18 +1,20 @@
 import sys
 import copy
+import time
 import intervaltree
+from collections import defaultdict
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from geenuff.base.orm import Coordinate, Genome, Feature, Transcript, TranscriptPiece, \
-    association_transcript_piece_to_feature, SuperLocus
+from geenuff.base.orm import (Coordinate, Genome, Feature, Transcript, TranscriptPiece,
+    association_transcript_piece_to_feature as asso_tp_2_f, SuperLocus)
 from geenuff.base.handlers import TranscriptHandlerBase, SuperLocusHandlerBase
 from geenuff.base.helpers import full_db_path, Counter
 from geenuff.base import types
 
 
-class ExportController(object):
+class GeenuffExportController(object):
     def __init__(self, db_path_in, longest=False):
         self.db_path_in = db_path_in
         self._mk_session()
@@ -23,6 +25,9 @@ class ExportController(object):
     def _mk_session(self):
         self.engine = create_engine(full_db_path(self.db_path_in), echo=False)
         self.session = sessionmaker(bind=self.engine)()
+
+    def get_coord_by_id(self, coord_id):
+        return self.session.query(Coordinate).filter(Coordinate.id == coord_id).one()
 
     def _check_genome_names(self, *argv):
         for names in argv:
@@ -38,52 +43,76 @@ class ExportController(object):
     def _all_coords_query(self):
         return self.session.query(Coordinate.id)
 
-    def _get_coords_by_genome_query(self, genomes, exclude, include_without_features=False):
-        if include_without_features:
-            coordinate_ids_of_interest = self._all_coords_query()
+    def genome_query(self, genomes, exclude, return_super_loci=False):
+        """Returns either a tuple of super_locis or a dict of coord_ids grouped by their genome
+        that each link to a list of features. If return_super_loci is False, only the features of the
+        longest transcript are queried."""
+        self._check_genome_names(genomes, exclude)
+        if return_super_loci:
+            query = (self.session.query(SuperLocus).distinct()
+                        .join(Transcript, Transcript.super_locus_id == SuperLocus.id)
+                        .join(TranscriptPiece, TranscriptPiece.transcript_id == Transcript.id)
+                        .join(asso_tp_2_f, asso_tp_2_f.c.transcript_piece_id == TranscriptPiece.id)
+                        .join(Feature, asso_tp_2_f.c.feature_id == Feature.id)
+                        .join(Coordinate, Feature.coordinate_id == Coordinate.id)
+                        .join(Genome, Genome.id == Coordinate.genome_id))
         else:
-            coordinate_ids_of_interest = self._coords_with_feature_query()
+            query = (self.session.query(Feature, Coordinate.id, Coordinate.length, Coordinate.genome_id)
+                        .join(Coordinate, Feature.coordinate_id == Coordinate.id)
+                        .join(asso_tp_2_f, asso_tp_2_f.c.feature_id == Feature.id)
+                        .join(TranscriptPiece, asso_tp_2_f.c.transcript_piece_id == TranscriptPiece.id)
+                        .join(Transcript, TranscriptPiece.transcript_id == Transcript.id)
+                        .join(Genome, Genome.id == Coordinate.genome_id)
+                        .filter(Transcript.longest == True))
+
         if genomes:
             print('Selecting the following genomes: {}'.format(genomes), file=sys.stderr)
-            all_coord_ids = (self.session.query(Coordinate.id)
-                             .join(Genome, Genome.id == Coordinate.genome_id)
-                             .filter(Genome.species.in_(genomes))
-                             .filter(Coordinate.id.in_(coordinate_ids_of_interest)))
+            query = query.filter(Genome.species.in_(genomes))
         else:
             if exclude:
                 print('Selecting all genomes from {} except: {}'.format(self.db_path_in, exclude),
                       file=sys.stderr)
-                all_coord_ids = (self.session.query(Coordinate.id)
-                                 .join(Genome, Genome.id == Coordinate.genome_id)
-                                 .filter(Genome.species.notin_(exclude))
-                                 .filter(Coordinate.id.in_(coordinate_ids_of_interest)))
+                query = query.filter(Genome.species.notin_(exclude))
             else:
-                print('Selecting all genomes from {}'.format(self.db_path_in),
-                      file=sys.stderr)
-                all_coord_ids = coordinate_ids_of_interest
+                print('Selecting all genomes from {}'.format(self.db_path_in), file=sys.stderr)
 
-        return all_coord_ids
+        if return_super_loci:
+            query = (query
+                        .order_by(Genome.species)
+                        .order_by(Coordinate.length.desc())
+                        .order_by(Feature.is_plus_strand)
+                        .order_by(Feature.start))
+            return query.all()
+        else:
+            print('Querying all relevant features...')
+            start = time.time()
+            regular_features = (query
+                                   .order_by(Genome.species)
+                                   .order_by(Coordinate.length.desc())
+                                   .all())
+            # also getting the errors, which are not linked to a Transcript
+            error_type_values = [t.value for t in types.Errors]
+            error_features_query = (self.session.query(Feature, Coordinate.id, Coordinate.length,
+                                                       Coordinate.genome_id)
+                                       .join(Coordinate, Feature.coordinate_id == Coordinate.id)
+                                       .join(Genome, Genome.id == Coordinate.genome_id)
+                                       .filter(Feature.type.in_(error_type_values)))
+            if genomes:
+                error_features_query = error_features_query.filter(Genome.species.in_(genomes))
+            elif exclude:
+                error_features_query = error_features_query.filter(Genome.species.notin_(genomes))
+            error_features = error_features_query.all()
+            print('Query took {:.2f}s'.format(time.time() - start))
 
-    def get_super_loci_by_coords(self, coord_ids):
-        sess = self.session  # shortcut
-        # surprisingly not that bad, a minute or two for 55 genomes
-        # todo, join instead of IN and keep results
-        q = sess.query(Feature.id).filter(Feature.coordinate_id.in_(coord_ids))
-        q = sess.query(association_transcript_piece_to_feature.c.transcript_piece_id)\
-            .filter(association_transcript_piece_to_feature.c.feature_id.in_(q)).distinct()
-        q = sess.query(TranscriptPiece.transcript_id)\
-            .filter(TranscriptPiece.id.in_(q)).distinct()
-        q = sess.query(Transcript.super_locus_id)\
-            .filter(Transcript.id.in_(q)).distinct()
-        return q
+            all_coords_with_features = regular_features + error_features
+            genome_coord_features = defaultdict(lambda: defaultdict(list))
+            for feature, coord_id, coord_len, genome_id in all_coords_with_features:
+                genome_coord_features[genome_id][(coord_id, coord_len)].append(feature)
+            return genome_coord_features
 
     def gen_ranges(self, genomes, exclude, range_function):
-        # which genomes to export
-        coord_ids = self._get_coords_by_genome_query(genomes, exclude)
-        super_loci = self.get_super_loci_by_coords(coord_ids).all()
-        i = 0
-        for sl in super_loci:
-            super_locus = self.session.query(SuperLocus).filter(SuperLocus.id == sl[0]).first()
+        super_loci = self.genome_query(genomes, exclude, return_super_loci=True)
+        for super_locus in super_loci:
             sl_ranger = SuperLocusRanger(super_locus, longest=self.longest)
             # todo, once JOIN output exists, drop all these loops
             for range_maker in sl_ranger.exp_range_makers:
@@ -92,7 +121,6 @@ class ExportController(object):
                     if group.seqid is None:
                         group.seqid = 'unnamed_{0:08d}'.format(self.id_counter())
                     yield group
-                    i += 1
 
     def prep_ranges(self, genomes, exclude, range_function):
         for arange in self.gen_ranges(genomes, exclude, range_function):
@@ -239,7 +267,8 @@ class RangeMaker(TranscriptHandlerBase):
     # all of the following methods should return a ready "ExportGroup" that has all the ordered ranges
     # that need to be combined to form a sequence, and an id for this sequence
     def transcribed_ranges(self):
-        return [ExportGroup(seqid=self.data.given_name, ranges=self._ranges_by_type(types.GEENUFF_TRANSCRIPT))]
+        return [ExportGroup(seqid=self.data.given_name,
+                            ranges=self._ranges_by_type(types.GEENUFF_TRANSCRIPT))]
 
     def cds_ranges(self):
         return self._one_range_one_group(self._ranges_by_type(types.GEENUFF_CDS))
@@ -369,17 +398,17 @@ MODES = {"mRNA": RangeMaker.mature_RNA,
 class SuperLocusRanger(SuperLocusHandlerBase):
     def __init__(self, data=None, longest=False, setup_range_makers=True):
         super().__init__(data)
-        self.logest = longest
+        self.longest = longest
         self.range_makers = []
         self.exp_range_makers = []
         if setup_range_makers:
-            self.setup_range_makers(longest)
+            self.setup_range_makers()
 
-    def setup_range_makers(self, longest):
+    def setup_range_makers(self):
         for transcript in self.data.transcripts:
             range_maker = RangeMaker(transcript)
             self.range_makers.append(range_maker)
-        if not longest:
+        if not self.longest:
             self.exp_range_makers = self.range_makers
         else:
             long_transcript, _ = self.get_longest_transcript()

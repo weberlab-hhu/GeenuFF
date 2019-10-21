@@ -1,11 +1,11 @@
 import sys
 
-from geenuff.applications.exporter import ExportController
+from geenuff.applications.exporter import GeenuffExportController
 from geenuff.base.orm import Coordinate
 from geenuff.base.helpers import reverse_complement, chunk_str
 
 
-class FastaExportController(ExportController):
+class FastaExportController(GeenuffExportController):
     def __init__(self, db_path_in, longest=False):
         super().__init__(db_path_in, longest)
 
