@@ -192,13 +192,14 @@ class JsonExportController(GeenuffExportController):
         for coordinate in self.session.query(Coordinate).filter(Coordinate.seqid == seqid).all():
             if coordinate.genome.species == species:
                 ch = CoordinateJsonable(coordinate)
-                res = {"coordinate_piece": ch.to_jsonable(start, end),
+                res = {'coordinate_piece': ch.to_jsonable(start, end),
                        'super_loci': []}
-                for sl in self.get_super_loci_by_coords([coordinate.id]):
-                    super_locus = self.session.query(SuperLocus).filter(SuperLocus.id == sl[0]).first()
-                    slh = SuperLocusJsonable(super_locus)
-                    if slh.overlaps(coordinate, start, end, is_plus_strand):
-                        res['super_loci'].append(slh.to_jsonable(slh.data, coordinate, start, end, is_plus_strand))
+                for sl, sl_coordinate_seqid in self.genome_query([species], [], return_super_loci=True):
+                    if sl_coordinate_seqid == seqid:
+                        slh = SuperLocusJsonable(sl)
+                        if slh.overlaps(coordinate, start, end, is_plus_strand):
+                            res['super_loci'].append(slh.to_jsonable(slh.data, coordinate, start, end,
+                                                                     is_plus_strand))
                 out.append(res)
         return out
 

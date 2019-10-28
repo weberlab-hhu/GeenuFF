@@ -44,12 +44,12 @@ class GeenuffExportController(object):
         return self.session.query(Coordinate.id)
 
     def genome_query(self, genomes, exclude, return_super_loci=False):
-        """Returns either a tuple of super_locis or a dict of coord_ids grouped by their genome
-        that each link to a list of features. If return_super_loci is False, only the features of the
-        longest transcript are queried."""
+        """Returns either a tuple of (super_loci, coordinate_seqid) or a dict of coord_ids grouped by
+        their genome that each link to a list of features. If return_super_loci is False, only the
+        features of the longest transcript are queried."""
         self._check_genome_names(genomes, exclude)
         if return_super_loci:
-            query = (self.session.query(SuperLocus).distinct()
+            query = (self.session.query(SuperLocus, Coordinate.seqid).distinct()
                         .join(Transcript, Transcript.super_locus_id == SuperLocus.id)
                         .join(TranscriptPiece, TranscriptPiece.transcript_id == Transcript.id)
                         .join(asso_tp_2_f, asso_tp_2_f.c.transcript_piece_id == TranscriptPiece.id)
@@ -113,7 +113,7 @@ class GeenuffExportController(object):
             return genome_coord_features
 
     def gen_ranges(self, genomes, exclude, range_function):
-        super_loci = self.genome_query(genomes, exclude, return_super_loci=True)
+        super_loci = [r[0] for r in self.genome_query(genomes, exclude, return_super_loci=True)]
         for super_locus in super_loci:
             sl_ranger = SuperLocusRanger(super_locus, longest=self.longest)
             # todo, once JOIN output exists, drop all these loops
