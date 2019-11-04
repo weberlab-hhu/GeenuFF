@@ -97,7 +97,7 @@ class GeenuffExportController(object):
             error_features_query = (self.session.query(Feature, Coordinate.id, Coordinate.length,
                                                        Coordinate.genome_id)
                                        .join(Coordinate, Feature.coordinate_id == Coordinate.id)
-                                       .join(Genome, Genome.id == Coordinate.genome_id))
+                                       .join(Genome, Genome.id == Coordinate.genome_id)
                                        .filter(Feature.type.in_(error_type_values)))
             if genomes:
                 error_features_query = error_features_query.filter(Genome.species.in_(genomes))
