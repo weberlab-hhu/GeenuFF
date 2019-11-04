@@ -505,7 +505,6 @@ class GFFErrorHandling(object):
             # the case of no transcript for a super locus
             # solution is to add an error mask that extends halfway to the appending super
             # loci in the intergenic region as something in this area appears to have gone wrong
-            self.errors = group['errors']
             if not group['transcripts']:
                 self._add_overlapping_error(i, None, 'whole', types.EMPTY_SUPER_LOCUS)
             # other cases
@@ -614,7 +613,7 @@ class GFFErrorHandling(object):
                                   start=start,
                                   end=end,
                                   controller=self.controller)
-        self.errors.append(error_i)
+        self.groups[i]['errors'].append(error_i)
         # error msg
         if is_plus_strand:
             strand_str = 'plus'
