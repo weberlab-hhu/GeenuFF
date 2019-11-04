@@ -92,7 +92,7 @@ class Transcript(Base):
     given_name = Column(String)
 
     type = Column(Enum(types.TranscriptLevelAll))
-    longest = Column(Boolean)
+    longest = Column(Boolean, index=True)
 
     super_locus_id = Column(Integer, ForeignKey('super_locus.id'), nullable=False)
     super_locus = relationship('SuperLocus', back_populates='transcripts')
