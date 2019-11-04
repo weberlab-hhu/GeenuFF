@@ -98,13 +98,12 @@ class GeenuffExportController(object):
                                                        Coordinate.genome_id)
                                        .join(Coordinate, Feature.coordinate_id == Coordinate.id)
                                        .join(Genome, Genome.id == Coordinate.genome_id))
-                                       # .filter(Feature.type.in_(error_type_values)))
+                                       .filter(Feature.type.in_(error_type_values)))
             if genomes:
                 error_features_query = error_features_query.filter(Genome.species.in_(genomes))
             elif exclude:
                 error_features_query = error_features_query.filter(Genome.species.notin_(genomes))
             error_features = error_features_query.all()
-            error_features = [r for r in error_features if r[0].type.value in error_type_values]
             print('Query for error features took {:.2f}s'.format(time.time() - regular_time))
 
             all_coords_with_features = regular_features + error_features

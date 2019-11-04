@@ -755,6 +755,10 @@ class ImportController(object):
         self.clean_tmp_data()
         self.add_sequences(fasta_path, genome_args)
         self.add_gff(gff_path, clean=clean_gff)
+        # call ANALYZE on db after every import to ensure correct joins
+        # possibly only works on SQLite
+        logging.info('running ANALYZE; on the database after genome insert')
+        self.session.execute('ANALYZE;')
 
     def add_sequences(self, seq_path, genome_args=None):
         if genome_args is None:
