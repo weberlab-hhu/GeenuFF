@@ -86,6 +86,8 @@ class GeenuffExportController(object):
         else:
             print('Querying all relevant features...')
             start = time.time()
+            # regular_features = (self.session.query(Feature, Coordinate.id, Coordinate.length, Coordinate.genome_id)
+                                # .join(Coordinate, Feature.coordinate_id == Coordinate.id).limit(10).all()
             regular_features = (query
                                    .order_by(Genome.species)
                                    .order_by(Coordinate.length.desc())
