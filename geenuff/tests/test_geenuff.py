@@ -467,14 +467,15 @@ def test_dummyloci_errors():
     assert error_in_list(error, errors)
 
     # test case 2
-    error = {
-        'coord_id': coords[0].id,
-        'is_plus_strand': True,
-        'start': 499,
-        'end': 1099,
-        'type': types.EMPTY_SUPER_LOCUS
-    }
-    assert error_in_list(error, errors)
+    # we don't currently test for that in order to have all errors attached to a transcript
+    # error = {
+        # 'coord_id': coords[0].id,
+        # 'is_plus_strand': True,
+        # 'start': 499,
+        # 'end': 1099,
+        # 'type': types.EMPTY_SUPER_LOCUS
+    # }
+    # assert error_in_list(error, errors)
 
     # test case 4 (test case 3 is without errors)
     error = {
@@ -564,9 +565,10 @@ def test_case_1():
     coords = query(Coordinate).all()
 
     # confirm exisistence of all objects where things could go wrong
-    # not testing for TranscriptPieces as trans-splicing is currently not implemented
     # above db level and one piece has to exist for the sl_h.features query to work
-    sl_objects = list(sl_h.features) + sl_h.data.transcripts + sl_h.data.proteins
+    error_values = [f.value for f in types.Errors]
+    sl_h_features_wo_errors = [f for f in sl_h.features if f.type.value not in error_values]
+    sl_objects = list(sl_h_features_wo_errors) + sl_h.data.transcripts + sl_h.data.proteins
 
     # first transcript
     transcript = Transcript(given_name='x1', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
@@ -702,7 +704,9 @@ def test_case_8():
 
     coords = query(Coordinate).all()
 
-    sl_objects = list(sl_h.features) + sl_h.data.transcripts + sl_h.data.proteins
+    error_values = [f.value for f in types.Errors]
+    sl_h_features_wo_errors = [f for f in sl_h.features if f.type.value not in error_values]
+    sl_objects = list(sl_h_features_wo_errors) + sl_h.data.transcripts + sl_h.data.proteins
 
     # first transcript
     transcript = Transcript(given_name='x8', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
