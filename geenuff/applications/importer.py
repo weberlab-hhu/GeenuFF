@@ -169,8 +169,11 @@ class OrganizedGeenuffImporterGroup(object):
                 exons = t_entries['exons']
                 introns = []
                 for i in range(len(exons) - 1):
+                    # something really weird is going on here, marking the whole gene as erroneous
                     e_is_plus_strand = get_strand_direction(exons[i])
-                    assert e_is_plus_strand == t_is_plus_strand  # todo, replace asserts with error masking
+                    if e_is_plus_strand != t_is_plus_strand:
+                        sl_i.fully_erroneous = True
+                        break
                     # the introns are delimited by the surrounding exons
                     # the first base of an intron in right after the last exononic base
                     gff_start = exons[i].end + 1
@@ -508,6 +511,14 @@ class GFFErrorHandling(object):
 
     def resolve_errors(self):
         for i, group in enumerate(self.groups):
+            # the case of a super locus being masked as fully erroneous (for some special reason)
+            # mask everything and append error to first transcript
+            if group['super_locus'].fully_erroneous:
+                sl_i = group['super_locus']
+                self._add_error(i, group['transcripts'][0], sl_i.start, sl_i.end, sl_i.is_plus_strand,
+                                types.MISMATCHING_STRANDS)
+                continue
+
             # the case of no transcript for a super locus
             if not group['transcripts']:
                 logging.error('{} is a gene without any transcripts. This will not be masked.'.format(
@@ -926,7 +937,8 @@ class SuperLocusImporter(Insertable):
                  coord=None,
                  is_plus_strand=None,
                  start=-1,
-                 end=-1):
+                 end=-1,
+                 fully_erroneous=False):
         self.id = InsertCounterHolder.super_locus()
         self.entry_type = entry_type
         self.given_name = given_name
@@ -936,6 +948,7 @@ class SuperLocusImporter(Insertable):
         self.is_plus_strand = is_plus_strand
         self.start = start
         self.end = end
+        self.fully_erroneous = fully_erroneous
 
     def add_to_queue(self):
         to_add = {'type': self.entry_type, 'given_name': self.given_name, 'id': self.id}

@@ -58,10 +58,14 @@ FIVE_PRIME_UTR = 'five_prime_UTR'
 THREE_PRIME_UTR = 'three_prime_UTR'
 CDS = 'CDS'
 REGION = 'region'
+BIOLOGICAL_REGION = 'biological_region'
 CHROMOSOME = 'chromosome'
 SUPERCONTIG = 'supercontig'
 MATCH = 'match'
 CDNA_MATCH = 'cDNA_match'
+NCRNA_GENE = 'ncRNA_gene'
+NCRNA = 'ncRNA'
+SCRNA = 'scRNA'
 # ignorable from Augustus
 START_CODON = 'start_codon'
 STOP_CODON = 'stop_codon'
@@ -73,10 +77,12 @@ TRANSCRIPTION_TERMINATION_SITE2 = 'tts'  # transcription_termination_site
 FIVE_PRIME_UTR_LOWER = 'five_prime_utr'
 THREE_PRIME_UTR_LOWER = 'three_prime_utr'
 
-IgnorableGFFFeatures = make_enum('IgnorableGFFFeatures', REGION, CHROMOSOME, SUPERCONTIG, MATCH,
-                                 CDNA_MATCH, FIVE_PRIME_UTR, THREE_PRIME_UTR, START_CODON, STOP_CODON, INTRON,
-                                 TRANSCRIPTION_START_SITE, TRANSCRIPTION_TERMINATION_SITE, FIVE_PRIME_UTR_LOWER,
-                                 THREE_PRIME_UTR_LOWER, TRANSCRIPTION_START_SITE2, TRANSCRIPTION_TERMINATION_SITE2)
+IgnorableGFFFeatures = make_enum('IgnorableGFFFeatures', REGION, BIOLOGICAL_REGION, CHROMOSOME,
+                                 SUPERCONTIG, MATCH, CDNA_MATCH, NCRNA_GENE, NCRNA, SCRNA,
+                                 FIVE_PRIME_UTR, THREE_PRIME_UTR, START_CODON, STOP_CODON, INTRON,
+                                 TRANSCRIPTION_START_SITE, TRANSCRIPTION_TERMINATION_SITE,
+                                 FIVE_PRIME_UTR_LOWER, THREE_PRIME_UTR_LOWER, TRANSCRIPTION_START_SITE2,
+                                 TRANSCRIPTION_TERMINATION_SITE2)
 UsefulGFFSequenceFeatures = make_enum('UsefulGFFSequenceFeatures', EXON, CDS)
 UsefulGFFFeatures = join_to_enum('UsefulGFFFeatures', SuperLocusAll, TranscriptLevelAll,
                                  UsefulGFFSequenceFeatures)
@@ -104,8 +110,9 @@ MISMATCHED_PHASE_3P = 'mismatched_ending_phase'
 OVERLAPPING_EXONS = 'overlapping_exons'
 TOO_SHORT_INTRON = 'too_short_intron'
 SL_OVERLAP_ERROR = 'super_loci_overlap_error'
+MISMATCHING_STRANDS = 'missmatching_strands'
 Errors = make_enum('Errors', MISSING_UTR_5P, MISSING_UTR_3P, EMPTY_SUPER_LOCUS, MISSING_START_CODON,
                    MISSING_STOP_CODON, WRONG_PHASE_5P, MISMATCHED_PHASE_3P, OVERLAPPING_EXONS,
-                   TOO_SHORT_INTRON, SL_OVERLAP_ERROR)
+                   TOO_SHORT_INTRON, SL_OVERLAP_ERROR, MISMATCHING_STRANDS)
 
 GeenuffFeature = join_to_enum('GeenuffFeature', GeenuffSequenceFeature, Errors)
