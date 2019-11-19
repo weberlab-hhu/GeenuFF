@@ -47,7 +47,7 @@ TRANSCRIPT = 'transcript'
 PRIMARY_TRANSCRIPT = 'primary_transcript'
 PSEUDOGENIC_TRANSCRIPT = 'pseudogenic_transcript'
 
-TranscriptLevelNice = make_enum('TranscriptLevelNice', MRNA, TRNA, RRNA,MIRNA, SNORNA, SNRNA, SRP_RNA,
+TranscriptLevelNice = make_enum('TranscriptLevelNice', MRNA, TRNA, RRNA, MIRNA, SNORNA, SNRNA, SRP_RNA,
                                 LNC_RNA, PRE_MIRNA, RNASE_MRP_RNA)
 TranscriptLevelInput = make_enum('TranscriptLevelInput', TRANSCRIPT, PRIMARY_TRANSCRIPT, PSEUDOGENIC_TRANSCRIPT)
 TranscriptLevelAll = join_to_enum('TranscriptLevelAll', TranscriptLevelNice, TranscriptLevelInput)
@@ -66,6 +66,13 @@ CDNA_MATCH = 'cDNA_match'
 NCRNA_GENE = 'ncRNA_gene'
 NCRNA = 'ncRNA'
 SCRNA = 'scRNA'
+UNCONFIRMED_TRANSCRIPT = 'unconfirmed_transcript'
+SCAFFOLD = 'scaffold'
+C_GENE_SEGMENT = 'C_gene_segment'
+V_GENE_SEGMENT = 'V_gene_segment'
+D_GENE_SEGMENT = 'D_gene_segment'
+J_GENE_SEGMENT = 'J_gene_segment'
+VAULTRNA_PRIMARY_TRANSCRIPT = 'vaultRNA_primary_transcript'
 # ignorable from Augustus
 START_CODON = 'start_codon'
 STOP_CODON = 'stop_codon'
@@ -79,9 +86,12 @@ THREE_PRIME_UTR_LOWER = 'three_prime_utr'
 
 IgnorableGFFFeatures = make_enum('IgnorableGFFFeatures', REGION, BIOLOGICAL_REGION, CHROMOSOME,
                                  SUPERCONTIG, MATCH, CDNA_MATCH, NCRNA_GENE, NCRNA, SCRNA,
-                                 FIVE_PRIME_UTR, THREE_PRIME_UTR, START_CODON, STOP_CODON, INTRON,
-                                 TRANSCRIPTION_START_SITE, TRANSCRIPTION_TERMINATION_SITE,
-                                 FIVE_PRIME_UTR_LOWER, THREE_PRIME_UTR_LOWER, TRANSCRIPTION_START_SITE2,
+                                 UNCONFIRMED_TRANSCRIPT, SCAFFOLD, C_GENE_SEGMENT, V_GENE_SEGMENT,
+                                 D_GENE_SEGMENT, J_GENE_SEGMENT, VAULTRNA_PRIMARY_TRANSCRIPT,
+                                 FIVE_PRIME_UTR, THREE_PRIME_UTR, START_CODON,
+                                 STOP_CODON, INTRON, TRANSCRIPTION_START_SITE,
+                                 TRANSCRIPTION_TERMINATION_SITE, FIVE_PRIME_UTR_LOWER,
+                                 THREE_PRIME_UTR_LOWER, TRANSCRIPTION_START_SITE2,
                                  TRANSCRIPTION_TERMINATION_SITE2)
 UsefulGFFSequenceFeatures = make_enum('UsefulGFFSequenceFeatures', EXON, CDS)
 UsefulGFFFeatures = join_to_enum('UsefulGFFFeatures', SuperLocusAll, TranscriptLevelAll,
