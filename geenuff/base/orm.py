@@ -91,7 +91,7 @@ class Transcript(Base):
     id = Column(Integer, primary_key=True, index=True)
     given_name = Column(String)
 
-    type = Column(Enum(types.TranscriptLevelAll))
+    type = Column(Enum(types.TranscriptLevel))
     longest = Column(Boolean, index=True)
 
     super_locus_id = Column(Integer, ForeignKey('super_locus.id'), nullable=False)

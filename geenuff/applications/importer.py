@@ -297,7 +297,7 @@ class OrganizedGFFEntryGroup(object):
             if in_enum_values(entry.type, types.SuperLocusAll):
                 assert 'super_locus' not in self.entries
                 self.entries['super_locus'] = entry
-            elif in_enum_values(entry.type, types.TranscriptLevelAll):
+            elif in_enum_values(entry.type, types.TranscriptLevel):
                 self.entries['transcripts'][entry] = {'exons': [], 'cds': []}
                 latest_transcript = entry
             elif entry.type == types.EXON:

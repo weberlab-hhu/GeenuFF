@@ -571,7 +571,7 @@ def test_case_1():
     sl_objects = list(sl_h_features_wo_errors) + sl_h.data.transcripts + sl_h.data.proteins
 
     # first transcript
-    transcript = Transcript(given_name='x1', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
+    transcript = Transcript(given_name='x1', type=types.TranscriptLevel.mRNA, super_locus=sl)
     assert orm_object_in_list(transcript, sl_objects)
 
     protein = Protein(given_name='x1.p', super_locus=sl)
@@ -609,7 +609,7 @@ def test_case_1():
     assert orm_object_in_list(feature, sl_objects)
 
     # second transcript
-    transcript = Transcript(given_name='y1', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
+    transcript = Transcript(given_name='y1', type=types.TranscriptLevel.mRNA, super_locus=sl)
     assert orm_object_in_list(transcript, sl_objects)
 
     protein = Protein(given_name='y1.p', super_locus=sl)
@@ -657,7 +657,7 @@ def test_case_1():
     assert orm_object_in_list(feature, sl_objects)
 
     # third transcript
-    transcript = Transcript(given_name='z1', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
+    transcript = Transcript(given_name='z1', type=types.TranscriptLevel.mRNA, super_locus=sl)
     assert orm_object_in_list(transcript, sl_objects)
 
     protein = Protein(given_name='z1.p', super_locus=sl)
@@ -709,7 +709,7 @@ def test_case_8():
     sl_objects = list(sl_h_features_wo_errors) + sl_h.data.transcripts + sl_h.data.proteins
 
     # first transcript
-    transcript = Transcript(given_name='x8', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
+    transcript = Transcript(given_name='x8', type=types.TranscriptLevel.mRNA, super_locus=sl)
     assert orm_object_in_list(transcript, sl_objects)
 
     protein = Protein(given_name='x8.p', super_locus=sl)
@@ -747,7 +747,7 @@ def test_case_8():
     assert orm_object_in_list(feature, sl_objects)
 
     # second transcript
-    transcript = Transcript(given_name='y8', type=types.TranscriptLevelAll.mRNA, super_locus=sl)
+    transcript = Transcript(given_name='y8', type=types.TranscriptLevel.mRNA, super_locus=sl)
     assert orm_object_in_list(transcript, sl_objects)
 
     protein = Protein(given_name='y8.p', super_locus=sl)
