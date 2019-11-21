@@ -788,6 +788,13 @@ class ImportController(object):
     def add_genome(self, fasta_path, gff_path, genome_args=None, clean_gff=True):
         if genome_args is None:
             genome_args = {}
+        if 'species' in genome_args:
+            logging.info(f'Starting to add genome: {genome_args["species"]}')
+        else:
+            logging.info(f'Starting to add an unnamed genome.')
+        logging.info(f'FASTA path: {fasta_path}')
+        logging.info(f'GFF path: {gff_path}')
+
         self.clean_tmp_data()
         self.add_sequences(fasta_path, genome_args)
         self.add_gff(gff_path, clean=clean_gff)
@@ -855,6 +862,7 @@ class ImportController(object):
             self.insertion_queues.execute_so_far()
 
         assert self.latest_fasta_importer is not None, 'No recent genome found'
+        logging.info('Starting to parse the GFF file')
         self.latest_fasta_importer.mk_mapper(gff_file)
         gff_organizer = OrganizedGFFEntries(gff_file)
         gff_organizer.load_organized_entries()
@@ -867,6 +875,8 @@ class ImportController(object):
                 geenuff_importer_groups.append(organized_entries.get_geenuff_importers())
             # never do error checking across fasta sequence borders
             clean_and_insert(self, geenuff_importer_groups, clean)
+            logging.info(f'Finished importing features from {len(geenuff_importer_groups)} super loci '
+                         f'from coordinate with seqid {seqid}')
             geenuff_importer_groups = []
 
 
@@ -927,6 +937,7 @@ class FastaImporter(object):
                                    seqid=seqid,
                                    sha1=helpers.sequence_hash(seq),
                                    genome=self.genome)
+            logging.info(f'Added coordinate object for FASTA sequence with seqid {seqid} to the queue')
 
 
 class SuperLocusImporter(Insertable):

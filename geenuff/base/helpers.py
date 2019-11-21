@@ -265,9 +265,6 @@ class QueueController(object):
     def __init__(self, session, engine):
         self.session = session
         self.engine = engine
-        print('setting up QC x_x')
-        print(self.session)
-        print(self.engine)
         self.ordered_queues = []
 
     def execute_so_far(self):
@@ -277,6 +274,7 @@ class QueueController(object):
                 conn.execute(queue.action, queue.queue)
                 del queue.queue[:]
         self.session.commit()
+        logging.info('All Core queues executed')
 
 
 class CoreQueue(object):
