@@ -866,9 +866,11 @@ class ImportController(object):
         self.latest_fasta_importer.mk_mapper(gff_file)
         gff_organizer = OrganizedGFFEntries(gff_file)
         gff_organizer.load_organized_entries()
+
         organized_gff_entries = gff_organizer.organized_entries
+        n_organized_gff_entries = len(organized_gff_entries)
         geenuff_importer_groups = []
-        for seqid in organized_gff_entries.keys():
+        for i, seqid in enumerate(organized_gff_entries.keys()):
             for entry_group in organized_gff_entries[seqid]:
                 organized_entries = OrganizedGFFEntryGroup(entry_group, self.latest_fasta_importer,
                                                            self)
@@ -876,7 +878,7 @@ class ImportController(object):
             # never do error checking across fasta sequence borders
             clean_and_insert(self, geenuff_importer_groups, clean)
             logging.info(f'Finished importing features from {len(geenuff_importer_groups)} super loci '
-                         f'from coordinate with seqid {seqid}')
+                         f'from coordinate with seqid {seqid} ({i}/{n_organized_gff_entries})')
             geenuff_importer_groups = []
 
 
