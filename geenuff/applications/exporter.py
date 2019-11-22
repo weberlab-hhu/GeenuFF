@@ -62,6 +62,7 @@ class GeenuffExportController(object):
                         .join(asso_tp_2_f, asso_tp_2_f.c.feature_id == Feature.id)
                         .join(TranscriptPiece, asso_tp_2_f.c.transcript_piece_id == TranscriptPiece.id)
                         .join(Transcript, TranscriptPiece.transcript_id == Transcript.id)
+                        .join(SuperLocus, Transcript.super_locus_id == SuperLocus.id)
                         .join(Genome, Genome.id == Coordinate.genome_id)
                         .filter(Transcript.longest == True))
 
