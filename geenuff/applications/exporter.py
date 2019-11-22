@@ -92,29 +92,18 @@ class GeenuffExportController(object):
         else:
             print('Querying all relevant features...')
             start = time.time()
-            # regular_features = (self.session.query(Feature, Coordinate.id, Coordinate.length, Coordinate.genome_id)
-                                # .join(Coordinate, Feature.coordinate_id == Coordinate.id).limit(10).all())
-            regular_features = (query
-                                   .order_by(Genome.species)
-                                   .order_by(Coordinate.length.desc())
-                                   .all())
-            regular_time = time.time()
-            print('Query for regular features took {:.2f}s'.format(regular_time - start))
-            # also getting the errors, which are not linked to a Transcript
-            error_type_values = [t.value for t in types.Errors]
-            error_features_query = (self.session.query(Feature, Coordinate.id, Coordinate.length,
-                                                       Coordinate.genome_id)
-                                       .join(Coordinate, Feature.coordinate_id == Coordinate.id)
-                                       .join(Genome, Genome.id == Coordinate.genome_id)
-                                       .filter(Feature.type.in_(error_type_values)))
-            if genomes:
-                error_features_query = error_features_query.filter(Genome.species.in_(genomes))
-            elif exclude:
-                error_features_query = error_features_query.filter(Genome.species.notin_(genomes))
-            error_features = error_features_query.all()
-            print('Query for error features took {:.2f}s'.format(time.time() - regular_time))
+            # all_coords_with_features = (self.session.query(Feature, Coordinate.id, Coordinate.length,
+                                           # Coordinate.genome_id)
+                        # .join(Coordinate, Feature.coordinate_id == Coordinate.id)
+                        # .limit(10)
+                        # .all())
+            all_coords_with_features = (query
+                                           .order_by(Genome.species)
+                                           .order_by(Coordinate.length.desc())
+                                           .all())
+            print('Query took {:.2f}s'.format(time.time() - start))
 
-            all_coords_with_features = regular_features + error_features
+            # reorganizing rows into genome centric dict
             genome_coord_features = defaultdict(lambda: defaultdict(list))
             for feature, coord_id, coord_len, genome_id in all_coords_with_features:
                 genome_coord_features[genome_id][(coord_id, coord_len)].append(feature)
