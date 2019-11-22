@@ -65,6 +65,11 @@ class GeenuffExportController(object):
                         .join(Genome, Genome.id == Coordinate.genome_id)
                         .filter(Transcript.longest == True))
 
+        # filter to common Transcript and Super Locus type in both cases
+        query = (query
+                    .filter(Transcript.type == types.TranscriptLevel.mRNA)
+                    .filter(SuperLocus.type == types.SuperLocusAll.gene))
+
         if genomes:
             print('Selecting the following genomes: {}'.format(genomes), file=sys.stderr)
             query = query.filter(Genome.species.in_(genomes))
