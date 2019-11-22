@@ -11,7 +11,7 @@ Base = declarative_base()
 class Genome(Base):
     __tablename__ = 'genome'
 
-    id = Column(Integer)
+    id = Column(Integer, primary_key=True)
     species = Column(String)
     accession = Column(String)
     version = Column(String)
