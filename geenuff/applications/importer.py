@@ -603,7 +603,7 @@ class GFFErrorHandling(object):
                             faulty_introns.append(intron)
                         # the case of a too short intron
                         # todo put the minimum length in a config somewhere
-                        elif abs(intron.end - intron.start) < 60:
+                        elif abs(intron.end - intron.start) < 20:
                             self._add_error(i, transcript, intron.start, intron.end,
                                             self.is_plus_strand, types.TOO_SHORT_INTRON)
                     # do not save faulty introns, the error should be descriptive enough
