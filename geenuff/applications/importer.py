@@ -785,6 +785,12 @@ class ImportController(object):
         self.session.add(genome)
         self.session.commit()
 
+    def run_analyze(self):
+        # run ANALYZE; on the db for hopefully more performant queries
+        logging.info('Running ANALYZE on the database')
+        with self.engine.connect() as con:
+            con.execute('ANALYZE;')
+
     def add_genome(self, fasta_path, gff_path, genome_args=None, clean_gff=True):
         if genome_args is None:
             genome_args = {}
@@ -798,6 +804,7 @@ class ImportController(object):
         self.clean_tmp_data()
         self.add_sequences(fasta_path, genome_args)
         self.add_gff(gff_path, clean=clean_gff)
+        self.run_analyze()
 
     def add_sequences(self, seq_path, genome_args=None):
         if genome_args is None:
