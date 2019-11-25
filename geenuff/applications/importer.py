@@ -853,7 +853,7 @@ class ImportController(object):
                         error.add_to_queue()
                         error.insert_feature_piece_association(tp.id)
 
-        def clean_and_insert(self, groups, clean, final_coord):
+        def clean_and_insert(self, groups, clean, is_final_coord):
             plus = [g for g in groups if g['super_locus'].is_plus_strand]
             minus = [g for g in groups if not g['super_locus'].is_plus_strand]
             if clean:
@@ -866,7 +866,7 @@ class ImportController(object):
             # insert importers
             insert_importer_groups(self, plus)
             insert_importer_groups(self, minus)
-            if final_coord or self.insertion_queues.total_size() > 10000:
+            if is_final_coord or self.insertion_queues.total_size() > 10000:
                 self.insertion_queues.execute_so_far()
 
         assert self.latest_fasta_importer is not None, 'No recent genome found'
@@ -884,8 +884,8 @@ class ImportController(object):
                                                            self)
                 geenuff_importer_groups.append(organized_entries.get_geenuff_importers())
             # never do error checking across fasta sequence borders
-            final_coord = (i == (n_organized_gff_entries - 1))
-            clean_and_insert(self, geenuff_importer_groups, clean, final_coord)
+            is_final_coord = (i == (n_organized_gff_entries - 1))
+            clean_and_insert(self, geenuff_importer_groups, clean, is_final_coord)
             logging.info(f'Finished importing features from {len(geenuff_importer_groups)} super loci '
                          f'from coordinate with seqid {seqid} ({i + 1}/{n_organized_gff_entries})')
             geenuff_importer_groups = []
