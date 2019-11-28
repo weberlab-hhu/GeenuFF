@@ -93,7 +93,7 @@ ORDER BY genome.species, coordinate.length DESC;'''
 
             start = time.time()
             rows = self.engine.execute(query).fetchall()
-            print('Query took {:.2f}s'.format(time.time() - start))
+            print(f'Query took {time.time() - start:.2f}s')
 
             start = time.time()
             all_coords_with_features = list()
@@ -111,7 +111,7 @@ ORDER BY genome.species, coordinate.length DESC;'''
                                   phase=row[10],
                                   coordinate_id=row[11])
                 all_coords_with_features.append((feature, row[12], row[13], row[14]))
-            print('Generating {len(rows)} python objects took {:.2f}s'.format(time.time() - start))
+            print(f'Generating {len(rows)} python objects took {time.time() - start:.2f}s')
 
             # reorganizing rows into genome centric dict
             genome_coord_features = defaultdict(lambda: defaultdict(list))
