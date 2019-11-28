@@ -137,7 +137,7 @@ class GeenuffExportController(object):
                                   phase=row[10],
                                   coordinate_id=row[11])
                 all_coords_with_features.append((feature, row[12], row[13], row[14]))
-            print(f'Generating {len(rows)} python objects took {time.time() - start:.2f}s')
+            print(f'Generating {len(rows)} Python objects took {time.time() - start:.2f}s')
 
             # reorganizing rows into genome centric dict
             genome_coord_features = defaultdict(lambda: defaultdict(list))
