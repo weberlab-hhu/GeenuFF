@@ -89,15 +89,29 @@ CROSS JOIN transcript ON transcript_piece.transcript_id = transcript.id
 CROSS JOIN super_locus ON transcript.super_locus_id = super_locus.id
 WHERE transcript.longest = 1 AND genome.species IN ('caenorhabditis_elegans') and super_locus.type = 'gene' and transcript.type = 'mRNA'
 ORDER BY genome.species, coordinate.length DESC;'''
-            start = time.time()
             import pudb; pudb.set_trace()
-            res = self.engine.execute(query)
-            # all_coords_with_features = (self.session.query(Feature, Coordinate.id, Coordinate.length,
-                                           # Coordinate.genome_id)
-                        # .join(Coordinate, Feature.coordinate_id == Coordinate.id)
-                        # .limit(10)
-                        # .all())
+
+            start = time.time()
+            rows = self.engine.execute(query).fetchall()
             print('Query took {:.2f}s'.format(time.time() - start))
+
+            start = time.time()
+            all_coords_with_features = list()
+            for row in rows:
+                feature = Feature(id=row[0],
+                                  given_name=row[1],
+                                  type=row[2],
+                                  start=row[3],
+                                  start_is_biological_start=row[4],
+                                  end=row[5],
+                                  end_is_biological_end=row[6],
+                                  is_plus_strand=row[7],
+                                  score=row[8],
+                                  source=row[9],
+                                  phase=row[10],
+                                  coordinate_id=row[11])
+                all_coords_with_features.append((feature, row[12], row[13], row[14]))
+            print('Generating {len(rows)} python objects took {:.2f}s'.format(time.time() - start))
 
             # reorganizing rows into genome centric dict
             genome_coord_features = defaultdict(lambda: defaultdict(list))
