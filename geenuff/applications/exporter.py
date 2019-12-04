@@ -43,7 +43,7 @@ class GeenuffExportController(object):
     def _all_coords_query(self):
         return self.session.query(Coordinate.id)
 
-    def genome_query(self, genomes, exclude, return_super_loci=False):
+    def genome_query(self, genomes, exclude, all_transcripts=False, return_super_loci=False):
         """Returns either a tuple of (super_loci, coordinate_seqid) or a dict of coord_ids grouped by
         their genome that each link to a list of features. If return_super_loci is False, only the
         features of the longest transcript are queried."""
@@ -87,8 +87,14 @@ class GeenuffExportController(object):
                         .order_by(Feature.start))
             if genome_filter is not None:
                 query = query.filter(genome_filter)
+            if not all_transcripts:
+                query = query.filter(Transcript.longest == 1)
             return query.all()
         else:
+            if not all_transcripts:
+                longest_transcript_filter = 'WHERE transcript.longest = 1'
+            else:
+                longest_transcript_filter = ''
             query = '''SELECT feature.id AS feature_id,
                               feature.given_name AS feature_given_name,
                               feature.type AS feature_type,
@@ -114,7 +120,7 @@ class GeenuffExportController(object):
                            transcript_piece.id
                        CROSS JOIN transcript ON transcript_piece.transcript_id = transcript.id
                        CROSS JOIN super_locus ON transcript.super_locus_id = super_locus.id
-                       WHERE transcript.longest = 1 ''' + genome_filter + '''
+                       ''' + longest_transcript_filter + ' ' + genome_filter + '''
                            AND super_locus.type = 'gene' AND transcript.type = 'mRNA'
                        ORDER BY genome.species, coordinate.length DESC;'''
             start = time.time()
