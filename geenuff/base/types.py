@@ -135,4 +135,7 @@ Errors = make_enum('Errors', MISSING_UTR_5P, MISSING_UTR_3P, EMPTY_SUPER_LOCUS, 
                    MISSING_STOP_CODON, WRONG_PHASE_5P, MISMATCHED_PHASE_3P, OVERLAPPING_EXONS,
                    TOO_SHORT_INTRON, SL_OVERLAP_ERROR, MISMATCHING_STRANDS)
 
+# frequently used for lookups
+geenuff_error_type_values = [t.value for t in Errors]
+
 GeenuffFeature = join_to_enum('GeenuffFeature', GeenuffSequenceFeature, Errors)
