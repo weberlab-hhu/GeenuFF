@@ -501,7 +501,7 @@ def test_dummyloci_errors():
     error = {
         'coord_id': coords[1].id,
         'is_plus_strand': True,
-        'start': 540,
+        'start': 575,
         'end': 579,
         'type': types.TOO_SHORT_INTRON
     }
