@@ -70,8 +70,6 @@ TranscriptLevel = make_enum('TranscriptLevel', LNC_RNA, MRNA, MIRNA, NCRNA, PIRN
                             THREE_PRIME_OVERLAPPING_NCRNA, C_GENE_SEGMENT, V_GENE_SEGMENT,
                             D_GENE_SEGMENT, J_GENE_SEGMENT, GENE_SEGMENT, TRANSPOSABLE_ELEMENT)
 
-geenuff_transcript_type_values = [t.value for t in TranscriptLevel]
-
 # ignorable because of reasons
 SUPERCONTIG = 'supercontig'
 CONTIG = 'contig'
