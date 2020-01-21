@@ -35,6 +35,12 @@ python setup.py install
 cd ..
 ```
 
+Alternatively, install directly from github via pip:
+
+```bash
+pip install git+https://github.com/weberlab-hhu/GeenuFF.git
+```
+
 And you might want to run the tests (sorry for the strict directory, will fix)
 ```bash
 cd GeenuFF/geenuff
