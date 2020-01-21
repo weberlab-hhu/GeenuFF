@@ -23,17 +23,9 @@ GeenuFF has been tested exclusively (so far) in python3.6
 I would recommend installation in a virtual envinronment.
 https://docs.python-guide.org/dev/virtualenvs/
 
-The dustdas dependency is available from github.
 From a directory of your choice (and preferably in a virtualenv):
 
-```bash
-git clone https://github.com/janinamass/dustdas.git
-cd dustdas
-python setup.py install
-cd ..
-```
-
-Afterwards install GeenuFF in the same fashion.
+Clone and install GeenuFF:
 
 ```bash
 git clone https://github.com/weberlab-hhu/GeenuFF.git
