@@ -265,18 +265,20 @@ class QueueController(object):
     def __init__(self, session, engine):
         self.session = session
         self.engine = engine
-        print('setting up QC x_x')
-        print(self.session)
-        print(self.engine)
         self.ordered_queues = []
+
+    def total_size(self):
+        return sum([len(q.queue) for q in self.ordered_queues])
 
     def execute_so_far(self):
         conn = self.engine.connect()
+        n_elements = self.total_size()
         for queue in self.ordered_queues:
             if queue.queue:
                 conn.execute(queue.action, queue.queue)
                 del queue.queue[:]
         self.session.commit()
+        logging.info(f'All core queues executed ({n_elements} elements)')
 
 
 class CoreQueue(object):

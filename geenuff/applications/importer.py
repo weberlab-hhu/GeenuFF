@@ -72,18 +72,18 @@ class OrganizedGeenuffImporterGroup(object):
                 'transcript_feature': transcript_importer,
                 'protein': protein_importer,
                 'cds': cds_importer,
-                'introns': [intron_importer1, intron_importer2, ..]
+                'introns': [intron_importer1, intron_importer2, ..],
+                'errors': []  # errors are filled in later
             },
             ...
         ],
-        'errors' = [error_importer1, error_importer2, ..],
     }
     """
 
     def __init__(self, organized_gff_entries, coord, controller):
         self.coord = coord
         self.controller = controller
-        self.importers = {'transcripts': [], 'errors': []}
+        self.importers = {'transcripts': []}
         self._parse_gff_entries(organized_gff_entries)
 
     def _parse_gff_entries(self, entries):
@@ -101,7 +101,7 @@ class OrganizedGeenuffImporterGroup(object):
                                                                   end=sl_end,
                                                                   controller=self.controller)
         for t, t_entries in entries['transcripts'].items():
-            t_importers = {}
+            t_importers = {'errors': []}
             # check for multi inheritance and throw NotImplementedError if found
             if len(t.get_Parent()) > 1:
                 raise NotImplementedError
@@ -169,8 +169,11 @@ class OrganizedGeenuffImporterGroup(object):
                 exons = t_entries['exons']
                 introns = []
                 for i in range(len(exons) - 1):
+                    # something really weird is going on here, marking the whole gene as erroneous
                     e_is_plus_strand = get_strand_direction(exons[i])
-                    assert e_is_plus_strand == t_is_plus_strand  # todo, replace asserts with error masking
+                    if e_is_plus_strand != t_is_plus_strand:
+                        sl_i.fully_erroneous = True
+                        break
                     # the introns are delimited by the surrounding exons
                     # the first base of an intron in right after the last exononic base
                     gff_start = exons[i].end + 1
@@ -294,7 +297,7 @@ class OrganizedGFFEntryGroup(object):
             if in_enum_values(entry.type, types.SuperLocusAll):
                 assert 'super_locus' not in self.entries
                 self.entries['super_locus'] = entry
-            elif in_enum_values(entry.type, types.TranscriptLevelAll):
+            elif in_enum_values(entry.type, types.TranscriptLevel):
                 self.entries['transcripts'][entry] = {'exons': [], 'cds': []}
                 latest_transcript = entry
             elif entry.type == types.EXON:
@@ -401,7 +404,7 @@ class OrganizedGFFEntries(object):
 
 
 class GFFErrorHandling(object):
-    """Deal with error detection and handling of the input features. Does the handling
+    """Deals with error detection and handling of the input features. Does the handling
     in the space of GeenuFF importers.
     Assumes all super locus handler groups to be ordered 5p to 3p and of one strand.
     Works with a list of OrganizedGeenuffImporterGroup, which correspond to a list of
@@ -418,14 +421,14 @@ class GFFErrorHandling(object):
             self.groups.sort(key=lambda g: g['super_locus'].start, reverse=not self.is_plus_strand)
         self.controller = controller
 
-    def _check_sl_neighbor_status(self, slg_prev, slg):
+    def _sl_neighbor_status(self, slg_prev, slg):
         """checks whether two neighboring super loci overlap and if yes under which conditions.
         Returns one of the following values depending on the relationship:
 
         'normal': no overlap in any way
         'overlap': the sl overlap but without errors on both sides
-        'overlap_error_3p': the sl 3p of the overlap has an utr error
-        'overlap_error_5p': the sl 5p of the overlap has an utr error
+        'overlap_error_3p': the sl 3p of the overlap has an 5p utr error
+        'overlap_error_5p': the sl 5p of the overlap has an 3p utr error
         'overlap_error_both': both sl have an utr error at the overlap
         'nested': sl is a fully nested gene inside sl_prev
         'nested_error_3p': the nested gene has an 3p utr error
@@ -434,12 +437,12 @@ class GFFErrorHandling(object):
         """
         def _overlap_error_status(slg_prev, slg):
             status = 'overlap'
-            for error in slg_prev['errors']:
+            for error in self._get_all_errors_of_slg(slg_prev):
                 if error.feature_type == types.MISSING_UTR_3P:
                     # a 3p utr error of the previous sl is 5p of the overlap
                     status = 'overlap_error_5p'
                     break
-            for error in slg['errors']:
+            for error in self._get_all_errors_of_slg(slg):
                 if error.feature_type == types.MISSING_UTR_5P:
                     if status == 'overlap':
                         status = 'overlap_error_3p'
@@ -449,7 +452,7 @@ class GFFErrorHandling(object):
             return status
 
         def _nested_error_status(slg):
-            error_types = [e.feature_type for e in slg['errors']]
+            error_types = [e.feature_type for e in self._get_all_errors_of_slg(slg)]
             if types.MISSING_UTR_3P in error_types and types.MISSING_UTR_5P in error_types:
                 return 'nested_error_both'
             if types.MISSING_UTR_3P in error_types:
@@ -460,27 +463,19 @@ class GFFErrorHandling(object):
 
         sl_prev = slg_prev['super_locus']
         sl = slg['super_locus']
-        overlap_msg = 'overlapping super loci: {} and {} (not nested), type: '
-        overlap_msg_format = overlap_msg.format(sl_prev.given_name, sl.given_name)
-        nested_msg = 'nested super loci: {} inside {}, type: '
-        nested_msg_format = nested_msg.format(sl.given_name, sl_prev.given_name)
         if self.is_plus_strand and sl_prev.end > sl.start:
             if sl_prev.end > sl.end:
                 nested_status = _nested_error_status(slg)
-                logging.info(nested_msg_format + nested_status)
                 return nested_status
             else:
                 overlap_status = _overlap_error_status(slg_prev, slg)
-                logging.info(overlap_msg_format + overlap_status)
                 return overlap_status
         elif not self.is_plus_strand and sl_prev.end < sl.start:
             if sl_prev.end < sl.end:
                 nested_status = _nested_error_status(slg)
-                logging.info(nested_msg_format + nested_status)
                 return nested_status
             else:
                 overlap_status = _overlap_error_status(slg_prev, slg)
-                logging.info(overlap_msg_format + overlap_status)
                 return overlap_status
         return 'normal'
 
@@ -500,92 +495,120 @@ class GFFErrorHandling(object):
                 start = min(i_ends_within)
         return start
 
+    def _get_all_errors_of_slg(self, slg):
+        error_lists = [t['errors'] for t in slg['transcripts']]
+        merged_errors = [e for el in error_lists for e in el]
+        return merged_errors
+
+    def _print_overlap_error_msg(self, sl, sl_prev, status):
+        if status.startswith('overlap'):
+            msg = 'overlapping super loci: {} and {} (not nested), type: {}'
+        elif status.startswith('nested'):
+            msg = 'nested super loci: {} inside {}, type: {}'
+        else:
+            logging.error('overlapping status is not a known error')
+        logging.info(msg.format(sl_prev.given_name, sl.given_name, status))
+
     def resolve_errors(self):
         for i, group in enumerate(self.groups):
+            # the case of a super locus being masked as fully erroneous (for some special reason)
+            # mask everything and append error to first transcript
+            if group['super_locus'].fully_erroneous:
+                sl_i = group['super_locus']
+                self._add_error(i, group['transcripts'][0], sl_i.start, sl_i.end, sl_i.is_plus_strand,
+                                types.MISMATCHING_STRANDS)
+                continue
+
             # the case of no transcript for a super locus
-            # solution is to add an error mask that extends halfway to the appending super
-            # loci in the intergenic region as something in this area appears to have gone wrong
-            self.errors = group['errors']
             if not group['transcripts']:
-                self._add_overlapping_error(i, None, 'whole', types.EMPTY_SUPER_LOCUS)
+                logging.error('{} is a gene without any transcripts. This will not be masked.'.format(
+                                  group['super_locus'].given_name))
             # other cases
             for transcript in group['transcripts']:
                 # if coding transcript
                 if 'cds' in transcript:
                     cds = transcript['cds']
                     introns = transcript['introns']
+                    tf = transcript['transcript_feature']
 
                     # the case of missing of implicit UTR ranges
                     # the solution is similar to the one above
-                    if cds.start == transcript['transcript_feature'].start:
-                        self._add_overlapping_error(i, cds, '5p', types.MISSING_UTR_5P,
-                                                    mark_other_handlers=[transcript['transcript_feature']])
-                    if cds.end == transcript['transcript_feature'].end:
-                        self._add_overlapping_error(i, cds, '3p', types.MISSING_UTR_3P,
-                                                    mark_other_handlers=[transcript['transcript_feature']])
+                    if cds.start == tf.start:
+                        self._add_overlapping_error(i, transcript, cds, '5p', types.MISSING_UTR_5P,
+                                                    mark_other_handlers=[tf])
+                    if cds.end == tf.end:
+                        self._add_overlapping_error(i, transcript, cds, '3p', types.MISSING_UTR_3P,
+                                                    mark_other_handlers=[tf])
 
                     # the case of missing start/stop codon
                     if not has_start_codon(cds.coord.sequence, cds.start, self.is_plus_strand):
-                        self._add_overlapping_error(i, cds, '5p', types.MISSING_START_CODON)
+                        self._add_overlapping_error(i, transcript, cds, '5p', types.MISSING_START_CODON)
                     if not has_stop_codon(cds.coord.sequence, cds.end, self.is_plus_strand):
-                        self._add_overlapping_error(i, cds, '3p', types.MISSING_STOP_CODON)
+                        self._add_overlapping_error(i, transcript, cds, '3p', types.MISSING_STOP_CODON)
 
                     # the case of wrong 5p phase
                     if cds.phase_5p != 0:
-                        self._add_overlapping_error(i, cds, '5p', types.WRONG_PHASE_5P)
+                        self._add_overlapping_error(i, transcript, cds, '5p', types.WRONG_PHASE_5P)
 
-                    # the case of overlapping sl
+                    # check the case of overlapping sl together with an error in this transcript
                     if i > 0:
                         group_prev = self.groups[i - 1]
-                        status = self._check_sl_neighbor_status(group_prev, group)
-                        if status == 'overlap_error_5p' or status == 'overlap_error_both':
-                            self._add_overlapping_error(i, group_prev['super_locus'], '3p',
-                                                        types.SL_OVERLAP_ERROR)
-                        elif status == 'overlap_error_3p' or status == 'overlap_error_both':
-                            self._add_overlapping_error(i, group['super_locus'], '5p',
-                                                        types.SL_OVERLAP_ERROR)
-                        elif status.startswith('nested_error'):
-                            # remove all missing 3p/5p errors as they have to be wrong and are
-                            # not needed further down the road
-                            # we could try to add error halfway to the intron border but
-                            # 1. it is not guaranteed that there is such an intron
-                            # 2. there could be multiple ones in different transcripts
-                            # due to that complexity we are content with adding no errors
-                            group['errors'] = [e for e in group['errors']
-                                               if e.feature_type not in [
-                                                   types.MISSING_UTR_3P, types.MISSING_UTR_5P
-                                               ]]
+                        sl, sl_prev = group['super_locus'], group_prev['super_locus']
+                        status = self._sl_neighbor_status(group_prev, group)
+                        if status != 'normal':
+                            if status == 'overlap_error_5p' or status == 'overlap_error_both':
+                                self._add_overlapping_error(i, transcript, sl_prev, '3p',
+                                                            types.SL_OVERLAP_ERROR,
+                                                            find_next_non_overlapping=True)
+                            elif status == 'overlap_error_3p' or status == 'overlap_error_both':
+                                self._add_overlapping_error(i, transcript, sl, '5p',
+                                                            types.SL_OVERLAP_ERROR,
+                                                            find_next_non_overlapping=True)
+                            elif status.startswith('nested_error'):
+                                # remove all missing 3p/5p errors as they have to be wrong and are
+                                # not needed further down the road
+                                # we could try to add error halfway to the intron border but
+                                # 1. it is not guaranteed that there is such an intron
+                                # 2. there could be multiple ones in different transcripts
+                                # due to that complexity we are content with adding no errors
+                                transcript['errors'] = [e for e in transcript['errors']
+                                                        if e.feature_type not in [
+                                                             types.MISSING_UTR_3P, types.MISSING_UTR_5P
+                                                        ]]
+                            self._print_overlap_error_msg(sl_prev, sl, status)
+
                     if introns:
                         # the case of wrong 3p phase
                         len_3p_exon = abs(cds.end - self._3p_cds_start(transcript))
                         if cds.phase_3p != len_3p_exon % 3:
-                            self._add_overlapping_error(i, cds, '3p', types.MISMATCHED_PHASE_3P)
+                            self._add_overlapping_error(i, transcript, cds, '3p',
+                                                        types.MISMATCHED_PHASE_3P)
 
-                        faulty_introns = []
-                        for j, intron in enumerate(introns):
-                            # the case of overlapping exons
-                            if ((transcript['transcript_feature'].is_plus_strand and intron.end < intron.start)
-                                    or (not self.is_plus_strand and intron.end > intron.start)):
-                                # mark the overlapping cds regions as errors
-                                if j > 0:
-                                    error_start = introns[j - 1].end
-                                else:
-                                    error_start = transcript['transcript_feature'].start
-                                if j < len(introns) - 1:
-                                    error_end = introns[j + 1].start
-                                else:
-                                    error_end = transcript['transcript_feature'].end
-                                self._add_error(i, error_start, error_end, self.is_plus_strand,
-                                                types.OVERLAPPING_EXONS)
-                                faulty_introns.append(intron)
-                            # the case of a too short intron
-                            # todo put the minimum length in a config somewhere
-                            elif abs(intron.end - intron.start) < 60:
-                                self._add_error(i, intron.start, intron.end, self.is_plus_strand,
-                                                types.TOO_SHORT_INTRON)
-                        # do not save faulty introns, the error should be descriptive enough
-                        for intron in faulty_introns:
-                            introns.remove(intron)
+                    faulty_introns = []
+                    for j, intron in enumerate(introns):
+                        # the case of overlapping exons
+                        if ((tf.is_plus_strand and intron.end < intron.start)
+                                or (not self.is_plus_strand and intron.end > intron.start)):
+                            # mark the overlapping cds regions as errors
+                            if j > 0:
+                                error_start = introns[j - 1].end
+                            else:
+                                error_start = tf.start
+                            if j < len(introns) - 1:
+                                error_end = introns[j + 1].start
+                            else:
+                                error_end = tf.end
+                            self._add_error(i, transcript, error_start, error_end,
+                                            self.is_plus_strand, types.OVERLAPPING_EXONS)
+                            faulty_introns.append(intron)
+                        # the case of a too short intron
+                        # todo put the minimum length in a config somewhere
+                        elif abs(intron.end - intron.start) < 20:
+                            self._add_error(i, transcript, intron.start, intron.end,
+                                            self.is_plus_strand, types.TOO_SHORT_INTRON)
+                    # do not save faulty introns, the error should be descriptive enough
+                    for intron in faulty_introns:
+                        introns.remove(intron)
 
         # remove all errors that are in the wrong order (caused by overlapping super loci)
         # these can only be removed now as they were needed for further processing
@@ -597,9 +620,11 @@ class GFFErrorHandling(object):
                     or (not self.is_plus_strand and e.end > e.start))
 
         for group in self.groups:
-            full_len = len(group['errors'])
-            group['errors'] = [e for e in group['errors'] if not is_backwards(e)]
-            n_removed = full_len - len(group['errors'])
+            n_removed = 0
+            for transcript in group['transcripts']:
+                full_len = len(transcript['errors'])
+                transcript['errors'] = [e for e in transcript['errors'] if not is_backwards(e)]
+                n_removed += full_len - len(transcript['errors'])
             if n_removed > 0:
                 msg = ('removed {count} backwards error(s) from overlapping super loci: '
                        'seqid: {seqid}, {geneid}').format(count=n_removed,
@@ -607,14 +632,14 @@ class GFFErrorHandling(object):
                                                           geneid=group['super_locus'].given_name)
                 logging.info(msg)
 
-    def _add_error(self, i, start, end, is_plus_strand, error_type):
+    def _add_error(self, i, transcript_g, start, end, is_plus_strand, error_type):
         error_i = FeatureImporter(self.coord,
                                   is_plus_strand,
                                   error_type,
                                   start=start,
                                   end=end,
                                   controller=self.controller)
-        self.errors.append(error_i)
+        transcript_g['errors'].append(error_i)
         # error msg
         if is_plus_strand:
             strand_str = 'plus'
@@ -629,7 +654,8 @@ class GFFErrorHandling(object):
                                            type=error_type)
         logging.warning(msg)
 
-    def _add_overlapping_error(self, i, handler, direction, error_type, mark_other_handlers=None):
+    def _add_overlapping_error(self, i, transcript_g, handler, direction, error_type,
+                               find_next_non_overlapping=False, mark_other_handlers=None):
         """Constructs an error features that overlaps halfway to the next super locus
         in the given direction from the given handler if possible. Otherwise mark until the end.
         If the direction is 'whole', the handler parameter is ignored.
@@ -640,27 +666,37 @@ class GFFErrorHandling(object):
             mark_other_handlers = []
 
         assert direction in ['5p', '3p', 'whole']
-        sl = self.groups[i]['super_locus']
+        coord = self.groups[i]['super_locus'].coord
 
+        j = i  # do not change i as we need it later
         # set correct upstream error starting point
         if direction in ['5p', 'whole']:
-            if i > 0:
-                sl_prev = self.groups[i - 1]['super_locus']
-                anchor_5p = self._halfway_mark(sl_prev, sl)
+            if find_next_non_overlapping:
+                while (j > 0
+                          and self._sl_neighbor_status(self.groups[j - 1], self.groups[j]) != 'normal'):
+                    j -= 1
+            # perform marking
+            if j > 0:
+                anchor_5p = self._halfway_mark(self.groups[j - 1]['super_locus'],
+                                               self.groups[j]['super_locus'])
             else:
                 if self.is_plus_strand:
                     anchor_5p = 0
                 else:
-                    anchor_5p = sl.coord.length
+                    anchor_5p = coord.length
 
         # set correct downstream error end point
         if direction in ['3p', 'whole']:
-            if i < len(self.groups) - 1:
-                sl_next = self.groups[i + 1]['super_locus']
-                anchor_3p = self._halfway_mark(sl, sl_next)
+            if find_next_non_overlapping:
+                while (j < len(self.groups) - 1
+                          and self._sl_neighbor_status(self.groups[j], self.groups[j + 1]) != 'normal'):
+                    j += 1
+            if j < len(self.groups) - 1:
+                anchor_3p = self._halfway_mark(self.groups[j]['super_locus'],
+                                               self.groups[j + 1]['super_locus'])
             else:
                 if self.is_plus_strand:
-                    anchor_3p = sl.coord.length
+                    anchor_3p = coord.length
                 else:
                     anchor_3p = -1
 
@@ -682,8 +718,8 @@ class GFFErrorHandling(object):
             error_5p = anchor_5p
             error_3p = anchor_3p
 
-        if not self._zero_len_coords_at_sequence_edge(error_5p, error_3p, direction, sl.coord):
-            self._add_error(i, error_5p, error_3p, self.is_plus_strand, error_type)
+        if not self._zero_len_coords_at_sequence_edge(error_5p, error_3p, direction, coord):
+            self._add_error(i, transcript_g, error_5p, error_3p, self.is_plus_strand, error_type)
 
     def _zero_len_coords_at_sequence_edge(self, error_5p, error_3p, direction, coordinate):
         """Check if error 5p-3p is of zero length due to hitting start or end of sequence"""
@@ -749,12 +785,26 @@ class ImportController(object):
         self.session.add(genome)
         self.session.commit()
 
+    def run_analyze(self):
+        # run ANALYZE; on the db for hopefully more performant queries
+        logging.info('Running ANALYZE on the database')
+        with self.engine.connect() as con:
+            con.execute('ANALYZE;')
+
     def add_genome(self, fasta_path, gff_path, genome_args=None, clean_gff=True):
         if genome_args is None:
             genome_args = {}
+        if 'species' in genome_args:
+            logging.info(f'Starting to add genome: {genome_args["species"]}')
+        else:
+            logging.info(f'Starting to add an unnamed genome.')
+        logging.info(f'FASTA path: {fasta_path}')
+        logging.info(f'GFF path: {gff_path}')
+
         self.clean_tmp_data()
         self.add_sequences(fasta_path, genome_args)
         self.add_gff(gff_path, clean=clean_gff)
+        self.run_analyze()
 
     def add_sequences(self, seq_path, genome_args=None):
         if genome_args is None:
@@ -777,32 +827,33 @@ class ImportController(object):
             for group in groups:
                 group['super_locus'].add_to_queue()
                 # insert all features as well as transcript and protein related entries
-                for transcripts in group['transcripts']:
+                for transcript in group['transcripts']:
                     # make shortcuts
-                    tp = transcripts['transcript_piece']
-                    tf = transcripts['transcript_feature']
+                    tp = transcript['transcript_piece']
+                    tf = transcript['transcript_feature']
                     # add transcript handler that are always present
-                    transcripts['transcript'].add_to_queue()
+                    transcript['transcript'].add_to_queue()
                     tp.add_to_queue()
                     tf.add_to_queue()
                     tf.insert_feature_piece_association(tp.id)
                     # if coding transcript
-                    if 'protein' in transcripts:
-                        transcripts['protein'].add_to_queue()
-                        transcripts['protein'].insert_transcript_protein_association(transcripts['transcript'].id)
-                        transcripts['cds'].insert_feature_protein_association(transcripts['protein'].id)
-                        transcripts['cds'].add_to_queue()
-                        transcripts['cds'].insert_feature_piece_association(tp.id)
+                    if 'protein' in transcript:
+                        transcript['protein'].add_to_queue()
+                        transcript['protein'].insert_transcript_protein_association(transcript['transcript'].id)
+                        transcript['cds'].insert_feature_protein_association(transcript['protein'].id)
+                        transcript['cds'].add_to_queue()
+                        transcript['cds'].insert_feature_piece_association(tp.id)
                     # if there are introns
-                    if 'introns' in transcripts:
-                        for intron in transcripts['introns']:
+                    if 'introns' in transcript:
+                        for intron in transcript['introns']:
                             intron.add_to_queue()
                             intron.insert_feature_piece_association(tp.id)
-                # insert the errors
-                for error in group['errors']:
-                    error.add_to_queue()
+                    # insert the errors
+                    for error in transcript['errors']:
+                        error.add_to_queue()
+                        error.insert_feature_piece_association(tp.id)
 
-        def clean_and_insert(self, groups, clean):
+        def clean_and_insert(self, groups, clean, is_final_coord):
             plus = [g for g in groups if g['super_locus'].is_plus_strand]
             minus = [g for g in groups if not g['super_locus'].is_plus_strand]
             if clean:
@@ -815,21 +866,28 @@ class ImportController(object):
             # insert importers
             insert_importer_groups(self, plus)
             insert_importer_groups(self, minus)
-            self.insertion_queues.execute_so_far()
+            if is_final_coord or self.insertion_queues.total_size() > 10000:
+                self.insertion_queues.execute_so_far()
 
         assert self.latest_fasta_importer is not None, 'No recent genome found'
+        logging.info('Starting to parse the GFF file')
         self.latest_fasta_importer.mk_mapper(gff_file)
         gff_organizer = OrganizedGFFEntries(gff_file)
         gff_organizer.load_organized_entries()
+
         organized_gff_entries = gff_organizer.organized_entries
+        n_organized_gff_entries = len(organized_gff_entries)
         geenuff_importer_groups = []
-        for seqid in organized_gff_entries.keys():
+        for i, seqid in enumerate(organized_gff_entries.keys()):
             for entry_group in organized_gff_entries[seqid]:
                 organized_entries = OrganizedGFFEntryGroup(entry_group, self.latest_fasta_importer,
                                                            self)
                 geenuff_importer_groups.append(organized_entries.get_geenuff_importers())
             # never do error checking across fasta sequence borders
-            clean_and_insert(self, geenuff_importer_groups, clean)
+            is_final_coord = (i == (n_organized_gff_entries - 1))
+            clean_and_insert(self, geenuff_importer_groups, clean, is_final_coord)
+            logging.info(f'Finished importing features from {len(geenuff_importer_groups)} super loci '
+                         f'from coordinate with seqid {seqid} ({i + 1}/{n_organized_gff_entries})')
             geenuff_importer_groups = []
 
 
@@ -890,6 +948,7 @@ class FastaImporter(object):
                                    seqid=seqid,
                                    sha1=helpers.sequence_hash(seq),
                                    genome=self.genome)
+            logging.info(f'Added coordinate object for FASTA sequence with seqid {seqid} to the queue')
 
 
 class SuperLocusImporter(Insertable):
@@ -900,7 +959,8 @@ class SuperLocusImporter(Insertable):
                  coord=None,
                  is_plus_strand=None,
                  start=-1,
-                 end=-1):
+                 end=-1,
+                 fully_erroneous=False):
         self.id = InsertCounterHolder.super_locus()
         self.entry_type = entry_type
         self.given_name = given_name
@@ -910,6 +970,7 @@ class SuperLocusImporter(Insertable):
         self.is_plus_strand = is_plus_strand
         self.start = start
         self.end = end
+        self.fully_erroneous = fully_erroneous
 
     def add_to_queue(self):
         to_add = {'type': self.entry_type, 'given_name': self.given_name, 'id': self.id}

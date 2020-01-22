@@ -49,22 +49,29 @@ class PathFinder(object):
 
     @staticmethod
     def _confirm_exactly_one(possibilities, info):
-        assert len(possibilities) == 1, 'no(n) unique {} file found as input. Found: {}'.format(info, possibilities)
+        assert len(possibilities) == 1, 'no(n) unique {} file found as input. Found: {}'.format(
+                                            info, possibilities)
 
 
 def main(args):
     if args.basedir is None:
         assert all([x is not None for x in [args.fasta, args.gff3, args.db_path, args.log_file]]), \
-            "if basedir is none, all three custom input/output files must be manually specified with --gff3, " \
-            "--fasta, --log-file and --db_path parameters"
-    paths = PathFinder(args.db_path, args.basedir, fasta=args.fasta, gff=args.gff3, logfile=args.log_file)
+            "if basedir is none, all three custom input/output files must be manually specified " \
+            "with --gff3, --fasta, --log-file and --db_path parameters"
+    paths = PathFinder(args.db_path, args.basedir, fasta=args.fasta, gff=args.gff3,
+                       logfile=args.log_file)
+
+    msg_fmt_str = '%(asctime)s - %(levelname)s: %(message)s'
+    date_fmt_str = '%d-%b-%y %H:%M:%S'
     logging.basicConfig(filename=paths.problems_out,
                         filemode='w',
                         level=logging.INFO,
-                        format='%(asctime)s - %(message)s',
-                        datefmt='%d-%b-%y %H:%M:%S')
+                        format=msg_fmt_str,
+                        datefmt=date_fmt_str)
     # log to file and stderr simultaneously
-    logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
+    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler.setFormatter(logging.Formatter(fmt=msg_fmt_str, datefmt=date_fmt_str))
+    logging.getLogger().addHandler(stdout_handler)
 
     controller = ImportController(database_path=paths.db_out, replace_db=args.replace_db)
     genome_args = {}
