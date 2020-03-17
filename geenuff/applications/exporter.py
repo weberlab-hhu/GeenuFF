@@ -48,13 +48,12 @@ class GeenuffExportController(object):
         their genome that each link to a list of features. If return_super_loci is False, only the
         features of the longest transcript are queried."""
         self._check_genome_names(genomes, exclude)
-        if not return_super_loci:
-            genomes_str = ','.join(['"' + g + '"' for g in genomes])
         if genomes:
             print(f'Selecting the following genomes: {genomes}', file=sys.stderr)
             if return_super_loci:
                 genome_filter = Genome.species.in_(genomes)
             else:
+                genomes_str = ','.join(['"' + g + '"' for g in genomes])
                 genome_filter = f'AND genome.species IN ({genomes_str})'
         else:
             if exclude:
@@ -63,6 +62,7 @@ class GeenuffExportController(object):
                 if return_super_loci:
                     genome_filter = Genome.species.notin_(genomes)
                 else:
+                    genomes_str = ','.join(['"' + g + '"' for g in exclude])
                     genome_filter = f'AND genome.species NOT IN ({genomes_str})'
             else:
                 print(f'Selecting all genomes from {self.db_path_in}', file=sys.stderr)
@@ -129,8 +129,9 @@ class GeenuffExportController(object):
                        CROSS JOIN transcript ON transcript_piece.transcript_id = transcript.id
                        CROSS JOIN super_locus ON transcript.super_locus_id = super_locus.id
                        ''' + longest_transcript_filter + ' ' + genome_filter + '''
-                           AND super_locus.type = 'gene' AND transcript.type = 'mRNA'
+                           AND super_locus.type = 'gene' AND transcript.type IN ("mRNA","transcript")
                        ORDER BY genome.species, coordinate.length DESC;'''
+            print(genome_filter)
             start = time.time()
             rows = self.engine.execute(query).fetchall()
             print(f'Query took {time.time() - start:.2f}s')

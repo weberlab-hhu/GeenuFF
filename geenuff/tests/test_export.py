@@ -474,20 +474,34 @@ def test_get_json_feature():
     # todo, slightly more thorough testing
 
 
+def helper_get_species(pks, session):
+    out = []
+    for pk in pks:
+        seqid = session.query(orm.Genome).filter(orm.Genome.id == pk).first().species
+        out.append(seqid)
+    return out
+
+
 def test_exporter_genomes_or_exclude():
     controller = GeenuffExportController(db_path_in='sqlite:///' + SECOND_EXP_DB)
-    genome_coords = controller.genome_query([], exclude=['dummyloci'], all_transcripts=True)
+    # selecting specific species
+    genome_coords = controller.genome_query(genomes=['exonexonCDS', 'dummyloci'], exclude=[], all_transcripts=True)
     assert len(genome_coords) == 2
-    print(genome_coords.keys())
-    genome_coords = controller.genome_query([], [], all_transcripts=True)
-    print(genome_coords.keys())
-    print(controller.session.query(orm.Genome).all())
-    print(controller.session.query(orm.Coordinate).all())
-    for pk in [1, 2, 3]:
-        g = controller.session.query(orm.Genome).filter(orm.Genome.id == pk).first()
-        print(g.coordinates[0].features[0])
-    assert len(genome_coords) == 3
+    assert sorted(helper_get_species(genome_coords.keys(), controller.session)) == ['dummyloci', 'exonexonCDS']
+    genome_coords = controller.genome_query(genomes=['exporting'], exclude=[], all_transcripts=True)
+    assert len(genome_coords) == 1
+    assert sorted(helper_get_species(genome_coords.keys(), controller.session)) == ['exporting']
 
+    # excluding specific species
+    genome_coords = controller.genome_query(exclude=['exporting', 'dummyloci', 'exonexonCDS'], genomes=[])
+    assert len(genome_coords) == 0
+    genome_coords = controller.genome_query(exclude=['dummyloci'], genomes=[])
+    assert len(genome_coords) == 2
+    assert sorted(helper_get_species(genome_coords.keys(), controller.session)) == ['exonexonCDS', 'exporting']
+
+    # selecting all
+    genome_coords = controller.genome_query([], [], all_transcripts=True)
+    assert len(genome_coords) == 3
 
 
 def test_exporter_all_or_1_transcript():
