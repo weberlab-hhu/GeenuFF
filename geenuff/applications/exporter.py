@@ -72,6 +72,8 @@ class GeenuffExportController(object):
                     genome_filter = ''
 
         if return_super_loci:
+            # in this case returns a list of results like [(SuperLocus obj, sequence_name str), ...]
+            # todo, this is probably historical behavior. Split to consistent return / new function??
             query = (self.session.query(SuperLocus, Coordinate.seqid).distinct()
                         .join(Transcript, Transcript.super_locus_id == SuperLocus.id)
                         .join(TranscriptPiece, TranscriptPiece.transcript_id == Transcript.id)
@@ -87,10 +89,16 @@ class GeenuffExportController(object):
                         .order_by(Feature.start))
             if genome_filter is not None:
                 query = query.filter(genome_filter)
-            if not all_transcripts:
+            if not all_transcripts:  # does not affect result as SuperLoci are returned, not transcripts
                 query = query.filter(Transcript.longest == 1)
             return query.all()
         else:
+            # in this case returns dictionary
+            # {genome pk:
+            #     {(coordinate pk, coordinate length):
+            #         [Feature 0, Feature 1, ...]
+            #     }
+            # }
             if not all_transcripts:
                 longest_transcript_filter = 'WHERE transcript.longest = 1'
             else:

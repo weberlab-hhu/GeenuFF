@@ -45,7 +45,9 @@ class Coordinate(Base):
     )
 
     def __repr__(self):
-        return '<Coordinate {}, seqid: {}, len: {}>'.format(self.id, self.seqid, self.length)
+        return '<Coordinate {}, seqid: {}, len: {}, genome_id: {}, genome: {}>'.format(self.id, self.seqid, self.length,
+                                                                                       self.genome_id,
+                                                                                       self.genome.species)
 
 
 class SuperLocus(Base):

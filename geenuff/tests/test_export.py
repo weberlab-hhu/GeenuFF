@@ -7,8 +7,11 @@ from ..applications.exporters.json import JsonExportController, FeatureJsonable,
 from ..applications.exporter import MODES
 from geenuff.base import orm, types
 import json
+from geenuff.applications.exporter import GeenuffExportController
+
 
 EXPORTING_DB = 'testdata/exporting.sqlite3'
+SECOND_EXP_DB = 'testdata/tmp_ex2.sqlite3'
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -20,8 +23,20 @@ def prepare_and_cleanup():
         controller = ImportController(database_path='sqlite:///' + EXPORTING_DB)
         controller.add_genome('testdata/exporting.fa', 'testdata/exporting.gff3', clean_gff=True,
                               genome_args={'species': 'dummy'})
+
+    # add three, so we have some to include / exclude for 'test_exporter_genomes_or_exclude'
+    if not os.path.exists(SECOND_EXP_DB):
+        controller = ImportController(database_path='sqlite:///' + SECOND_EXP_DB)
+        controller.add_genome('testdata/exporting.fa', 'testdata/exporting.gff3', clean_gff=True,
+                              genome_args={'species': 'exporting'})
+        controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff',
+                              genome_args={'species': 'dummyloci'})
+        controller.add_genome('testdata/exonexonCDS.fa', 'testdata/exonexonCDS.gff3',
+                              genome_args={'species': 'exonexonCDS'})
+
     yield
     os.remove(EXPORTING_DB)
+    os.remove(SECOND_EXP_DB)
 
 
 def seq_len_controllers(mode, longest=False):
@@ -457,3 +472,50 @@ def test_get_json_feature():
     assert len(meh[0]['super_loci']) == 1
     print(json.dumps(meh, indent=2))
     # todo, slightly more thorough testing
+
+
+def test_exporter_genomes_or_exclude():
+    controller = GeenuffExportController(db_path_in='sqlite:///' + SECOND_EXP_DB)
+    genome_coords = controller.genome_query([], exclude=['dummyloci'], all_transcripts=True)
+    assert len(genome_coords) == 2
+    print(genome_coords.keys())
+    genome_coords = controller.genome_query([], [], all_transcripts=True)
+    print(genome_coords.keys())
+    print(controller.session.query(orm.Genome).all())
+    print(controller.session.query(orm.Coordinate).all())
+    for pk in [1, 2, 3]:
+        g = controller.session.query(orm.Genome).filter(orm.Genome.id == pk).first()
+        print(g.coordinates[0].features[0])
+    assert len(genome_coords) == 3
+
+
+
+def test_exporter_all_or_1_transcript():
+    controller = GeenuffExportController(db_path_in='sqlite:///' + EXPORTING_DB)
+    genome_coords = controller.genome_query([], [], all_transcripts=True)
+
+    coords = genome_coords[1]  # the one dummy genome
+    assert len(coords.keys()) == 2
+    # first coordinate has 1 super locus with two transcripts. pk=1, len=4000
+    features_c1 = coords[(1, 4000)]
+    assert len([x for x in features_c1 if x.type.value == types.GEENUFF_TRANSCRIPT]) == 2
+    # second coord has 1 sl with 1 transcript
+    features_c2 = coords[(2, 3000)]
+    assert len([x for x in features_c2 if x.type.value == types.GEENUFF_TRANSCRIPT]) == 1
+    # queried with longest both should have only one transcript remaining
+    genome_coords = controller.genome_query([], [], all_transcripts=False)
+    assert len(coords.keys()) == 2
+    for coord, features in genome_coords[1].items():
+        assert len([x for x in features if x.type.value == types.GEENUFF_TRANSCRIPT]) == 1
+
+
+def test_exporter_return_super_loci():
+    # this test is here to make sure I don't break something I didn't notice while refactoring
+    # in the long run, I almost certainly want to _change_ the behaviour so genome_query does
+    # not have two different output types.
+    controller = GeenuffExportController(db_path_in='sqlite:///' + EXPORTING_DB)
+    genome_coords = controller.genome_query([], [], all_transcripts=True, return_super_loci=True)
+    sl = genome_coords[0][0]
+    assert isinstance(sl, orm.SuperLocus)
+    coord_id = genome_coords[1][1]
+    assert coord_id == "27488:1-3000"
