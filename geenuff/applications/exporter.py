@@ -45,120 +45,121 @@ class GeenuffExportController(object):
 
     def genome_query(self, genomes, exclude, all_transcripts=False, return_super_loci=False):
         """Returns either a tuple of (super_loci, coordinate_seqid) or a dict of coord_ids grouped by
-        their genome that each link to a list of features. If return_super_loci is False, only the
+        their genome that each link to a list of features. If all_transcripts is False, only the
         features of the longest transcript are queried."""
         self._check_genome_names(genomes, exclude)
         if genomes:
             print(f'Selecting the following genomes: {genomes}', file=sys.stderr)
-            if return_super_loci:
-                genome_filter = Genome.species.in_(genomes)
-            else:
-                genomes_str = ','.join(['"' + g + '"' for g in genomes])
-                genome_filter = f'AND genome.species IN ({genomes_str})'
+        elif exclude:
+            print(f'Selecting all genomes from {self.db_path_in} except: {exclude}',
+                  file=sys.stderr)
         else:
-            if exclude:
-                print(f'Selecting all genomes from {self.db_path_in} except: {exclude}',
-                      file=sys.stderr)
-                if return_super_loci:
-                    genome_filter = Genome.species.notin_(genomes)
-                else:
-                    genomes_str = ','.join(['"' + g + '"' for g in exclude])
-                    genome_filter = f'AND genome.species NOT IN ({genomes_str})'
-            else:
-                print(f'Selecting all genomes from {self.db_path_in}', file=sys.stderr)
-                if return_super_loci:
-                    genome_filter = None
-                else:
-                    genome_filter = ''
+            print(f'Selecting all genomes from {self.db_path_in}', file=sys.stderr)
 
         if return_super_loci:
-            # in this case returns a list of results like [(SuperLocus obj, sequence_name str), ...]
-            # todo, this is probably historical behavior. Split to consistent return / new function??
-            query = (self.session.query(SuperLocus, Coordinate.seqid).distinct()
-                        .join(Transcript, Transcript.super_locus_id == SuperLocus.id)
-                        .join(TranscriptPiece, TranscriptPiece.transcript_id == Transcript.id)
-                        .join(asso_tp_2_f, asso_tp_2_f.c.transcript_piece_id == TranscriptPiece.id)
-                        .join(Feature, asso_tp_2_f.c.feature_id == Feature.id)
-                        .join(Coordinate, Feature.coordinate_id == Coordinate.id)
-                        .join(Genome, Genome.id == Coordinate.genome_id)
-                        .filter(Transcript.type == types.TranscriptLevel.mRNA)
-                        .filter(SuperLocus.type == types.SuperLocusAll.gene)
-                        .order_by(Genome.species)
-                        .order_by(Coordinate.length.desc())
-                        .order_by(Feature.is_plus_strand)
-                        .order_by(Feature.start))
-            if genome_filter is not None:
-                query = query.filter(genome_filter)
-            if not all_transcripts:  # does not affect result as SuperLoci are returned, not transcripts
-                query = query.filter(Transcript.longest == 1)
-            return query.all()
+            return self._super_loci_query(genomes, exclude)
         else:
-            # in this case returns dictionary
-            # {genome pk:
-            #     {(coordinate pk, coordinate length):
-            #         [Feature 0, Feature 1, ...]
-            #     }
-            # }
-            if not all_transcripts:
-                longest_transcript_filter = 'WHERE transcript.longest = 1'
-            else:
-                longest_transcript_filter = ''
-            query = '''SELECT feature.id AS feature_id,
-                              feature.given_name AS feature_given_name,
-                              feature.type AS feature_type,
-                              feature.start AS feature_start,
-                              feature.start_is_biological_start AS feature_start_is_biological_start,
-                              feature."end" AS feature_end,
-                              feature.end_is_biological_end AS feature_end_is_biological_end,
-                              feature.is_plus_strand AS feature_is_plus_strand,
-                              feature.score AS feature_score,
-                              feature.source AS feature_source,
-                              feature.phase AS feature_phase,
-                              feature.coordinate_id AS feature_coordinate_id,
-                              coordinate.id AS coordinate_id,
-                              coordinate.length AS coordinate_length,
-                              coordinate.genome_id AS coordinate_genome_id
-                       FROM genome
-                       CROSS JOIN coordinate ON coordinate.genome_id = genome.id
-                       CROSS JOIN feature ON feature.coordinate_id = coordinate.id
-                       CROSS JOIN association_transcript_piece_to_feature
-                           ON association_transcript_piece_to_feature.feature_id = feature.id
-                       CROSS JOIN transcript_piece
-                           ON association_transcript_piece_to_feature.transcript_piece_id =
-                           transcript_piece.id
-                       CROSS JOIN transcript ON transcript_piece.transcript_id = transcript.id
-                       CROSS JOIN super_locus ON transcript.super_locus_id = super_locus.id
-                       ''' + longest_transcript_filter + ' ' + genome_filter + '''
-                           AND super_locus.type = 'gene' AND transcript.type IN ("mRNA","transcript")
-                       ORDER BY genome.species, coordinate.length DESC;'''
-            print(genome_filter)
-            start = time.time()
-            rows = self.engine.execute(query).fetchall()
-            print(f'Query took {time.time() - start:.2f}s')
+            return self._genome_query(genomes, exclude, all_transcripts)
 
-            start = time.time()
-            all_coords_with_features = list()
-            for row in rows:
-                feature = Feature(id=row[0],
-                                  given_name=row[1],
-                                  type=types.GeenuffFeature(row[2]),
-                                  start=row[3],
-                                  start_is_biological_start=row[4],
-                                  end=row[5],
-                                  end_is_biological_end=row[6],
-                                  is_plus_strand=row[7],
-                                  score=row[8],
-                                  source=row[9],
-                                  phase=row[10],
-                                  coordinate_id=row[11])
-                all_coords_with_features.append((feature, row[12], row[13], row[14]))
-            print(f'Generating {len(rows)} Python objects took {time.time() - start:.2f}s')
+    def _genome_query(self, genomes, exclude, all_transcripts):
+        # returns dictionary
+        # {genome pk:
+        #     {(coordinate pk, coordinate length):
+        #         [Feature 0, Feature 1, ...]
+        #     }
+        # }
+        if genomes:
+            genomes_str = ','.join(['"{}"'.format(g) for g in genomes])
+            genome_filter = f'AND genome.species IN ({genomes_str})'
+        elif exclude:
+            genomes_str = ','.join(['"{}"'.format(g) for g in exclude])
+            genome_filter = f'AND genome.species NOT IN ({genomes_str})'
+        else:
+            genome_filter = ''
 
+        if not all_transcripts:
+            longest_transcript_filter = 'WHERE transcript.longest = 1'
+        else:
+            longest_transcript_filter = ''
+
+        query = '''SELECT feature.id AS feature_id,
+                          feature.given_name AS feature_given_name,
+                          feature.type AS feature_type,
+                          feature.start AS feature_start,
+                          feature.start_is_biological_start AS feature_start_is_biological_start,
+                          feature."end" AS feature_end,
+                          feature.end_is_biological_end AS feature_end_is_biological_end,
+                          feature.is_plus_strand AS feature_is_plus_strand,
+                          feature.score AS feature_score,
+                          feature.source AS feature_source,
+                          feature.phase AS feature_phase,
+                          feature.coordinate_id AS feature_coordinate_id,
+                          coordinate.id AS coordinate_id,
+                          coordinate.length AS coordinate_length,
+                          coordinate.genome_id AS coordinate_genome_id
+                   FROM genome
+                   CROSS JOIN coordinate ON coordinate.genome_id = genome.id
+                   CROSS JOIN feature ON feature.coordinate_id = coordinate.id
+                   CROSS JOIN association_transcript_piece_to_feature
+                       ON association_transcript_piece_to_feature.feature_id = feature.id
+                   CROSS JOIN transcript_piece
+                       ON association_transcript_piece_to_feature.transcript_piece_id =
+                       transcript_piece.id
+                   CROSS JOIN transcript ON transcript_piece.transcript_id = transcript.id
+                   CROSS JOIN super_locus ON transcript.super_locus_id = super_locus.id
+                   ''' + longest_transcript_filter + ' ' + genome_filter + '''
+                       AND super_locus.type = 'gene' AND transcript.type IN ("mRNA","transcript")
+                   ORDER BY genome.species, coordinate.length DESC;'''
+        print(genome_filter)
+        start = time.time()
+        rows = self.engine.execute(query).fetchall()
+        print(f'Query took {time.time() - start:.2f}s')
+
+        start = time.time()
+        genome_coord_features = defaultdict(lambda: defaultdict(list))
+        for row in rows:
+            feature = Feature(id=row[0],
+                              given_name=row[1],
+                              type=types.GeenuffFeature(row[2]),
+                              start=row[3],
+                              start_is_biological_start=row[4],
+                              end=row[5],
+                              end_is_biological_end=row[6],
+                              is_plus_strand=row[7],
+                              score=row[8],
+                              source=row[9],
+                              phase=row[10],
+                              coordinate_id=row[11])
             # reorganizing rows into genome centric dict
-            genome_coord_features = defaultdict(lambda: defaultdict(list))
-            for feature, coord_id, coord_len, genome_id in all_coords_with_features:
-                genome_coord_features[genome_id][(coord_id, coord_len)].append(feature)
-            return genome_coord_features
+            coord_id, coord_len, genome_id = row[12], row[13], row[14]
+            genome_coord_features[genome_id][(coord_id, coord_len)].append(feature)
+
+        print(f'Generating {len(rows)} Python objects took {time.time() - start:.2f}s')
+        return genome_coord_features
+
+    def _super_loci_query(self, genomes, exclude):
+        # returns a list of results like [(SuperLocus obj, sequence_name str), ...]
+        # todo, this is probably historical behavior. Split to consistent return / new function??
+        query = (self.session.query(SuperLocus, Coordinate.seqid).distinct()
+                    .join(Transcript, Transcript.super_locus_id == SuperLocus.id)
+                    .join(TranscriptPiece, TranscriptPiece.transcript_id == Transcript.id)
+                    .join(asso_tp_2_f, asso_tp_2_f.c.transcript_piece_id == TranscriptPiece.id)
+                    .join(Feature, asso_tp_2_f.c.feature_id == Feature.id)
+                    .join(Coordinate, Feature.coordinate_id == Coordinate.id)
+                    .join(Genome, Genome.id == Coordinate.genome_id)
+                    .filter(Transcript.type == types.TranscriptLevel.mRNA)
+                    .filter(SuperLocus.type == types.SuperLocusAll.gene)
+                    .order_by(Genome.species)
+                    .order_by(Coordinate.length.desc())
+                    .order_by(Feature.is_plus_strand)
+                    .order_by(Feature.start))
+
+        if genomes:
+            query = query.filter(Genome.species.in_(genomes))
+        elif exclude:
+            query = query.filter(Genome.species.notin_(genomes))
+
+        return query.all()
 
     def gen_ranges(self, genomes, exclude, range_function):
         super_loci = [r[0] for r in self.genome_query(genomes, exclude, return_super_loci=True)]
