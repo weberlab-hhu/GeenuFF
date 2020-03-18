@@ -11,7 +11,7 @@ Base = declarative_base()
 class Genome(Base):
     __tablename__ = 'genome'
 
-    id = Column(Integer, primary_key=True)  # do not index, too few rows
+    id = Column(Integer, primary_key=True)
     species = Column(String)
     accession = Column(String)
     version = Column(String)
@@ -29,12 +29,12 @@ class Genome(Base):
 class Coordinate(Base):
     __tablename__ = 'coordinate'
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     sequence = Column(String)
     length = Column(Integer)
     seqid = Column(String, nullable=False)
     sha1 = Column(String)
-    genome_id = Column(Integer, ForeignKey('genome.id'), nullable=False)
+    genome_id = Column(Integer, ForeignKey('genome.id'), nullable=False, index=True)
     genome = relationship('Genome', back_populates='coordinates')
 
     features = relationship('Feature', back_populates='coordinate')
@@ -45,7 +45,9 @@ class Coordinate(Base):
     )
 
     def __repr__(self):
-        return '<Coordinate {}, seqid: {}, len: {}>'.format(self.id, self.seqid, self.length)
+        return '<Coordinate {}, seqid: {}, len: {}, genome_id: {}, genome: {}>'.format(self.id, self.seqid, self.length,
+                                                                                       self.genome_id,
+                                                                                       self.genome.species)
 
 
 class SuperLocus(Base):
@@ -55,10 +57,10 @@ class SuperLocus(Base):
     # AKA this if you have to go searching through a graph for parents/children, at least said graph will have
     # a max size defined at SuperLoci
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     given_name = Column(String)
     aliases = Column(String)
-    type = Column(Enum(types.SuperLocusAll))
+    type = Column(Enum(types.SuperLocusAll), index=True)
     # things SuperLocus can have a lot of
     transcripts = relationship('Transcript', back_populates='super_locus')
     proteins = relationship('Protein', back_populates='super_locus')
@@ -69,31 +71,32 @@ class SuperLocus(Base):
 
 
 association_transcript_piece_to_feature = Table('association_transcript_piece_to_feature', Base.metadata,
-    Column('transcript_piece_id', Integer, ForeignKey('transcript_piece.id'), nullable=False),
-    Column('feature_id', Integer, ForeignKey('feature.id'), nullable=False)
+    Column('transcript_piece_id', Integer, ForeignKey('transcript_piece.id'), nullable=False, index=True),
+    Column('feature_id', Integer, ForeignKey('feature.id'), nullable=False, index=True)
 )
 
 
 association_protein_to_feature = Table('association_protein_to_feature', Base.metadata,
-    Column('protein_id', Integer, ForeignKey('protein.id'), nullable=False),
-    Column('feature_id', Integer, ForeignKey('feature.id'), nullable=False)
+    Column('protein_id', Integer, ForeignKey('protein.id'), nullable=False, index=True),
+    Column('feature_id', Integer, ForeignKey('feature.id'), nullable=False, index=True)
 )
 
 association_transcript_to_protein = Table('association_transcript_to_protein', Base.metadata,
-    Column('transcript_id', Integer, ForeignKey('transcript.id'), nullable=False),
-    Column('protein_id', Integer, ForeignKey('protein.id'), nullable=False)
+    Column('transcript_id', Integer, ForeignKey('transcript.id'), nullable=False, index=True),
+    Column('protein_id', Integer, ForeignKey('protein.id'), nullable=False, index=True)
 )
 
 
 class Transcript(Base):
     __tablename__ = 'transcript'
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     given_name = Column(String)
 
-    type = Column(Enum(types.TranscriptLevelAll))
+    type = Column(Enum(types.TranscriptLevel), index=True)
+    longest = Column(Boolean, index=True)
 
-    super_locus_id = Column(Integer, ForeignKey('super_locus.id'), nullable=False)
+    super_locus_id = Column(Integer, ForeignKey('super_locus.id'), nullable=False, index=True)
     super_locus = relationship('SuperLocus', back_populates='transcripts')
 
     transcript_pieces = relationship('TranscriptPiece', back_populates='transcript')
@@ -111,12 +114,12 @@ class Transcript(Base):
 class TranscriptPiece(Base):
     __tablename__ = 'transcript_piece'
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     given_name = Column(String)
 
     position = Column(Integer, nullable=False)
 
-    transcript_id = Column(Integer, ForeignKey('transcript.id'), nullable=False)
+    transcript_id = Column(Integer, ForeignKey('transcript.id'), nullable=False, index=True)
     transcript = relationship('Transcript', back_populates='transcript_pieces')
 
     features = relationship('Feature', secondary=association_transcript_piece_to_feature,
@@ -134,7 +137,7 @@ class TranscriptPiece(Base):
 class Protein(Base):
     __tablename__ = 'protein'
 
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     given_name = Column(String)
     # type can only be 'protein' so far as I know..., so skipping
     super_locus_id = Column(Integer, ForeignKey('super_locus.id'), nullable=False)
@@ -155,9 +158,9 @@ class Protein(Base):
 class Feature(Base):
     __tablename__ = 'feature'
     # basic attributes
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(Integer, primary_key=True)
     given_name = Column(String)
-    type = Column(Enum(types.GeenuffFeature))
+    type = Column(Enum(types.GeenuffFeature), index=True)
 
     start = Column(Integer, nullable=False)
     start_is_biological_start = Column(Boolean, nullable=False)
@@ -170,7 +173,7 @@ class Feature(Base):
     phase = Column(Integer)
 
     # any piece of coordinate always has just one seqid
-    coordinate_id = Column(Integer, ForeignKey('coordinate.id'), nullable=False)
+    coordinate_id = Column(Integer, ForeignKey('coordinate.id'), nullable=False, index=True)
     coordinate = relationship('Coordinate', back_populates='features')
 
     # relations

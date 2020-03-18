@@ -61,13 +61,13 @@ For instance:
 
 ```
 # to obtain the CDS (ignoring phase) you can run
-$geenuff_path/scripts/dump_to_fasta.py --db-path-in GENUFF_DB --mode CDS
+python $geenuff_path/scripts/dump_to_fasta.py --db-path-in GENUFF_DB --mode CDS
 
 # to obtain the final mRNA sequence you can run
-$geenuff_path/scripts/dump_to_fasta.py --db-path-in GENUFF_DB --mode mRNA
+python $geenuff_path/scripts/dump_to_fasta.py --db-path-in GENUFF_DB --mode mRNA
 
 # to obtain the unspliced transcript you can run
-$geenuff_path/scripts/dump_to_fasta.py --db-path-in GENUFF_DB --mode pre-mRNA
+python $geenuff_path/scripts/dump_to_fasta.py --db-path-in GENUFF_DB --mode pre-mRNA
 ```
 
 ## extract sequence lengths from a database

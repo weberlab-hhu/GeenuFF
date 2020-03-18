@@ -1,10 +1,9 @@
-import sys
 import numpy
 
-from geenuff.applications.exporter import ExportController
+from geenuff.applications.exporter import GeenuffExportController
 
 
-class LengthExportController(ExportController):
+class LengthExportController(GeenuffExportController):
     def __init__(self, db_path_in, longest=False):
         super().__init__(db_path_in, longest)
         self.export_ranges = []
@@ -15,8 +14,6 @@ class LengthExportController(ExportController):
         for arange in export_group.ranges:
             total += abs(arange.start - arange.end)
         return total
-
-
 
     def write_lengths(self, file_out):
         handle_out = self._as_file_handle(file_out)

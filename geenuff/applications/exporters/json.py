@@ -1,7 +1,7 @@
 import sys
 import json
 from abc import ABC, abstractmethod
-from geenuff.applications.exporter import ExportController
+from geenuff.applications.exporter import GeenuffExportController
 from geenuff.base.handlers import SuperLocusHandlerBase, TranscriptHandlerBase, CoordinateHandlerBase, \
     FeatureHandlerBase
 
@@ -182,7 +182,7 @@ class CoordinateJsonable(CoordinateHandlerBase):
                 'end': end}
 
 
-class JsonExportController(ExportController):
+class JsonExportController(GeenuffExportController):
     # todo, filter coordinate by start, end
     #  from orm obj (or join res) to json
 
@@ -193,13 +193,14 @@ class JsonExportController(ExportController):
                 if end is None:  # if end is not specified, take whole sequence
                     end = coordinate.length
                 ch = CoordinateJsonable(coordinate)
-                res = {"coordinate_piece": ch.to_jsonable(start, end),
+                res = {'coordinate_piece': ch.to_jsonable(start, end),
                        'super_loci': []}
-                for sl in self.get_super_loci_by_coords([coordinate.id]):
-                    super_locus = self.session.query(SuperLocus).filter(SuperLocus.id == sl[0]).first()
-                    slh = SuperLocusJsonable(super_locus)
-                    if slh.overlaps(coordinate, start, end, is_plus_strand):
-                        res['super_loci'].append(slh.to_jsonable(slh.data, coordinate, start, end, is_plus_strand))
+                for sl, sl_coordinate_seqid in self.genome_query([species], [], return_super_loci=True):
+                    if sl_coordinate_seqid == seqid:
+                        slh = SuperLocusJsonable(sl)
+                        if slh.overlaps(coordinate, start, end, is_plus_strand):
+                            res['super_loci'].append(slh.to_jsonable(slh.data, coordinate, start, end,
+                                                                     is_plus_strand))
                 out.append(res)
         return out
 
@@ -216,3 +217,39 @@ class JsonExportController(ExportController):
         handle_out = self._as_file_handle(file_out)
         handle_out.write(dumps)
         handle_out.close()
+
+
+
+
+## target format reminder:
+#[{"coordinate_piece":
+#    {"id": int, "seqid": str, "sequence": str, "start": int, "end": int},
+# "super_loci":
+#    [{"id": str,
+#      "given_name": str,
+#      "is_fully_contained": bool,
+#      "overlaps": bool,
+#      "transcripts": [{"id": str,
+#                       "given_name": str,
+#                       "is_fully_contained": bool,
+#                       "overlaps": bool,
+#                       "features": [{"id": int,
+#                                     "given_name": str,
+#                                     "seqid": str,
+#                                     "protein_id", str,
+#                                     "type": enum,
+#                                     "start": int,
+#                                     "start_is_biological_start": bool,
+#                                     "end": int,
+#                                     "end_is_biological_end": bool,
+#                                     "score": float,
+#                                     "source": str,
+#                                     "phase": int (in {0, 1, 2}),
+#                                     "is_plus_strand": bool,
+#                                     "is_fully_contained": bool,
+#                                     "overlaps": bool
+#                                    }, ...]
+#                      }, ...]
+#     }, ...]
+#
+#}, ...]

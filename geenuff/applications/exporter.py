@@ -1,13 +1,15 @@
 import sys
 import copy
+import time
 import intervaltree
 import argparse
+from collections import defaultdict
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from geenuff.base.orm import Coordinate, Genome, Feature, Transcript, TranscriptPiece, \
-    association_transcript_piece_to_feature, SuperLocus
+from geenuff.base.orm import (Coordinate, Genome, Feature, Transcript, TranscriptPiece,
+                              association_transcript_piece_to_feature as asso_tp_2_f, SuperLocus)
 from geenuff.base.handlers import TranscriptHandlerBase, SuperLocusHandlerBase
 from geenuff.base.helpers import full_db_path, Counter
 from geenuff.base import types
@@ -42,7 +44,7 @@ class RangeArgParser(ExportArgParser):
                                  help="which type of sequence to export, one of {}".format(list(MODES.keys())))
 
 
-class ExportController(object):
+class GeenuffExportController(object):
     def __init__(self, db_path_in, longest=False):
         self.db_path_in = db_path_in
         self._mk_session()
@@ -62,6 +64,9 @@ class ExportController(object):
         self.engine = create_engine(full_db_path(self.db_path_in), echo=False)
         self.session = sessionmaker(bind=self.engine)()
 
+    def get_coord_by_id(self, coord_id):
+        return self.session.query(Coordinate).filter(Coordinate.id == coord_id).one()
+
     def _check_genome_names(self, *argv):
         for names in argv:
             if names:
@@ -76,52 +81,127 @@ class ExportController(object):
     def _all_coords_query(self):
         return self.session.query(Coordinate.id)
 
-    def _get_coords_by_genome_query(self, genomes, exclude, include_without_features=False):
-        if include_without_features:
-            coordinate_ids_of_interest = self._all_coords_query()
-        else:
-            coordinate_ids_of_interest = self._coords_with_feature_query()
+    def genome_query(self, genomes, exclude, all_transcripts=False, return_super_loci=False):
+        """Returns either a tuple of (super_loci, coordinate_seqid) or a dict of coord_ids grouped by
+        their genome that each link to a list of features. If all_transcripts is False, only the
+        features of the longest transcript are queried."""
+        self._check_genome_names(genomes, exclude)
         if genomes:
-            print('Selecting the following genomes: {}'.format(genomes), file=sys.stderr)
-            all_coord_ids = (self.session.query(Coordinate.id)
-                             .join(Genome, Genome.id == Coordinate.genome_id)
-                             .filter(Genome.species.in_(genomes))
-                             .filter(Coordinate.id.in_(coordinate_ids_of_interest)))
+            print(f'Selecting the following genomes: {genomes}', file=sys.stderr)
+        elif exclude:
+            print(f'Selecting all genomes from {self.db_path_in} except: {exclude}',
+                  file=sys.stderr)
         else:
-            if exclude:
-                print('Selecting all genomes from {} except: {}'.format(self.db_path_in, exclude),
-                      file=sys.stderr)
-                all_coord_ids = (self.session.query(Coordinate.id)
-                                 .join(Genome, Genome.id == Coordinate.genome_id)
-                                 .filter(Genome.species.notin_(exclude))
-                                 .filter(Coordinate.id.in_(coordinate_ids_of_interest)))
-            else:
-                print('Selecting all genomes from {}'.format(self.db_path_in),
-                      file=sys.stderr)
-                all_coord_ids = coordinate_ids_of_interest
+            print(f'Selecting all genomes from {self.db_path_in}', file=sys.stderr)
 
-        return all_coord_ids
+        if return_super_loci:
+            return self._super_loci_query(genomes, exclude)
+        else:
+            return self._genome_query(genomes, exclude, all_transcripts)
 
-    def get_super_loci_by_coords(self, coord_ids):
-        sess = self.session  # shortcut
-        # surprisingly not that bad, a minute or two for 55 genomes
-        # todo, join instead of IN and keep results
-        q = sess.query(Feature.id).filter(Feature.coordinate_id.in_(coord_ids))
-        q = sess.query(association_transcript_piece_to_feature.c.transcript_piece_id)\
-            .filter(association_transcript_piece_to_feature.c.feature_id.in_(q)).distinct()
-        q = sess.query(TranscriptPiece.transcript_id)\
-            .filter(TranscriptPiece.id.in_(q)).distinct()
-        q = sess.query(Transcript.super_locus_id)\
-            .filter(Transcript.id.in_(q)).distinct()
-        return q
+    def _genome_query(self, genomes, exclude, all_transcripts):
+        # returns dictionary
+        # {genome pk:
+        #     {(coordinate pk, coordinate length):
+        #         [Feature 0, Feature 1, ...]
+        #     }
+        # }
+        if genomes:
+            genomes_str = ','.join(['"{}"'.format(g) for g in genomes])
+            genome_filter = f'AND genome.species IN ({genomes_str})'
+        elif exclude:
+            genomes_str = ','.join(['"{}"'.format(g) for g in exclude])
+            genome_filter = f'AND genome.species NOT IN ({genomes_str})'
+        else:
+            genome_filter = ''
+
+        if not all_transcripts:
+            longest_transcript_filter = 'WHERE transcript.longest = 1'
+        else:
+            longest_transcript_filter = ''
+
+        query = '''SELECT feature.id AS feature_id,
+                          feature.given_name AS feature_given_name,
+                          feature.type AS feature_type,
+                          feature.start AS feature_start,
+                          feature.start_is_biological_start AS feature_start_is_biological_start,
+                          feature."end" AS feature_end,
+                          feature.end_is_biological_end AS feature_end_is_biological_end,
+                          feature.is_plus_strand AS feature_is_plus_strand,
+                          feature.score AS feature_score,
+                          feature.source AS feature_source,
+                          feature.phase AS feature_phase,
+                          feature.coordinate_id AS feature_coordinate_id,
+                          coordinate.id AS coordinate_id,
+                          coordinate.length AS coordinate_length,
+                          coordinate.genome_id AS coordinate_genome_id
+                   FROM genome
+                   CROSS JOIN coordinate ON coordinate.genome_id = genome.id
+                   CROSS JOIN feature ON feature.coordinate_id = coordinate.id
+                   CROSS JOIN association_transcript_piece_to_feature
+                       ON association_transcript_piece_to_feature.feature_id = feature.id
+                   CROSS JOIN transcript_piece
+                       ON association_transcript_piece_to_feature.transcript_piece_id =
+                       transcript_piece.id
+                   CROSS JOIN transcript ON transcript_piece.transcript_id = transcript.id
+                   CROSS JOIN super_locus ON transcript.super_locus_id = super_locus.id
+                   ''' + longest_transcript_filter + ' ' + genome_filter + '''
+                       AND super_locus.type = 'gene' AND transcript.type IN ("mRNA","transcript")
+                   ORDER BY genome.species, coordinate.length DESC;'''
+        print(genome_filter)
+        start = time.time()
+        rows = self.engine.execute(query).fetchall()
+        print(f'Query took {time.time() - start:.2f}s')
+
+        start = time.time()
+        genome_coord_features = defaultdict(lambda: defaultdict(list))
+        for row in rows:
+            feature = Feature(id=row[0],
+                              given_name=row[1],
+                              type=types.GeenuffFeature(row[2]),
+                              start=row[3],
+                              start_is_biological_start=row[4],
+                              end=row[5],
+                              end_is_biological_end=row[6],
+                              is_plus_strand=row[7],
+                              score=row[8],
+                              source=row[9],
+                              phase=row[10],
+                              coordinate_id=row[11])
+            # reorganizing rows into genome centric dict
+            coord_id, coord_len, genome_id = row[12], row[13], row[14]
+            genome_coord_features[genome_id][(coord_id, coord_len)].append(feature)
+
+        print(f'Generating {len(rows)} Python objects took {time.time() - start:.2f}s')
+        return genome_coord_features
+
+    def _super_loci_query(self, genomes, exclude):
+        # returns a list of results like [(SuperLocus obj, sequence_name str), ...]
+        # todo, this is probably historical behavior. Split to consistent return / new function??
+        query = (self.session.query(SuperLocus, Coordinate.seqid).distinct()
+                    .join(Transcript, Transcript.super_locus_id == SuperLocus.id)
+                    .join(TranscriptPiece, TranscriptPiece.transcript_id == Transcript.id)
+                    .join(asso_tp_2_f, asso_tp_2_f.c.transcript_piece_id == TranscriptPiece.id)
+                    .join(Feature, asso_tp_2_f.c.feature_id == Feature.id)
+                    .join(Coordinate, Feature.coordinate_id == Coordinate.id)
+                    .join(Genome, Genome.id == Coordinate.genome_id)
+                    .filter(Transcript.type == types.TranscriptLevel.mRNA)
+                    .filter(SuperLocus.type == types.SuperLocusAll.gene)
+                    .order_by(Genome.species)
+                    .order_by(Coordinate.length.desc())
+                    .order_by(Feature.is_plus_strand)
+                    .order_by(Feature.start))
+
+        if genomes:
+            query = query.filter(Genome.species.in_(genomes))
+        elif exclude:
+            query = query.filter(Genome.species.notin_(genomes))
+
+        return query.all()
 
     def gen_ranges(self, genomes, exclude, range_function):
-        # which genomes to export
-        coord_ids = self._get_coords_by_genome_query(genomes, exclude)
-        super_loci = self.get_super_loci_by_coords(coord_ids).all()
-        i = 0
-        for sl in super_loci:
-            super_locus = self.session.query(SuperLocus).filter(SuperLocus.id == sl[0]).first()
+        super_loci = [r[0] for r in self.genome_query(genomes, exclude, return_super_loci=True)]
+        for super_locus in super_loci:
             sl_ranger = SuperLocusRanger(super_locus, longest=self.longest)
             # todo, once JOIN output exists, drop all these loops
             for range_maker in sl_ranger.exp_range_makers:
@@ -130,7 +210,6 @@ class ExportController(object):
                     if group.seqid is None:
                         group.seqid = 'unnamed_{0:08d}'.format(self.id_counter())
                     yield group
-                    i += 1
 
     def prep_ranges(self, genomes, exclude, range_function):
         for arange in self.gen_ranges(genomes, exclude, range_function):
@@ -277,7 +356,8 @@ class RangeMaker(TranscriptHandlerBase):
     # all of the following methods should return a ready "ExportGroup" that has all the ordered ranges
     # that need to be combined to form a sequence, and an id for this sequence
     def transcribed_ranges(self):
-        return [ExportGroup(seqid=self.data.given_name, ranges=self._ranges_by_type(types.GEENUFF_TRANSCRIPT))]
+        return [ExportGroup(seqid=self.data.given_name,
+                            ranges=self._ranges_by_type(types.GEENUFF_TRANSCRIPT))]
 
     def cds_ranges(self):
         return self._one_range_one_group(self._ranges_by_type(types.GEENUFF_CDS))
@@ -408,17 +488,17 @@ MODES = {"mRNA": RangeMaker.mature_RNA,
 class SuperLocusRanger(SuperLocusHandlerBase):
     def __init__(self, data=None, longest=False, setup_range_makers=True):
         super().__init__(data)
-        self.logest = longest
+        self.longest = longest
         self.range_makers = []
         self.exp_range_makers = []
         if setup_range_makers:
-            self.setup_range_makers(longest)
+            self.setup_range_makers()
 
-    def setup_range_makers(self, longest):
+    def setup_range_makers(self):
         for transcript in self.data.transcripts:
             range_maker = RangeMaker(transcript)
             self.range_makers.append(range_maker)
-        if not longest:
+        if not self.longest:
             self.exp_range_makers = self.range_makers
         else:
             long_transcript, _ = self.get_longest_transcript()
