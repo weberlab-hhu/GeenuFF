@@ -485,7 +485,6 @@ def test_get_spliced_UTRs():
                "CCGACGTCGAAGCATAAGCAGGTGATTGGTCGATGGATC"
                )
     ]
-
     econtroller, lcontroller = seq_len_controllers('UTR')
     assert len(econtroller.export_ranges) == len(lcontroller.export_ranges) == 4
     compare2controllers(expect, econtroller, lcontroller)
@@ -495,7 +494,17 @@ def test_get_spliced_UTRs():
     assert len(econtroller.export_ranges) == len(lcontroller.export_ranges) == 2
     compare2controllers(expect, econtroller, lcontroller)
     # and -strand UTRs as well (exonexoncds test data)
-    expect = [('Gm01:923-1415_Gm01:2042-2081', 533,
+    expect = [('Gm01b:3312-3460_Gm01b:2196-2196', 150,
+               "CTCTGTCTGGACACTTCTAGCATGTAGTAAAAGATATACATATCCAACAAATTGTTAAAT"
+               "TTTAAATAATGTGTTATTTGTTTTTTAAAAACTATTTTCAGTTTTCAGCTAAAAAGGGAA"
+               "AAAAAAAACTGGCTTTGGATATTTTCCTGG"
+               ),
+              ('Gm01b:336-479', 144,
+               "AGTGATACACTACTACACAACATCATTGTATTTGTACCTTTTTTTTTAGTTGTTTTCTTG"
+               "TGTTTGTTTCGGCAAATAGAAGTTGATGTACATGGCATGTCTGATGTTTGTATTTTGTAC"
+               "CTAGAATAATGGAAACAATGCGTT"
+               ),
+               ('Gm01:923-1415_Gm01:2042-2081', 533,
                "TAACGGCGAAAACTTTGTGTCCACCGCCCAGCCCCTCGGCCAATCCCCCAAAACACAAAA"
                "AACTGTTTTTAAAACATAAAAAAAAAACTCATAACATATGAATAATAATAACAATAAAAA"
                "CTAAGAAGCAATAATTATTATTTAATTGTGCATTAAGATATGATTTAAGGGAGATAAGGG"
@@ -512,17 +521,7 @@ def test_get_spliced_UTRs():
                "TATTTTTCTTTCAAAGGTTGGGGATGATGGGGACAAGATTCAGATATATTATTCAAGATT"
                "AGCTGAAAAGTTTTCTGGGGAGGAGCTCTTTTGTCCTTTTTTTTGTTTTTTTTTCTTCCT"
                "TTTATGTTTAAAATTTCAACCACTATTTTGTTACATTTAAATTGGCATCTTCCCCCATTT"
-               "CCATT"),
-              ('Gm01b:3312-3460_Gm01b:2196-2196', 150,
-               "CTCTGTCTGGACACTTCTAGCATGTAGTAAAAGATATACATATCCAACAAATTGTTAAAT"
-               "TTTAAATAATGTGTTATTTGTTTTTTAAAAACTATTTTCAGTTTTCAGCTAAAAAGGGAA"
-               "AAAAAAAACTGGCTTTGGATATTTTCCTGG"
-               ),
-              ('Gm01b:336-479', 144,
-               "AGTGATACACTACTACACAACATCATTGTATTTGTACCTTTTTTTTTAGTTGTTTTCTTG"
-               "TGTTTGTTTCGGCAAATAGAAGTTGATGTACATGGCATGTCTGATGTTTGTATTTTGTAC"
-               "CTAGAATAATGGAAACAATGCGTT"
-               )
+               "CCATT")
               ]
     econtroller, lcontroller = seq_len_controllers('UTR', db=EXONEXONCDS_DB)
     assert len(econtroller.export_ranges) == len(lcontroller.export_ranges) == 4

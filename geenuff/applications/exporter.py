@@ -185,7 +185,7 @@ class GeenuffExportController(object):
                     .join(Feature, asso_tp_2_f.c.feature_id == Feature.id)
                     .join(Coordinate, Feature.coordinate_id == Coordinate.id)
                     .join(Genome, Genome.id == Coordinate.genome_id)
-                    .filter(Transcript.type == types.TranscriptLevel.mRNA)
+                    .filter(Transcript.type.in_([types.TranscriptLevel.mRNA, types.TranscriptLevel.transcript]))
                     .filter(SuperLocus.type == types.SuperLocusAll.gene)
                     .order_by(Genome.species)
                     .order_by(Coordinate.length.desc())
@@ -275,13 +275,16 @@ class Range(TranscriptCoordinate):
 
 
 class ExportGroup(object):
-    """Holds a named list of ordered ranges"""
+    """Holds a named list of ordered ranges which should be combined to make a sequence (think all exons for an mRNA)"""
     def __init__(self, seqid, ranges=None):
         if ranges is None:
             self.ranges = []
         else:
             self.ranges = ranges
         self.seqid = seqid
+
+    def __repr__(self):
+        return 'ExportGroup with id={} and ranges {}'.format(self.seqid, self.ranges)
 
 
 class RangeMaker(TranscriptHandlerBase):
@@ -368,7 +371,6 @@ class RangeMaker(TranscriptHandlerBase):
     def exonic_ranges(self):  # AKA exon
         transcribeds = self._ranges_by_type(types.GEENUFF_TRANSCRIPT)
         introns = self._ranges_by_type(types.GEENUFF_INTRON)
-        print(introns)
         exons = self._subtract_ranges(subtract_from=transcribeds, to_subtract=introns)
         return self._one_range_one_group(exons)
 
