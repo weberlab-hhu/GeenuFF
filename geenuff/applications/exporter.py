@@ -81,6 +81,13 @@ class GeenuffExportController(object):
     def _all_coords_query(self):
         return self.session.query(Coordinate.id)
 
+    def coords_by_genome(self, genomes, exclude):
+        query = (self.session.query(Coordinate.id, Coordinate.length, Genome.id, Genome.species)
+                 .join(Genome, Coordinate.genome_id == Genome.id))
+
+        query = self._genome_filter_query(query, genomes, exclude)
+        return query.all()
+
     def genome_query(self, genomes, exclude, all_transcripts=False, return_super_loci=False):
         """Returns either a tuple of (super_loci, coordinate_seqid) or a dict of coord_ids grouped by
         their genome that each link to a list of features. If all_transcripts is False, only the
@@ -173,11 +180,12 @@ class GeenuffExportController(object):
             genome_coord_features[genome_id][(coord_id, coord_len)].append(feature)
 
         print(f'Generating {len(rows)} Python objects took {time.time() - start:.2f}s')
+        # patch in coordinates without features
+
         return genome_coord_features
 
     def _super_loci_query(self, genomes, exclude):
         # returns a list of results like [(SuperLocus obj, sequence_name str), ...]
-        # todo, this is probably historical behavior. Split to consistent return / new function??
         query = (self.session.query(SuperLocus, Coordinate.seqid).distinct()
                     .join(Transcript, Transcript.super_locus_id == SuperLocus.id)
                     .join(TranscriptPiece, TranscriptPiece.transcript_id == Transcript.id)
@@ -192,12 +200,17 @@ class GeenuffExportController(object):
                     .order_by(Feature.is_plus_strand)
                     .order_by(Feature.start))
 
+        query = self._genome_filter_query(query, genomes, exclude)
+
+        return query.all()
+
+    @staticmethod
+    def _genome_filter_query(query, genomes, exclude):
         if genomes:
             query = query.filter(Genome.species.in_(genomes))
         elif exclude:
-            query = query.filter(Genome.species.notin_(genomes))
-
-        return query.all()
+            query = query.filter(Genome.species.notin_(exclude))
+        return query
 
     def gen_ranges(self, genomes, exclude, range_function):
         super_loci = [r[0] for r in self.genome_query(genomes, exclude, return_super_loci=True)]

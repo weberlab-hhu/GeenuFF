@@ -584,6 +584,30 @@ def test_exporter_genomes_or_exclude():
     assert len(genome_coords) == 3
 
 
+def test_coordquery_genomes_or_exclude():
+    controller = GeenuffExportController(db_path_in='sqlite:///' + SECOND_EXP_DB)
+
+    def check_incl_excl(incl, excl):
+        cg = controller.coords_by_genome(genomes=incl, exclude=excl)
+        got = {x[3] for x in cg}
+        if incl:
+            assert all([x in got for x in incl])
+        elif excl:
+            assert all([x not in got for x in excl]), 'something from excl: {} in got: {}'.format(excl, got)
+    # some checks on including genomes
+    check_incl_excl(['exonexonCDS', 'dummyloci'], [])
+    check_incl_excl(['exonexonCDS'], [])
+    check_incl_excl(['exporting'], [])
+    check_incl_excl(['exonexonCDS', 'dummyloci', 'exporting'], [])
+
+    # some checks on excluding genomes
+    check_incl_excl([], ['exonexonCDS', 'dummyloci', 'exporting'])
+    check_incl_excl([], ['exonexonCDS', 'dummyloci'])
+    check_incl_excl([], ['exonexonCDS', 'exporting'])
+    check_incl_excl([], ['dummyloci'])
+    check_incl_excl([], ['exporting'])
+
+
 def test_exporter_all_or_1_transcript():
     controller = GeenuffExportController(db_path_in='sqlite:///' + EXPORTING_DB)
     genome_coords = controller.genome_query([], [], all_transcripts=True)
