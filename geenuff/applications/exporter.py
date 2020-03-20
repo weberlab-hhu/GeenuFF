@@ -181,6 +181,9 @@ class GeenuffExportController(object):
 
         print(f'Generating {len(rows)} Python objects took {time.time() - start:.2f}s')
         # patch in coordinates without features
+        for coord_id, coord_len, genome_id, _ in self.coords_by_genome(genomes, exclude):
+            # the following inserts an empty list as val if the keys didn't exist (bc defaultdict)
+            genome_coord_features[genome_id][(coord_id, coord_len)]
 
         return genome_coord_features
 
