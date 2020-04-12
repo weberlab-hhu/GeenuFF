@@ -183,7 +183,16 @@ class GeenuffExportController(object):
         # patch in coordinates without features
         for coord_id, coord_len, genome_id, _ in self.coords_by_genome(genomes, exclude):
             # the following inserts an empty list as val if the keys didn't exist (bc defaultdict)
-            genome_coord_features[genome_id][(coord_id, coord_len)]
+            _ = genome_coord_features[genome_id][(coord_id, coord_len)]
+
+        # hackish, resort so adding empty coordinates back in doesn't invalidate sorting assumptions
+        for genome in genome_coord_features:
+            toresort = genome_coord_features[genome]
+            resorted = defaultdict(list)
+            # sort by descending coordinate length
+            for coord, features in sorted(toresort.items(), key=lambda x: 0 - x[0][1]):
+                resorted[coord] = features
+            genome_coord_features[genome] = resorted
 
         return genome_coord_features
 
