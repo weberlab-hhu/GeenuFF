@@ -155,7 +155,6 @@ class GeenuffExportController(object):
                    ''' + longest_transcript_filter + ' ' + genome_filter + '''
                        AND super_locus.type = 'gene' AND transcript.type IN ("mRNA","transcript")
                    ORDER BY genome.species, coordinate.length DESC;'''
-        print(genome_filter)
         start = time.time()
         rows = self.engine.execute(query).fetchall()
         print(f'Query took {time.time() - start:.2f}s')
