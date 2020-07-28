@@ -68,7 +68,7 @@ unclear what part of this is intergenic and which part UTR.
 #### feature start/end/at numbering
 
 Features have start and end coordinates that
-to delineate a range. 
+delineate a range. 
 
 The positioning of these features is in keeping with the common
 coordinate system: count from 0, start inclusive, end exclusive. 
@@ -115,22 +115,22 @@ Plus strand (+)
 
 | Common Name  | GFF | GFF start | GFF end |geenuff type| bearing| position |
 | -------------|:----| ---------:|--------:|:---|:-------|--------:|
-| TSS, Transcription start site      | start 1st exon  |x| |transcript |start|x - 1|
-| TTS, Transcription termination site| end last exon   | |x|transcript |end  |x    |
-| 1st bp of start codon              | start 1st CDS   |x| |cds        |start|x - 1|
-| coding end                         | end last CDS    | |x|cds        |end  |x    |
-| donor splice site (5' of intron)   |end non-last exon| |x|intron     |start|x    |
-| acceptor splice site (3' of intron)|start 2nd+ exon  |x| |intron     |end  |x - 1|
+| TSS, Transcription start site      | start 1st exon  |x| |geenuff_transcript |start|x - 1|
+| TTS, Transcription termination site| end last exon   | |x|geenuff_transcript |end  |x    |
+| 1st bp of start codon              | start 1st CDS   |x| |geenuff_cds        |start|x - 1|
+| coding end                         | end last CDS    | |x|geenuff_cds        |end  |x    |
+| donor splice site (5' of intron)   |end non-last exon| |x|geenuff_intron     |start|x    |
+| acceptor splice site (3' of intron)|start 2nd+ exon  |x| |geenuff_intron     |end  |x - 1|
 
 
 Minus strand (-)
 
 | Common Name  | GFF | GFF start | GFF end |genuff type| bearing| position|
 | -------------|:----| ---------:|--------:|:---|:-------|--------:|
-| TSS, Transcription start site      | end last exon   | |x|transcript |start|x - 1|
-| TTS, Transcription termination site| start 1st exon  |x| |transcript |end  |x - 2|
-| 1st bp of start codon              | end last CDS    | |x|cds        |start|x - 1|
-| coding end                         | start 1st CDS   |x| |cds        |end  |x - 2|
-| donor splice site (5' of intron)   |start 2nd+ exon  |x| |intron     |start|x - 2|
-| acceptor splice site (3' of intron)|end non-last exon| |x|intron     |end  |x - 1|
+| TSS, Transcription start site      | end last exon   | |x|geenuff_transcript |start|x - 1|
+| TTS, Transcription termination site| start 1st exon  |x| |geenuff_transcript |end  |x - 2|
+| 1st bp of start codon              | end last CDS    | |x|geenuff_cds        |start|x - 1|
+| coding end                         | start 1st CDS   |x| |geenuff_cds        |end  |x - 2|
+| donor splice site (5' of intron)   |start 2nd+ exon  |x| |geenuff_intron     |start|x - 2|
+| acceptor splice site (3' of intron)|end non-last exon| |x|geenuff_intron     |end  |x - 1|
 

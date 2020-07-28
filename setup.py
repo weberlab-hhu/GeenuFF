@@ -8,5 +8,6 @@ setup(
    packages=['geenuff', 'geenuff.base', 'geenuff.applications', 'geenuff.tests'],  #same as name
    package_data = {'geenuff': ['testdata/*.fa', 'testdata/*.gff3', 'testdata/*.gff']},
    install_requires=["intervaltree>=3.0.2", "SQLAlchemy>=1.3.12", "numpy>=1.18.1", "dustdas @ git+https://github.com/janinamass/dustdas@master", "pytest>=5.3.4"],
+   scripts=['import2geenuff.py'],
    zip_safe=False,
 )

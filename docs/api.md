@@ -1,6 +1,6 @@
 # Command line tools
 
-Warning: little about this is stable
+__Warning! little about this is stable or tested yet__
 
 ## import a species into the database
 
@@ -12,7 +12,7 @@ Capital letters and `<>` indicate what must be user specified.
 ```
 geenuff_path=<PATH/TO/GeenuFF/>
 
-$geenuff_path/import_genome.py --fasta <PATH_TO_GENOME_FASTA_FILE> --gff3 <PATH_TO_GFF3_FILE> \
+import2geenuff.py --fasta <PATH_TO_GENOME_FASTA_FILE> --gff3 <PATH_TO_GFF3_FILE> \
     --db-path geenuff.sqlite3 --log-file geenuff.import.log --species <SPECIES_NAME>
 ```
 
@@ -20,7 +20,7 @@ Or with some of the testdata filled in:
 ```
 geenuff_path=<PATH/TO/GeenuFF/>
 
-$geenuff_path/import_genome.py --fasta $geenuff_path/geenuff/testdata/exporter.fa \
+import2geenuff.py --fasta $geenuff_path/geenuff/testdata/exporter.fa \
     --gff3 $geenuff_path/geenuff/testdata/exporter.gff3 \
     --db-path geenuff.sqlite3 --log-file geenuff.import.log --species dummy
 ```

@@ -248,7 +248,7 @@ and even Trans-spliced examples can be encoded in fundamentally the same fashion
 parsed with the same code.
 
 For example:
-* In a common Eukaryotic example, a SuperLocus will point to multiple Transccripts. 
+* In a common Eukaryotic example, a SuperLocus will point to multiple Transcripts. 
 Each Transcript will have one "geenuff_transcript" and one "geenuff_cds" feature
 and will be connected to one Protein.
 
@@ -257,8 +257,8 @@ with one "geenuff_transcript" feature, but
 this Transcript will be connected to multiple Proteins and have
 multiple "geenuff_cds" features.
 
-* In a case of trans-splicing, a Transcript will have "geenuff_transcript" features,
-one at it's different loci. How these 
+* In a case of trans-splicing, a Transcript will have multiple 
+"geenuff_transcript" features, one at each of its different loci. How these 
 pieces are ultimately linked is encoded using the "position" attribute of the
 TranscriptPieces (see [transcript_piece](#transcript_piece)
 and [feature](#feature)).
@@ -271,8 +271,9 @@ attributes, adding error masks as necessary and using TranscriptPieces
 While these four examples differ in which features they use, they all follow the
 same spec and can be parsed with the same code. For instance, ("geenuff_cds", start) is always
 interpreted in the exact same way; and you don't get cases like those in a gff, where
-the edge of a CDS feature means something else depending upon the presence of other
-'CDS' features and the relative position of the overlapping 'exon' feature.
+the edge of a CDS feature means something else depending on whether the species
+is a Eukaryote or Prokaryote, on the presence of other
+'CDS' features and on the relative position of the overlapping 'exon' feature.
 Similarly, the same code can be used to interpret a split-locus gene model, whether
 this has a biological (trans-splicing) origin or artificial (e.g.
 fragmented assembly) origin. The features differ as necessary, the logic remains the same.
@@ -379,7 +380,7 @@ otherwise resemble features from a gff
 
 * they occur on a sequence (foreign key to coordinates)
 * they have a position (start and end)
-* they have a type (or channel), e.g. {geenuff_transcript, geenuff_cds, geenuff_intron, various error types...}
+* they have a type, e.g. {geenuff_transcript, geenuff_cds, geenuff_intron, various error types...}
 * they have a start_is_biological_start and end_is_biological_end which indicates whether 
 start and end mark the biologically meaningful transition or just the edge of what we know.
 * they have a boolean indicator is_plus_strand.
