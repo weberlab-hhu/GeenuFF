@@ -47,6 +47,12 @@ Alternatively, install directly from github via pip:
 ```bash
 pip install git+https://github.com/weberlab-hhu/GeenuFF.git
 ```
+## usage
+You can run `bash example.sh` for a quick start with public data.
+ This will setup the folder 'three_algae', download public data in
+ the expected format, and import it into a geenuff db 
+ (three_algae/three_algae.sqlite3). For more information please see 
+[the api docs](https://weberlab-hhu.github.io/GeenuFF/api.html).
 
 ## Major plans
 * Add a validation module to check structure of gene models.
