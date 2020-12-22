@@ -288,6 +288,40 @@ def test_partially_remove_coordinate():
     assert len(sess.query(Coordinate).all()) == 2
 
 
+def test_import_intron_at_seq_end():
+    controller = ImportController(database_path='sqlite:///:memory:')
+    controller.add_genome('testdata/intron_at_end.fa', 'testdata/intron_at_end.gff3', clean_gff=True)
+    # one gene model on the + strand
+    features = controller.session.query(Feature).filter(Feature.coordinate_id == 1).all()
+    # here we have a partial gene model, that runs of the end (or + strand start) fo the
+    # sequence in the middle of an intron
+    # because the transcript continues to the end, this is in fact an unambiguous intron,
+    # albeit with end is biological end being false
+    # should produce
+    # missing_utr_5p 1600 - -559
+    # geenuff_transcript 559 - -1 (not/not biological start/end)
+    # geenuff_cds 559 - -1 (y/not biological start/end)
+    # geenuff_intron 49 - -1 (y/not biolical start/end)
+    assert len(features) == 4
+    for f in features:
+        print(f)
+    transcript = [f for f in features if f.type.value == types.GEENUFF_TRANSCRIPT][0]
+    cds = [f for f in features if f.type.value == types.GEENUFF_CDS][0]
+    intron = [f for f in features if f.type.value == types.GEENUFF_INTRON][0]
+    missing_utr_5p = [f for f in features if f.type.value == types.MISSING_UTR_5P][0]
+
+    # coordinates
+    assert (transcript.start, transcript.end) == (559, -1)
+    assert (cds.start, cds.end) == (559, -1)
+    assert (intron.start, intron.end) == (49, -1)
+    assert (missing_utr_5p.start, missing_utr_5p.end) == (1600, 559)
+
+    # biological start / ends marked correctly
+    assert (transcript.start_is_biological_start, transcript.end_is_biological_end) == (False, False)
+    assert (cds.start_is_biological_start, cds.end_is_biological_end) == (True, False)  # could compromise on start...
+    assert (intron.start_is_biological_start, intron.end_is_biological_end) == (True, False)
+
+
 # section: api
 def test_transcript_piece_unique_constraints():
     """Add transcript pieces in valid and invalid configurations and test for

@@ -1,0 +1,8 @@
+##gff-version 3
+##sequence-region   Scaffold00742 1 170172
+Scaffold00742	AUGUSTUS	gene	1	560	0.18	-	.	ID=gene1
+Scaffold00742	AUGUSTUS	transcript	1	560	0.18	-	.	ID=transcript1;Parent=gene1
+Scaffold00742	AUGUSTUS	intron	1	50	0.18	-	.	Parent=transcript1
+Scaffold00742	AUGUSTUS	CDS	51	560	0.18	-	0	Parent=transcript1
+Scaffold00742	AUGUSTUS	exon	51	560	0.18	-	0	Parent=transcript1
+Scaffold00742	AUGUSTUS	start_codon	558	560	.	-	0	Parent=transcript1
