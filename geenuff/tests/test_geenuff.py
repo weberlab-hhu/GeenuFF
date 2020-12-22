@@ -302,9 +302,9 @@ def test_import_intron_at_seq_end():
     # geenuff_transcript 559 - -1 (not/not biological start/end)
     # geenuff_cds 559 - -1 (y/not biological start/end)
     # geenuff_intron 49 - -1 (y/not biolical start/end)
-    assert len(features) == 4
     for f in features:
         print(f)
+    assert len(features) == 4
     transcript = [f for f in features if f.type.value == types.GEENUFF_TRANSCRIPT][0]
     cds = [f for f in features if f.type.value == types.GEENUFF_CDS][0]
     intron = [f for f in features if f.type.value == types.GEENUFF_INTRON][0]
@@ -740,6 +740,10 @@ def test_case_8():
 
     error_values = [f.value for f in types.Errors]
     sl_h_features_wo_errors = [f for f in sl_h.features if f.type.value not in error_values]
+    print('erroneous features added')
+    for f in sl_h.features:
+        if f.type.value in error_values:
+            print(f)
     sl_objects = list(sl_h_features_wo_errors) + sl_h.data.transcripts + sl_h.data.proteins
 
     # first transcript
@@ -768,7 +772,7 @@ def test_case_8():
                       is_plus_strand=False,
                       phase=0,
                       coordinate=coords[1])
-    assert orm_object_in_list(feature, sl_objects)
+    assert orm_object_in_list(feature, sl_objects), '{} not found in \n{}'.format(feature, '\n'.join([str(o) for o in sl_objects if isinstance(o, Feature)]))
     feature = Feature(given_name=None,
                       type=types.GeenuffFeature.geenuff_intron,
                       start=1718,

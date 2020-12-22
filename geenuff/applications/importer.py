@@ -1,5 +1,6 @@
 import os
 import logging
+import intervaltree
 from pprint import pprint  # for debugging
 from abc import ABC, abstractmethod
 from sqlalchemy import create_engine
@@ -163,31 +164,78 @@ class OrganizedGeenuffImporterGroup(object):
                 t_importers['protein'] = p_i
                 t_importers['cds'] = cds_i
 
-                # create all the introns by traversing the exon entries and insert FeatureImporters
-                # into the previously created list
-                # the introns should strictly always lie between successive gff exons
-                exons = t_entries['exons']
+                # create all the introns by taking the transcript, and subtracting the exons
+                # (this handles literal sequence-edge cases more reliably than the gaps between exons)
+                # what remains is introns and gets FeatureImport setup and inserted into the previously created list
                 introns = []
-                for i in range(len(exons) - 1):
+                itree = intervaltree.IntervalTree()
+                etree = intervaltree.IntervalTree()
+                # bc interval tree only operates w/ start < end
+                inv_t_start, inv_t_end = sorted([tf_i.start, tf_i.end])
+                itree[inv_t_start:inv_t_end] = t_is_plus_strand
+                exons = t_entries['exons']
+                for exon in exons:
                     # something really weird is going on here, marking the whole gene as erroneous
-                    e_is_plus_strand = get_strand_direction(exons[i])
+                    e_is_plus_strand = get_strand_direction(exon)
                     if e_is_plus_strand != t_is_plus_strand:
                         sl_i.fully_erroneous = True
                         break
-                    # the introns are delimited by the surrounding exons
-                    # the first base of an intron in right after the last exononic base
-                    gff_start = exons[i].end + 1
-                    gff_end = exons[i + 1].start - 1
-                    # ignore introns that would come from directly adjacent exons
-                    if gff_start - gff_end != 1:
-                        intron_i = FeatureImporter(self.coord,
-                                                   e_is_plus_strand,
-                                                   types.GEENUFF_INTRON,
-                                                   score=exons[i].score,
-                                                   source=exons[i].source,
-                                                   controller=self.controller)
-                        intron_i.set_start_end_from_gff(gff_start, gff_end)
-                        introns.append(intron_i)
+                    e_start, e_end = get_geenuff_start_end(exon.start, exon.end, e_is_plus_strand)
+                    inv_e_start, inv_e_end = sorted([e_start, e_end])
+                    itree.chop(inv_e_start, inv_e_end)
+                    # also check for and mark overlapping exons (for now with a backward 'intron' # todo refactor)
+                    overlapping = etree[inv_e_start:inv_e_end]
+                    if overlapping:
+                        if len(overlapping) != 1:
+                            raise NotImplementedError('currently only designed to handle overlaps w/ 1 other exon')
+                        overlap = list(overlapping)[0]
+                        ovlp_end = max(overlap.begin, inv_e_start)
+                        ovlp_start = min(overlap.end, inv_e_end)
+                        print('found an overlap {}-{}'.format(ovlp_end, ovlp_start))
+                        if not e_is_plus_strand:
+                            ovlp_start, ovlp_end = ovlp_end, ovlp_start
+                        # insert a dummy 'backwards' intron, which will later be turned into an overlap error
+                        intron_err = FeatureImporter(self.coord,
+                                                     is_plus_strand=e_is_plus_strand,
+                                                     feature_type=types.GEENUFF_INTRON,
+                                                     start=ovlp_start,
+                                                     end=ovlp_end,
+                                                     score=t.score,
+                                                     source=t.source,
+                                                     controller=self.controller)
+                        introns.append(intron_err)
+                    etree[inv_e_start:inv_e_end] = e_is_plus_strand
+
+                for interval in itree:
+                    i_start, i_end = interval.begin, interval.end
+                    if not interval.data:  # if minus strand (data = is_plus_strand)
+                        i_start, i_end = i_end, i_start
+                    intron_i = FeatureImporter(self.coord,
+                                               is_plus_strand=interval.data,
+                                               feature_type=types.GEENUFF_INTRON,
+                                               start=i_start,
+                                               end=i_end,
+                                               score=t.score,
+                                               source=t.source,
+                                               controller=self.controller)
+                    introns.append(intron_i)
+#                for i in range(len(exons) - 1):
+#
+#                    # the introns are delimited by the surrounding exons
+#                    # the first base of an intron in right after the last exonic base
+#                    gff_start = exons[i].end + 1
+#                    gff_end = exons[i + 1].start - 1
+#                    # ignore introns that would come from directly adjacent exons
+#                    if gff_start - gff_end != 1:
+#                        intron_i = FeatureImporter(self.coord,
+#                                                   e_is_plus_strand,
+#                                                   types.GEENUFF_INTRON,
+#                                                   score=exons[i].score,
+#                                                   source=exons[i].source,
+#                                                   controller=self.controller)
+#                        intron_i.set_start_end_from_gff(gff_start, gff_end)
+#                        introns.append(intron_i)
+                introns = sorted(introns, key=lambda x: x.start)
                 if t_is_plus_strand:
                     t_importers['introns'] = introns
                 else:
@@ -263,7 +311,7 @@ class OrganizedGeenuffImporterGroup(object):
 
 class OrganizedGFFEntryGroup(object):
     """Takes an entry group (all entries of one super locus) and stores the entries
-    in an orderly fassion. Can then return a corresponding OrganizedGeenuffImporterGroup.
+    in an orderly fashion. Can then return a corresponding OrganizedGeenuffImporterGroup.
     Does not perform error checking, which happens later.
 
     The entries are organized in the following way:
