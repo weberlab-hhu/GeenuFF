@@ -318,7 +318,9 @@ def test_import_intron_at_seq_end():
 
     # biological start / ends marked correctly
     assert (transcript.start_is_biological_start, transcript.end_is_biological_end) == (False, False)
-    assert (cds.start_is_biological_start, cds.end_is_biological_end) == (True, False)  # could compromise on start...
+    assert (cds.start_is_biological_start, cds.end_is_biological_end) == (False, False)
+    # note that the cds.start is presumably the start codon here, but it is ultimately ambiguous, so
+    # conservatively we mark start_is_biological_start as False
     assert (intron.start_is_biological_start, intron.end_is_biological_end) == (True, False)
 
 

@@ -156,9 +156,24 @@ class OrganizedGeenuffImporterGroup(object):
                                         score=t.score,
                                         source=t.source,
                                         controller=self.controller)
-                gff_start = t_entries['cds'][0].start
-                gff_end = t_entries['cds'][-1].end
-                cds_i.set_start_end_from_gff(gff_start, gff_end)
+                # the next two lines are normally enough to define cds start & end
+                gff_cds_start = t_entries['cds'][0].start
+                gff_cds_end = t_entries['cds'][-1].end
+                # however, we have to handle partial gene models that can end in / have hanging introns
+                # for a hanging intron the 'exon start' doesn't line up with the transcript start (same for ends)
+                gff_exon_start = t_entries['exons'][0].start
+                gff_exon_end = t_entries['exons'][-1].end
+                if gff_exon_start == gff_cds_start != t.start:
+                    # hanging intron at start, CDS feature will be extended to end of transcript
+                    # this will be wrong if the start codon exactly aligned w/ exon start and the final exon is
+                    # non-coding, but that is rare, and this implementation is more cautious / conservative
+                    # (AKA: will create more error masks to reflect the ambiguity)
+                    gff_cds_start = t.start
+                if gff_exon_end == gff_cds_end != t.end:
+                    # hanging intron at end
+                    gff_cds_end = t.end
+
+                cds_i.set_start_end_from_gff(gff_cds_start, gff_cds_end)
 
                 # insert everything so far into the dict
                 t_importers['protein'] = p_i
@@ -219,22 +234,7 @@ class OrganizedGeenuffImporterGroup(object):
                                                source=t.source,
                                                controller=self.controller)
                     introns.append(intron_i)
-#                for i in range(len(exons) - 1):
-#
-#                    # the introns are delimited by the surrounding exons
-#                    # the first base of an intron in right after the last exonic base
-#                    gff_start = exons[i].end + 1
-#                    gff_end = exons[i + 1].start - 1
-#                    # ignore introns that would come from directly adjacent exons
-#                    if gff_start - gff_end != 1:
-#                        intron_i = FeatureImporter(self.coord,
-#                                                   e_is_plus_strand,
-#                                                   types.GEENUFF_INTRON,
-#                                                   score=exons[i].score,
-#                                                   source=exons[i].source,
-#                                                   controller=self.controller)
-#                        intron_i.set_start_end_from_gff(gff_start, gff_end)
-#                        introns.append(intron_i)
+
                 introns = sorted(introns, key=lambda x: x.start)
                 if t_is_plus_strand:
                     t_importers['introns'] = introns
@@ -658,6 +658,12 @@ class GFFErrorHandling(object):
                     for intron in faulty_introns:
                         introns.remove(intron)
 
+                    # finally, introns can be partial (although this normally happens at a sequence end)
+                    for intron in transcript['introns']:
+                        if intron.start == tf.start:
+                            self._add_overlapping_error(i, transcript, intron, '5p', types.TRUNCATED_INTRON)
+                        if intron.end == tf.end:
+                            self._add_overlapping_error(i, transcript, intron, '3p', types.TRUNCATED_INTRON)
         # remove all errors that are in the wrong order (caused by overlapping super loci)
         # these can only be removed now as they were needed for further processing
         self._remove_backwards_errors()

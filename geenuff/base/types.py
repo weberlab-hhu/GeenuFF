@@ -131,9 +131,10 @@ OVERLAPPING_EXONS = 'overlapping_exons'
 TOO_SHORT_INTRON = 'too_short_intron'
 SL_OVERLAP_ERROR = 'super_loci_overlap_error'
 MISMATCHING_STRANDS = 'missmatching_strands'
+TRUNCATED_INTRON = 'truncated_intron'
 Errors = make_enum('Errors', MISSING_UTR_5P, MISSING_UTR_3P, EMPTY_SUPER_LOCUS, MISSING_START_CODON,
                    MISSING_STOP_CODON, WRONG_PHASE_5P, MISMATCHED_PHASE_3P, OVERLAPPING_EXONS,
-                   TOO_SHORT_INTRON, SL_OVERLAP_ERROR, MISMATCHING_STRANDS)
+                   TOO_SHORT_INTRON, SL_OVERLAP_ERROR, MISMATCHING_STRANDS, TRUNCATED_INTRON)
 
 # frequently used for lookups
 geenuff_error_type_values = [t.value for t in Errors]
