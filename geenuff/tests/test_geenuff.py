@@ -367,57 +367,6 @@ def test_fasta_import():
     assert coords[2].sequence == 'A' * 100
 
 
-def test_import_multiple_genomes():
-    controller = ImportController(database_path='sqlite:///:memory:')
-    InsertCounterHolder.sync_counters_with_db(controller.session)
-    controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff', clean_gff=True)
-    query = controller.session.query
-
-    n_features_1 = query(Feature).count()
-    n_coords_1 = query(Coordinate).count()
-    n_genomes_1 = query(Genome).count()
-    max_id_1 = query(func.max(Feature.id)).one()[0]
-
-    # add two more genomes
-    controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff', clean_gff=True)
-    controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff', clean_gff=True)
-
-    n_features_3 = query(Feature).count()
-    n_coords_3 = query(Coordinate).count()
-    n_genomes_3 = query(Genome).count()
-    assert n_features_1 * 3 == n_features_3
-    assert n_coords_1 * 3 == n_coords_3
-    assert n_genomes_1 * 3 == n_genomes_3
-
-    max_id_3 = query(func.max(Feature.id)).one()[0]
-    assert max_id_1 * 3 == max_id_3
-
-    # test transcript and super locus relation for a super loci on the plus strand
-    # we have 8 super loci in each genome
-    transcripts_sl_1 = query(SuperLocus).filter(SuperLocus.id == 1).one().transcripts
-    transcripts_sl_2 = query(SuperLocus).filter(SuperLocus.id == 9).one().transcripts
-    transcripts_sl_3 = query(SuperLocus).filter(SuperLocus.id == 17).one().transcripts
-    assert len(transcripts_sl_1) == len(transcripts_sl_2) == len(transcripts_sl_3)
-
-    # test protein and super locus relation
-    proteins_sl_1 = query(SuperLocus).filter(SuperLocus.id == 1).one().proteins
-    proteins_sl_2 = query(SuperLocus).filter(SuperLocus.id == 9).one().proteins
-    proteins_sl_3 = query(SuperLocus).filter(SuperLocus.id == 17).one().proteins
-    assert len(proteins_sl_1) == len(proteins_sl_2) == len(proteins_sl_3)
-
-    # test transcript and super locus relation for a super loci on the minus strand
-    transcripts_sl_1 = query(SuperLocus).filter(SuperLocus.id == 6).one().transcripts
-    transcripts_sl_2 = query(SuperLocus).filter(SuperLocus.id == 14).one().transcripts
-    transcripts_sl_3 = query(SuperLocus).filter(SuperLocus.id == 22).one().transcripts
-    assert len(transcripts_sl_1) == len(transcripts_sl_2) == len(transcripts_sl_3)
-
-    # test protein and super locus relation
-    proteins_sl_1 = query(SuperLocus).filter(SuperLocus.id == 6).one().proteins
-    proteins_sl_2 = query(SuperLocus).filter(SuperLocus.id == 14).one().proteins
-    proteins_sl_3 = query(SuperLocus).filter(SuperLocus.id == 22).one().proteins
-    assert len(proteins_sl_1) == len(proteins_sl_2) == len(proteins_sl_3)
-
-
 def test_dummyloci_errors():
     """Tests if all errors generated for dummyloci{.gff|.fa} are correct"""
 

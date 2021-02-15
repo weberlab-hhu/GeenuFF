@@ -1,4 +1,3 @@
-import logging
 import copy
 import hashlib
 
@@ -252,13 +251,6 @@ class Counter(object):
     def __init__(self, cl=None, at=0):
         self.cl = cl
         self._at = at
-
-    def sync_with_db(self, session):
-        from sqlalchemy import func
-        new_at = session.query(func.max(self.cl.id)).one()[0]
-        if new_at == None:
-            new_at = 0
-        self._at = new_at
 
     def __call__(self, *args, **kwargs):
         self._at += 1

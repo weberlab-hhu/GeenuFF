@@ -20,12 +20,6 @@ class ExportArgParser(object):
         self.parser = argparse.ArgumentParser()
         self.parser.add_argument('--db-path-in', type=str, required=True,
                                  help='Path to the Geenuff SQLite input database.')
-        self.parser.add_argument('--genomes', type=str, default='',
-                                 help='Comma separated list of species names to be exported. '
-                                      'If empty all genomes in the db are used.')
-        self.parser.add_argument('--exclude-genomes', type=str, default='',
-                                 help='Comma separated list of species names to be excluded. '
-                                      'If empty all genomes in the db are used.')
         self.parser.add_argument('-l', '--longest', action="store_true",
                                  help="ignore all but the longest transcript per gene")
         self.parser.add_argument('-o', '--out', type=str,
@@ -70,9 +64,7 @@ class GeenuffExportController(object):
     def _check_genome_names(self, *argv):
         for names in argv:
             if names:
-                genome_ids = self.session.query(Genome.id).filter(Genome.species.in_(names)).all()
                 if len(genome_ids) != len(names):
-                    print('One or more of the given genome names can not be found in the database')
                     exit()
 
     def _coords_with_feature_query(self):
@@ -82,46 +74,32 @@ class GeenuffExportController(object):
         return self.session.query(Coordinate.id)
 
     def coords_by_genome(self, genomes, exclude):
-        query = (self.session.query(Coordinate.id, Coordinate.length, Genome.id, Genome.species)
-                 .join(Genome, Coordinate.genome_id == Genome.id))
 
         query = self._genome_filter_query(query, genomes, exclude)
         return query.all()
 
-    def genome_query(self, genomes, exclude, all_transcripts=False, return_super_loci=False):
-        """Returns either a tuple of (super_loci, coordinate_seqid) or a dict of coord_ids grouped by
-        their genome that each link to a list of features. If all_transcripts is False, only the
+    def genome_query(self, genome, all_transcripts=False, return_super_loci=False):
+        """Returns either a tuple of (super_loci, coordinate_seqid) or a dict of coord_ids for the given
+        genome that each link to a list of features. If all_transcripts is False, only the
         features of the longest transcript are queried."""
-        self._check_genome_names(genomes, exclude)
-        if genomes:
-            print(f'Selecting the following genomes: {genomes}', file=sys.stderr)
-        elif exclude:
-            print(f'Selecting all genomes from {self.db_path_in} except: {exclude}',
-                  file=sys.stderr)
+        genome_id = self.session.query(Genome.id).filter(Genome.species == genome).one()
+        if genome_id is None:
+            print(f'The genome {genome} can not be found in the database')
+            exit()
         else:
-            print(f'Selecting all genomes from {self.db_path_in}', file=sys.stderr)
+            print(f'Selecting {genome}', file=sys.stderr)
 
         if return_super_loci:
-            return self._super_loci_query(genomes, exclude)
+            return self._super_loci_query(genome_id)
         else:
-            return self._genome_query(genomes, exclude, all_transcripts)
+            return self._genome_query(genome_id, all_transcripts)
 
-    def _genome_query(self, genomes, exclude, all_transcripts):
+    def _genome_query(self, genome_id, all_transcripts):
         # returns dictionary
-        # {genome pk:
-        #     {(coordinate pk, coordinate length):
-        #         [Feature 0, Feature 1, ...]
-        #     }
+        # {(coordinate pk, coordinate length):
+        #     [Feature 0, Feature 1, ...]
         # }
-        if genomes:
-            genomes_str = ','.join(['"{}"'.format(g) for g in genomes])
-            genome_filter = f'AND genome.species IN ({genomes_str})'
-        elif exclude:
-            genomes_str = ','.join(['"{}"'.format(g) for g in exclude])
-            genome_filter = f'AND genome.species NOT IN ({genomes_str})'
-        else:
-            genome_filter = ''
-
+        genome_filter = f'AND coordiante.genome_id == {genome_id}'
         if not all_transcripts:
             longest_transcript_filter = 'WHERE transcript.longest = 1'
         else:
@@ -140,10 +118,8 @@ class GeenuffExportController(object):
                           feature.phase AS feature_phase,
                           feature.coordinate_id AS feature_coordinate_id,
                           coordinate.id AS coordinate_id,
-                          coordinate.length AS coordinate_length,
-                          coordinate.genome_id AS coordinate_genome_id
-                   FROM genome
-                   CROSS JOIN coordinate ON coordinate.genome_id = genome.id
+                          coordinate.length AS coordinate_length
+                   FROM coordinate
                    CROSS JOIN feature ON feature.coordinate_id = coordinate.id
                    CROSS JOIN association_transcript_piece_to_feature
                        ON association_transcript_piece_to_feature.feature_id = feature.id
@@ -154,13 +130,13 @@ class GeenuffExportController(object):
                    CROSS JOIN super_locus ON transcript.super_locus_id = super_locus.id
                    ''' + longest_transcript_filter + ' ' + genome_filter + '''
                        AND super_locus.type = 'gene' AND transcript.type IN ("mRNA","transcript")
-                   ORDER BY genome.species, coordinate.length DESC;'''
+                   ORDER BY coordinate.length DESC;'''
         start = time.time()
         rows = self.engine.execute(query).fetchall()
         print(f'Query took {time.time() - start:.2f}s')
 
         start = time.time()
-        genome_coord_features = defaultdict(lambda: defaultdict(list))
+        coord_features = defaultdict(list)
         for row in rows:
             feature = Feature(id=row[0],
                               given_name=row[1],
@@ -176,26 +152,27 @@ class GeenuffExportController(object):
                               coordinate_id=row[11])
             # reorganizing rows into genome centric dict
             coord_id, coord_len, genome_id = row[12], row[13], row[14]
-            genome_coord_features[genome_id][(coord_id, coord_len)].append(feature)
+            coord_features[genome_id][(coord_id, coord_len)].append(feature)
 
         print(f'Generating {len(rows)} Python objects took {time.time() - start:.2f}s')
         # patch in coordinates without features
-        for coord_id, coord_len, genome_id, _ in self.coords_by_genome(genomes, exclude):
+        coords = self.session.query(Coordinate.id, Coordinate.length).filter(Coordinate.genome_id == genome_id)
+        for coord_id, coord_len in coords:
             # the following inserts an empty list as val if the keys didn't exist (bc defaultdict)
-            _ = genome_coord_features[genome_id][(coord_id, coord_len)]
+            _ = coord_features[(coord_id, coord_len)]
 
         # hackish, resort so adding empty coordinates back in doesn't invalidate sorting assumptions
-        for genome in genome_coord_features:
-            toresort = genome_coord_features[genome]
+        for genome in coord_features:
+            toresort = coord_features[genome]
             resorted = defaultdict(list)
             # sort by descending coordinate length
             for coord, features in sorted(toresort.items(), key=lambda x: 0 - x[0][1]):
                 resorted[coord] = features
-            genome_coord_features[genome] = resorted
+            coord_features[genome] = resorted
 
-        return genome_coord_features
+        return coord_features
 
-    def _super_loci_query(self, genomes, exclude):
+    def _super_loci_query(self, genome_id):
         # returns a list of results like [(SuperLocus obj, sequence_name str), ...]
         query = (self.session.query(SuperLocus, Coordinate.seqid).distinct()
                     .join(Transcript, Transcript.super_locus_id == SuperLocus.id)
@@ -211,17 +188,7 @@ class GeenuffExportController(object):
                     .order_by(Feature.is_plus_strand)
                     .order_by(Feature.start))
 
-        query = self._genome_filter_query(query, genomes, exclude)
-
         return query.all()
-
-    @staticmethod
-    def _genome_filter_query(query, genomes, exclude):
-        if genomes:
-            query = query.filter(Genome.species.in_(genomes))
-        elif exclude:
-            query = query.filter(Genome.species.notin_(exclude))
-        return query
 
     def gen_ranges(self, genomes, exclude, range_function):
         super_loci = [r[0] for r in self.genome_query(genomes, exclude, return_super_loci=True)]
