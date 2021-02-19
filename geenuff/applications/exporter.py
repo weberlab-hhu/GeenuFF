@@ -65,24 +65,18 @@ class GeenuffExportController(object):
         """Returns either a tuple of (super_loci, coordinate_seqid) or a dict of coord_ids for the given
         genome that each link to a list of features. If all_transcripts is False, only the
         features of the longest transcript are queried."""
-        genome_id = self.session.query(Genome.id).filter(Genome.species == genome).one()
-        if genome_id is None:
-            print(f'The genome {genome} can not be found in the database')
-            exit()
-        else:
-            print(f'Selecting {genome}', file=sys.stderr)
 
+        print(f'Selecting {genome}', file=sys.stderr)
         if return_super_loci:
-            return self._super_loci_query(genome_id)
+            return self._super_loci_query()
         else:
-            return self._genome_query(genome_id, all_transcripts)
+            return self._genome_query(all_transcripts)
 
-    def _genome_query(self, genome_id, all_transcripts):
+    def _genome_query(self, all_transcripts):
         # returns dictionary
         # {(coordinate pk, coordinate length):
         #     [Feature 0, Feature 1, ...]
         # }
-        genome_filter = f'AND coordiante.genome_id == {genome_id}'
         if not all_transcripts:
             longest_transcript_filter = 'WHERE transcript.longest = 1'
         else:
@@ -111,7 +105,7 @@ class GeenuffExportController(object):
                        transcript_piece.id
                    CROSS JOIN transcript ON transcript_piece.transcript_id = transcript.id
                    CROSS JOIN super_locus ON transcript.super_locus_id = super_locus.id
-                   ''' + longest_transcript_filter + ' ' + genome_filter + '''
+                   ''' + longest_transcript_filter + '''
                        AND super_locus.type = 'gene' AND transcript.type IN ("mRNA","transcript")
                    ORDER BY coordinate.length DESC;'''
         start = time.time()
@@ -138,23 +132,21 @@ class GeenuffExportController(object):
             coord_features[(coord_id, coord_len)].append(feature)
 
         # patch in coordinates without features
-        coords = self.session.query(Coordinate.id, Coordinate.length).filter(Coordinate.genome_id == genome_id)
+        coords = self.session.query(Coordinate.id, Coordinate.length)
         for coord_id, coord_len in coords:
             # the following inserts an empty list as val if the keys didn't exist (bc defaultdict)
             _ = coord_features[(coord_id, coord_len)]
 
         # hackish, resort so adding empty coordinates back in doesn't invalidate sorting assumptions
-        for genome in coord_features:
-            toresort = coord_features[genome]
-            resorted = defaultdict(list)
-            # sort by descending coordinate length
-            for coord, features in sorted(toresort.items(), key=lambda x: 0 - x[0][1]):
-                resorted[coord] = features
-            coord_features[genome] = resorted
+        resorted = {}
+        # sort by descending coordinate length
+        for coord, features in sorted(coord_features.items(), key=lambda x: x[0][1], reverse=True):
+            resorted[coord] = features
+        coord_features = resorted
 
         return coord_features
 
-    def _super_loci_query(self, genome_id):
+    def _super_loci_query(self):
         # returns a list of results like [(SuperLocus obj, sequence_name str), ...]
         query = (self.session.query(SuperLocus, Coordinate.seqid).distinct()
                     .join(Transcript, Transcript.super_locus_id == SuperLocus.id)
@@ -162,7 +154,6 @@ class GeenuffExportController(object):
                     .join(asso_tp_2_f, asso_tp_2_f.c.transcript_piece_id == TranscriptPiece.id)
                     .join(Feature, asso_tp_2_f.c.feature_id == Feature.id)
                     .join(Coordinate, Feature.coordinate_id == Coordinate.id)
-                    .join(Genome, Genome.id == Coordinate.genome_id)
                     .filter(Transcript.type.in_([types.TranscriptLevel.mRNA, types.TranscriptLevel.transcript]))
                     .filter(SuperLocus.type == types.SuperLocusAll.gene)
                     .order_by(Genome.species)
