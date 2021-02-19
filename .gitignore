@@ -1,11 +1,10 @@
 # Project specific
 tmp/*
-data/plants/*
-data/animals/*
 geenuff/testdata/dummyloci_annotations.sqlitedb
 geenuff/testdata/dummyloci_multiple.fa.fai
 tags
 *_out
+data/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
