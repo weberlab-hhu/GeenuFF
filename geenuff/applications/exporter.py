@@ -61,23 +61,6 @@ class GeenuffExportController(object):
     def get_coord_by_id(self, coord_id):
         return self.session.query(Coordinate).filter(Coordinate.id == coord_id).one()
 
-    def _check_genome_names(self, *argv):
-        for names in argv:
-            if names:
-                if len(genome_ids) != len(names):
-                    exit()
-
-    def _coords_with_feature_query(self):
-        return self.session.query(Feature.coordinate_id).distinct()
-
-    def _all_coords_query(self):
-        return self.session.query(Coordinate.id)
-
-    def coords_by_genome(self, genomes, exclude):
-
-        query = self._genome_filter_query(query, genomes, exclude)
-        return query.all()
-
     def genome_query(self, genome, all_transcripts=False, return_super_loci=False):
         """Returns either a tuple of (super_loci, coordinate_seqid) or a dict of coord_ids for the given
         genome that each link to a list of features. If all_transcripts is False, only the
@@ -151,10 +134,9 @@ class GeenuffExportController(object):
                               phase=row[10],
                               coordinate_id=row[11])
             # reorganizing rows into genome centric dict
-            coord_id, coord_len, genome_id = row[12], row[13], row[14]
-            coord_features[genome_id][(coord_id, coord_len)].append(feature)
+            coord_id, coord_len = row[12], row[13]
+            coord_features[(coord_id, coord_len)].append(feature)
 
-        print(f'Generating {len(rows)} Python objects took {time.time() - start:.2f}s')
         # patch in coordinates without features
         coords = self.session.query(Coordinate.id, Coordinate.length).filter(Coordinate.genome_id == genome_id)
         for coord_id, coord_len in coords:
