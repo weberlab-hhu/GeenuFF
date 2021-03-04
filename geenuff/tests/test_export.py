@@ -447,6 +447,8 @@ def test_get_CDS():
                )]
     econtroller, lcontroller = seq_len_controllers('CDS')
     assert len(econtroller.export_ranges) == len(lcontroller.export_ranges) == 3
+    for item in lcontroller.export_ranges:
+        print(item)
     compare2controllers(expect, econtroller, lcontroller)
     # and now just the longest (1st & 3rd)
     econtroller, lcontroller = seq_len_controllers('CDS', longest=True)

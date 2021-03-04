@@ -274,18 +274,6 @@ class RangeMaker(TranscriptHandlerBase):
         return ranges
 
     @staticmethod
-    def _make_trees(ranges):
-        trees = {}
-        for r in ranges:
-            coord_isplus = r.sequence_chunk_info()
-            if coord_isplus not in trees:
-                trees[coord_isplus] = intervaltree.IntervalTree()
-            # todo, is that sufficient, do we not need to add one to -strand coordinates?
-            start, end = min(r.start, r.end), max(r.start, r.end)
-            trees[coord_isplus][start:end] = r
-        return trees
-
-    @staticmethod
     def _copy_ival_data(iv, islower):
         if islower:  # copy one of the two sides so that we don't change the same dictionary later
             out = copy.deepcopy(iv.data)
@@ -293,23 +281,75 @@ class RangeMaker(TranscriptHandlerBase):
             out = iv.data
         return out
 
+    @staticmethod
+    def _stack_matching(pos_tuples):
+        prev_start = None
+        matching = []
+        for pos in pos_tuples:
+            if pos[0].start != prev_start:
+                if matching:
+                    yield matching
+                    matching = []
+            matching.append(pos)
+            prev_start = pos[0].start
+        yield matching
+
     def _subtract_ranges(self, subtract_from, to_subtract):
-        keep_trees = self._make_trees(subtract_from)
-        subtract_trees = self._make_trees(to_subtract)
-        if not subtract_trees:
+        """makes new ranges that are the difference between subtract_from and to_subtract"""
+        # todo, this may break if more than one transcript piece is present
+        if not to_subtract:
             return self._resort_subtracted(subtract_from)
-        subtracted = []
-        for key in keep_trees:
-            for chop_out in subtract_trees[key]:
-                keep_trees[key].chop(chop_out.begin, chop_out.end, self._copy_ival_data)
-            for kept in keep_trees[key]:
-                start, end = kept.begin, kept.end
-                if not kept.data.is_plus_strand:
-                    start, end = end, start
-                kept.data.start = start
-                kept.data.end = end
-                subtracted.append(kept.data)
-        return self._resort_subtracted(subtracted)
+
+        positions = self._mk_depth_counter_coords(subtract_from, 'subtract_from')
+        positions += self._mk_depth_counter_coords(to_subtract, 'to_subtract')
+        positions = sorted(positions, key=lambda x: x[0].sort_key())
+        last_from = None
+        start = None
+        depths = {'subtract_from': 0,
+                  'to_subtract': 0}
+        out = []
+        for stacked in self._stack_matching(positions):
+            was_in_difference = self._is_in_difference(depths)
+            for pos in stacked:
+                depths[pos[1]] += pos[2]
+                if pos[1] == 'subtract_from' and isinstance(pos[0], Range):
+                    last_from = pos[0]
+            is_in_difference = self._is_in_difference(depths)
+            # if we just opened a range remaining in the difference
+            if (not was_in_difference) and is_in_difference:
+                start = stacked[0][0].start
+            # if we just closed a range
+            elif was_in_difference and (not is_in_difference):
+                end = stacked[0][0].start
+                out.append(Range(coordinate_id=last_from.coordinate_id,
+                                 is_plus_strand=last_from.is_plus_strand,
+                                 start=start,
+                                 end=end,
+                                 piece_position=last_from.piece_position,
+                                 given_name=last_from.given_name))
+            else:
+                # in all other cases things just chill as they were before
+                pass
+        return self._resort_subtracted(out)
+
+    @staticmethod
+    def _is_in_difference(depths):
+        if depths['subtract_from'] > 0 and depths['to_subtract'] == 0:
+            return True
+        else:
+            return False
+
+    @staticmethod
+    def _mk_depth_counter_coords(ranges, label):
+        """semi flatten ranges to coordinates and how the 'depth' changes"""
+        coords = []
+        for range in ranges:
+            coords.append((range, label, 1))
+            coords.append((TranscriptCoordinate(piece_position=range.piece_position,
+                                                coordinate_id=range.coordinate_id,
+                                                start=range.end,
+                                                is_plus_strand=range.is_plus_strand), label, -1))
+        return coords
 
     @staticmethod
     def _resort_subtracted(subtracted_ranges):

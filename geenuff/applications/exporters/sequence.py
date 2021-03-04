@@ -8,18 +8,19 @@ from geenuff.base.helpers import reverse_complement, chunk_str
 class FastaExportController(GeenuffExportController):
     def __init__(self, db_path_in, longest=False):
         super().__init__(db_path_in, longest)
+        self.coordinate_id_cache = None
+        self.sequence_cache = None
 
     def get_seq(self, export_sequence):
         # simple and probably horribly inefficient
         out = []
-        last_coordinate, sequence = None, None
         for a_range in export_sequence.ranges:
             coord_id = a_range.coordinate_id
-            if last_coordinate != coord_id:
+            if self.coordinate_id_cache != coord_id:
                 coordinate = self.session.query(Coordinate).filter(Coordinate.id == coord_id).first()
-                sequence = coordinate.sequence
-            out += self.get_seq_fragment(a_range, sequence)
-            last_coordinate = coord_id
+                self.sequence_cache = coordinate.sequence
+            out += self.get_seq_fragment(a_range, self.sequence_cache)
+            self.coordinate_id_cache = coord_id
         return out
 
     def fmt_seq(self, export_sequence):
