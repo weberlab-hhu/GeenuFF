@@ -48,10 +48,10 @@ def prepare_and_cleanup():
 
 def seq_len_controllers(mode, longest=False, db=EXPORTING_DB):
     econtroller = FastaExportController(db_path_in='sqlite:///' + db, longest=longest)
-    econtroller.prep_ranges(range_function=MODES[mode], genomes=None, exclude=None)
+    econtroller.prep_ranges(range_function=MODES[mode])
 
     lcontroller = LengthExportController(db_path_in='sqlite:///' + db, longest=longest)
-    lcontroller.prep_ranges(range_function=MODES[mode], genomes=None, exclude=None)
+    lcontroller.prep_ranges(range_function=MODES[mode])
     return econtroller, lcontroller
 
 

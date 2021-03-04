@@ -13,8 +13,7 @@ class LengthArgParser(RangeArgParser):
 def main(args):
     controller = LengthExportController(args.db_path_in, args.longest)
     if args.mode in MODES:
-        controller.prep_ranges(args.genomes, args.exclude_genomes,
-                               MODES[args.mode])
+        controller.prep_ranges(MODES[args.mode])
     else:
         raise NotImplementedError("Requested mode ({}) not in implemented types {}".format(args.mode,
                                                                                            list(MODES.keys())))

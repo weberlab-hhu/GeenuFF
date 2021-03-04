@@ -66,7 +66,7 @@ class GeenuffExportController(object):
         genome that each link to a list of features. If all_transcripts is False, only the
         features of the longest transcript are queried."""
 
-        print(f'Selecting whole genome', file=sys.stderr)
+        print(f'Querying {self.db_path_in}', file=sys.stderr)
         if return_super_loci:
             return self._super_loci_query()
         else:
@@ -163,7 +163,7 @@ class GeenuffExportController(object):
 
         return query.all()
 
-    def gen_ranges(self, genomes, exclude, range_function):
+    def gen_ranges(self, range_function):
         super_loci = [r[0] for r in self.genome_query(return_super_loci=True)]
         for super_locus in super_loci:
             sl_ranger = SuperLocusRanger(super_locus, longest=self.longest)
@@ -175,8 +175,8 @@ class GeenuffExportController(object):
                         group.seqid = 'unnamed_{0:08d}'.format(self.id_counter())
                     yield group
 
-    def prep_ranges(self, genomes, exclude, range_function):
-        for arange in self.gen_ranges(genomes, exclude, range_function):
+    def prep_ranges(self, range_function):
+        for arange in self.gen_ranges(range_function):
             self.export_ranges.append(arange)
 
 

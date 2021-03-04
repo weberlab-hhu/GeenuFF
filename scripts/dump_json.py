@@ -12,10 +12,10 @@ class JsonArgParser(ExportArgParser):
         self.parser.add_argument('--seqid', required=True,
                                  help="name of target sequence (chromosome / scaffold) in database")
         self.parser.add_argument('--strand', required=True,
-                                 help="'+' or '-' for strand to query (defaults to both)")
+                                 help="'+' or '-' for strand to query")
         self.parser.add_argument('--start', default=0, type=int,
                                  help='start coordinate of query range (pythonic)')
-        self.parser.add_argument('--end', default=None,
+        self.parser.add_argument('--end', default=None, type=int,
                                  help="end coordinate of query range (pythonic)")
         self.parser.add_argument('--pretty', action="store_true",
                                  help="set for multi-line indented json output")

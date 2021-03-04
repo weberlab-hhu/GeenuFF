@@ -10,7 +10,6 @@ and log the import to `geenuff.import.log` as follows:
 Capital letters and `<>` indicate what must be user specified.
 
 ```
-geenuff_path=<PATH/TO/GeenuFF/>
 
 import2geenuff.py --fasta <PATH_TO_GENOME_FASTA_FILE> --gff3 <PATH_TO_GFF3_FILE> \
     --db-path geenuff.sqlite3 --log-file geenuff.import.log --species <SPECIES_NAME>
@@ -35,7 +34,7 @@ the `--basedir` option can be used to simplify/structure input and output.
 <BASEDIR>/input/<YOUR_FILE>.gff3
 
 # simplified import
-$geenuff_path/import_genome.py --basedir <BASEDIR> --species <SPECIES_NAME>
+import2geenuff.py --basedir <BASEDIR> --species <SPECIES_NAME>
 
 # the output files "geenuff.sqlite3" and "import.log" will be written in
 # the directory <BASEDIR>/output/
@@ -74,7 +73,7 @@ python $geenuff_path/scripts/dump_to_fasta.py --db-path-in GENUFF_DB --mode pre-
 
 See above, but use `$geenuff_path/scripts/dump_lengthinfo.py`
 
-Summary statistics still need to be implemented
+Or directly obtain summary statistics by specifying `--stats-only`
 
 # GeenuFF API
 
@@ -117,7 +116,7 @@ e.g.
 from geenuff.applications.exporters.sequence import FastaExportController
 
 controller = FastaExportController(PATH_TO_GEENUFF_DB)
-controller.prep_ranges(genomes=None, exclude_genomes=None, mode='pre-mRNA')
+controller.prep_ranges(mode='pre-mRNA')
 for export_group in controller.export_ranges:
     pre_mrna_seq = controller.get_seq(export_group)
     # your code here
@@ -138,7 +137,7 @@ json output.
 
 e.g. were PATH_TO_GEENUFF_DB was imported from the test files:
 "geenuff/testdata/exporting.*" as in the second example for 
-the `import_genome.py` section above.
+the `import2geenuff.py` section above.
 
 ```
 from geenuff.applications.exporters.json import JsonExportController

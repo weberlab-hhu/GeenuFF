@@ -143,7 +143,6 @@ class TranscriptJsonable(TranscriptHandlerBase, ToJsonable):
 
 class SuperLocusJsonable(SuperLocusHandlerBase, ToJsonable):
     def __init__(self, data=None):
-        print(type(data))
         FeatureHandlerBase.__init__(self, data)
         ToJsonable.__init__(self)
         self.transcript_handlers = self._mk_transcript_handlers()
