@@ -61,12 +61,12 @@ class GeenuffExportController(object):
     def get_coord_by_id(self, coord_id):
         return self.session.query(Coordinate).filter(Coordinate.id == coord_id).one()
 
-    def genome_query(self, genome, all_transcripts=False, return_super_loci=False):
+    def genome_query(self, all_transcripts=False, return_super_loci=False):
         """Returns either a tuple of (super_loci, coordinate_seqid) or a dict of coord_ids for the given
         genome that each link to a list of features. If all_transcripts is False, only the
         features of the longest transcript are queried."""
 
-        print(f'Selecting {genome}', file=sys.stderr)
+        print(f'Selecting whole genome', file=sys.stderr)
         if return_super_loci:
             return self._super_loci_query()
         else:
@@ -164,7 +164,7 @@ class GeenuffExportController(object):
         return query.all()
 
     def gen_ranges(self, genomes, exclude, range_function):
-        super_loci = [r[0] for r in self.genome_query(genomes, exclude, return_super_loci=True)]
+        super_loci = [r[0] for r in self.genome_query(return_super_loci=True)]
         for super_locus in super_loci:
             sl_ranger = SuperLocusRanger(super_locus, longest=self.longest)
             # todo, once JOIN output exists, drop all these loops
