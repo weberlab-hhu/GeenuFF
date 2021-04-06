@@ -82,6 +82,58 @@ THREE_PRIME_UTR = 'three_prime_UTR'
 MATCH = 'match'
 CDNA_MATCH = 'cDNA_match'
 
+# ignorable from RefSeq genomes
+ANTISENSE_RNA = 'antisense_RNA'
+CAAT_SIGNAL = 'CAAT_signal'
+CAGE_CLUSTER = 'CAGE_cluster'
+CENTROMERE = 'centromere'
+CHROMOSOME_BREAKPOINT = 'chromosome_breakpoint'
+CONSERVED_REGION = 'conserved_region'
+DIRECT_REPEAT = 'direct_repeat'
+DISPERSED_REPEAT = 'dispersed_repeat'
+D_LOOP = 'D_loop'
+DNASEI_HYPERSENSITIVE_SITE = 'DNaseI_hypersensitive_site'
+DNASEI_HYPERSENSITIVE_SITE2 = 'DNAseI_hypersensitive_site'
+ENHANCER = 'enhancer'
+ENHANCER_BLOCKING_ELEMENT = 'enhancer_blocking_element'
+EPIGENETICALLY_MODIFIED_REGION = 'epigenetically_modified_region'
+GC_RICH_PROMOTER_REGION = 'GC_rich_promoter_region'
+GUIDE_RNA = 'guide_RNA'
+IMPRINTING_CONTROL_REGION = 'imprinting_control_region'
+INSULATOR = 'insulator'
+LOCUS_CONTROL_REGION = 'locus_control_region'
+MATRIX_ATTACHMENT_SITE = 'matrix_attachment_site'
+MEIOTIC_RECOMBINATION_REGION = 'meiotic_recombination_region'
+MICROSATELLITE = 'microsatellite'
+MINISATELLITE = 'minisatellite'
+MITOTIC_RECOMBINATION_REGION = 'mitotic_recombination_region'
+MOBILE_GENETIC_ELEMENT = 'mobile_genetic_element'
+NON_ALLELIC_HOMOLOGOUS_RECOMBINATION_REGION = 'non_allelic_homologous_recombination_region'
+NUCLEOTIDE_CLEAVAGE_SITE = 'nucleotide_cleavage_site'
+NUCLEOTIDE_MOTIF = 'nucleotide_motif'
+ORIGIN_OF_REPLICATION = 'origin_of_replication'
+PROMOTER = 'promoter'
+PROTEIN_BINDING_SITE = 'protein_binding_site'
+RECOMBINATION_FEATURE = 'recombination_feature'
+REGULATORY_REGION = 'regulatory_region'
+REPEAT_INSTABILITY_REGION = 'repeat_instability_region'
+REPEAT_REGION = 'repeat_region'
+REPLICATION_REGULATORY_REGION = 'replication_regulatory_region'
+REPLICATION_START_SITE = 'replication_start_site'
+RESPONSE_ELEMENT = 'response_element'
+RNASE_P_RNA = 'RNase_P_RNA'
+SEQUENCE_ALTERATION = 'sequence_alteration'
+SEQUENCE_COMPARISON = 'sequence_comparison'
+SEQUENCE_FEATURE = 'sequence_feature'
+SEQUENCE_SECONDARY_STRUCTURE = 'sequence_secondary_structure'
+SILENCER = 'silencer'
+TANDEM_REPEAT = 'tandem_repeat'
+TATA_box = 'TATA_box'
+TELOMERASE_RNA = 'telomerase_RNA'
+TRANSCRIPTIONAL_CIS_REGULATORY_REGION = 'transcriptional_cis_regulatory_region'
+TSS = 'TSS'
+VAULT_RNA = 'vault_RNA'
+
 # ignorable from Augustus
 START_CODON = 'start_codon'
 STOP_CODON = 'stop_codon'
@@ -95,10 +147,23 @@ THREE_PRIME_UTR_LOWER = 'three_prime_utr'
 
 IgnorableGFFFeatures = make_enum('IgnorableGFFFeatures', SUPERCONTIG, CONTIG, CHROMOSOME,
                                  BIOLOGICAL_REGION, REGION, SCAFFOLD, FIVE_PRIME_UTR, THREE_PRIME_UTR,
-                                 MATCH, CDNA_MATCH, START_CODON, STOP_CODON, INTRON,
-                                 TRANSCRIPTION_START_SITE, TRANSCRIPTION_TERMINATION_SITE,
-                                 TRANSCRIPTION_START_SITE2, TRANSCRIPTION_TERMINATION_SITE2,
-                                 FIVE_PRIME_UTR_LOWER, THREE_PRIME_UTR_LOWER)
+                                 MATCH, CDNA_MATCH, ANTISENSE_RNA, CAAT_SIGNAL, CAGE_CLUSTER, CENTROMERE,
+                                 CHROMOSOME_BREAKPOINT, CONSERVED_REGION, DIRECT_REPEAT, DISPERSED_REPEAT,
+                                 D_LOOP, DNASEI_HYPERSENSITIVE_SITE, DNASEI_HYPERSENSITIVE_SITE2, ENHANCER,
+                                 ENHANCER_BLOCKING_ELEMENT, EPIGENETICALLY_MODIFIED_REGION, GC_RICH_PROMOTER_REGION,
+                                 GUIDE_RNA, IMPRINTING_CONTROL_REGION, INSULATOR, LOCUS_CONTROL_REGION,
+                                 MATRIX_ATTACHMENT_SITE, MEIOTIC_RECOMBINATION_REGION, MICROSATELLITE, MINISATELLITE,
+                                 MITOTIC_RECOMBINATION_REGION, MOBILE_GENETIC_ELEMENT,
+                                 NON_ALLELIC_HOMOLOGOUS_RECOMBINATION_REGION, NUCLEOTIDE_CLEAVAGE_SITE, NUCLEOTIDE_MOTIF,
+                                 ORIGIN_OF_REPLICATION, PROMOTER, PROTEIN_BINDING_SITE, RECOMBINATION_FEATURE,
+                                 REGULATORY_REGION, REPEAT_INSTABILITY_REGION, REPEAT_REGION, REPLICATION_REGULATORY_REGION,
+                                 REPLICATION_START_SITE, RESPONSE_ELEMENT, RNASE_P_RNA, SEQUENCE_ALTERATION,
+                                 SEQUENCE_COMPARISON, SEQUENCE_FEATURE, SEQUENCE_SECONDARY_STRUCTURE, SILENCER,
+                                 TANDEM_REPEAT, TATA_box, TELOMERASE_RNA, TRANSCRIPTIONAL_CIS_REGULATORY_REGION,
+                                 TSS, VAULT_RNA, START_CODON, STOP_CODON, INTRON, TRANSCRIPTION_START_SITE,
+                                 TRANSCRIPTION_TERMINATION_SITE, TRANSCRIPTION_START_SITE2,
+                                 TRANSCRIPTION_TERMINATION_SITE2, FIVE_PRIME_UTR_LOWER,
+                                 THREE_PRIME_UTR_LOWER)
 
 # other useful features
 EXON = 'exon'
