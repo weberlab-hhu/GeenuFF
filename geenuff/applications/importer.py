@@ -291,10 +291,15 @@ class OrganizedGFFEntryGroup(object):
             elif in_enum_values(entry.type, types.TranscriptLevel):
                 self.entries['transcripts'][entry] = {'exons': [], 'cds': []}
                 latest_transcript = entry
-            elif entry.type == types.EXON:
-                self.entries['transcripts'][latest_transcript]['exons'].append(entry)
-            elif entry.type == types.CDS:
-                self.entries['transcripts'][latest_transcript]['cds'].append(entry)
+            elif latest_transcript is not None:
+                if entry.type == types.EXON:
+                    self.entries['transcripts'][latest_transcript]['exons'].append(entry)
+                elif entry.type == types.CDS:
+                    self.entries['transcripts'][latest_transcript]['cds'].append(entry)
+                else:
+                    logging.warning(f'Found unexpected entry type: {entry.type}')
+            else:
+                logging.warning(f'Ignoring {entry.type} without transcript found in {entry.seqid}: {entries[0].attribute}')
 
         # set the coordinate
         self.coord = self.fasta_importer.gffid_to_coords[self.entries['super_locus'].seqid]
