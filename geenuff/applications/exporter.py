@@ -61,12 +61,12 @@ class GeenuffExportController(object):
     def get_coord_by_id(self, coord_id):
         return self.session.query(Coordinate).filter(Coordinate.id == coord_id).one()
 
-    def genome_query(self, genome, all_transcripts=False, return_super_loci=False):
-        """Returns either a tuple of (super_loci, coordinate_seqid) or a dict of coord_ids for the given
-        genome that each link to a list of features. If all_transcripts is False, only the
+    def genome_query(self, all_transcripts=False, return_super_loci=False):
+        """Returns either a tuple of (super_loci, coordinate_seqid) or a dict of coord_ids for everything in the database
+        that each link to a list of features. If all_transcripts is False, only the
         features of the longest transcript are queried."""
 
-        print(f'Selecting {genome}', file=sys.stderr)
+        print(f'Querying for {self.session.query(Genome.species).all()[0]}', file=sys.stderr)
         if return_super_loci:
             return self._super_loci_query()
         else:
@@ -163,8 +163,8 @@ class GeenuffExportController(object):
 
         return query.all()
 
-    def gen_ranges(self, genomes, exclude, range_function):
-        super_loci = [r[0] for r in self.genome_query(genomes, exclude, return_super_loci=True)]
+    def gen_ranges(self, range_function):
+        super_loci = [r[0] for r in self.genome_query(return_super_loci=True)]
         for super_locus in super_loci:
             sl_ranger = SuperLocusRanger(super_locus, longest=self.longest)
             # todo, once JOIN output exists, drop all these loops
@@ -175,8 +175,8 @@ class GeenuffExportController(object):
                         group.seqid = 'unnamed_{0:08d}'.format(self.id_counter())
                     yield group
 
-    def prep_ranges(self, genomes, exclude, range_function):
-        for arange in self.gen_ranges(genomes, exclude, range_function):
+    def prep_ranges(self, range_function):
+        for arange in self.gen_ranges(range_function):
             self.export_ranges.append(arange)
 
 
