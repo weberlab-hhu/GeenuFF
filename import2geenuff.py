@@ -12,10 +12,11 @@ class PathFinder(object):
     INPUT = 'input'
     OUTPUT = 'output'
 
-    def __init__(self, db_path, basedir, fasta=None, gff=None, logfile=None):
+    def __init__(self, db_path, basedir, species, fasta=None, gff=None, logfile=None):
         # directories
         self.db_out = db_path
         self.basedir = basedir
+        self.species = species
         self.input = '{}/{}/'.format(self.basedir, PathFinder.INPUT)
         self.output = '{}/{}/'.format(self.basedir, PathFinder.OUTPUT)
         if args.basedir is not None:
@@ -26,7 +27,7 @@ class PathFinder(object):
         self.fasta_in = self._get_fa(fasta)
         self.gff_in = self._get_gff(gff)
         if not self.db_out:
-            self.db_out = '{}geenuff.sqlite3'.format(self.output)
+            self.db_out = '{}{}.sqlite3'.format(self.output, species)
         if logfile is not None:
             self.problems_out = logfile
 
@@ -58,7 +59,7 @@ def main(args):
         assert all([x is not None for x in [args.fasta, args.gff3, args.db_path, args.log_file]]), \
             "if basedir is none, all three custom input/output files must be manually specified " \
             "with --gff3, --fasta, --log-file and --db_path parameters"
-    paths = PathFinder(args.db_path, args.basedir, fasta=args.fasta, gff=args.gff3,
+    paths = PathFinder(args.db_path, args.basedir, args.species, fasta=args.fasta, gff=args.gff3,
                        logfile=args.log_file)
 
     msg_fmt_str = '%(asctime)s - %(levelname)s: %(message)s'
