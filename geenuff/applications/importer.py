@@ -46,15 +46,6 @@ class InsertCounterHolder(object):
     transcript_piece = helpers.Counter(orm.TranscriptPiece)
     genome = helpers.Counter(orm.Genome)
 
-    @staticmethod
-    def sync_counters_with_db(session):
-        InsertCounterHolder.feature.sync_with_db(session)
-        InsertCounterHolder.protein.sync_with_db(session)
-        InsertCounterHolder.transcript.sync_with_db(session)
-        InsertCounterHolder.super_locus.sync_with_db(session)
-        InsertCounterHolder.transcript_piece.sync_with_db(session)
-        InsertCounterHolder.genome.sync_with_db(session)
-
 
 class OrganizedGeenuffImporterGroup(object):
     """Stores the handler objects for a super locus in an organized fashion.
@@ -348,10 +339,15 @@ class OrganizedGFFEntryGroup(object):
             elif in_enum_values(entry.type, types.TranscriptLevel):
                 self.entries['transcripts'][entry] = {'exons': [], 'cds': []}
                 latest_transcript = entry
-            elif entry.type == types.EXON:
-                self.entries['transcripts'][latest_transcript]['exons'].append(entry)
-            elif entry.type == types.CDS:
-                self.entries['transcripts'][latest_transcript]['cds'].append(entry)
+            elif latest_transcript is not None:
+                if entry.type == types.EXON:
+                    self.entries['transcripts'][latest_transcript]['exons'].append(entry)
+                elif entry.type == types.CDS:
+                    self.entries['transcripts'][latest_transcript]['cds'].append(entry)
+                else:
+                    logging.warning(f'Found unexpected entry type: {entry.type}')
+            else:
+                logging.warning(f'Ignoring {entry.type} without transcript found in {entry.seqid}: {entries[0].attribute}')
 
         # set the coordinate
         self.coord = self.fasta_importer.gffid_to_coords[self.entries['super_locus'].seqid]
@@ -817,19 +813,16 @@ class ImportController(object):
         self.insertion_queues = InsertionQueue(session=self.session, engine=self.engine)
 
     def _mk_session(self, replace_db):
-        appending_to_db = False
         if os.path.exists(self.database_path):
             if replace_db:
                 print('removed existing database at {}'.format(self.database_path))
                 os.remove(self.database_path)
             else:
-                appending_to_db = True
-                print('appending to existing database at {}'.format(self.database_path))
+                print('database already existing at {} and --replace-db not set'.format(self.database_path))
+                exit()
         self.engine = create_engine(helpers.full_db_path(self.database_path), echo=False)
         orm.Base.metadata.create_all(self.engine)
         self.session = sessionmaker(bind=self.engine)()
-        if appending_to_db:
-            InsertCounterHolder.sync_counters_with_db(self.session)
 
     def make_genome(self, genome_args=None):
         if genome_args is None:

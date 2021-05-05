@@ -195,7 +195,7 @@ class JsonExportController(GeenuffExportController):
                 ch = CoordinateJsonable(coordinate)
                 res = {'coordinate_piece': ch.to_jsonable(start, end),
                        'super_loci': []}
-                for sl, sl_coordinate_seqid in self.genome_query([species], [], return_super_loci=True):
+                for sl, sl_coordinate_seqid in self.genome_query(return_super_loci=True):
                     if sl_coordinate_seqid == seqid:
                         slh = SuperLocusJsonable(sl)
                         if slh.overlaps(coordinate, start, end, is_plus_strand):
