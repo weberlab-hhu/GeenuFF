@@ -390,20 +390,22 @@ class OrganizedGFFEntries(object):
         gene_level = [x.value for x in types.SuperLocusAll]
 
         reader = self._useful_gff_entries()
-        first = next(reader)
-        seqid = first.seqid
-        gene_group = [first]
-        self.organized_entries[seqid] = []
-        for entry in reader:
-            if entry.type in gene_level:
-                self.organized_entries[seqid].append(gene_group)
-                gene_group = [entry]
-                if entry.seqid != seqid:
-                    self.organized_entries[entry.seqid] = []
-                    seqid = entry.seqid
-            else:
-                gene_group.append(entry)
-        self.organized_entries[seqid].append(gene_group)
+        first = next(reader, None)
+
+        if first is not None:
+            seqid = first.seqid
+            gene_group = [first]
+            self.organized_entries[seqid] = []
+            for entry in reader:
+                if entry.type in gene_level:
+                    self.organized_entries[seqid].append(gene_group)
+                    gene_group = [entry]
+                    if entry.seqid != seqid:
+                        self.organized_entries[entry.seqid] = []
+                        seqid = entry.seqid
+                else:
+                    gene_group.append(entry)
+            self.organized_entries[seqid].append(gene_group)
 
     def _useful_gff_entries(self):
         skipable = [x.value for x in types.IgnorableGFFFeatures]
