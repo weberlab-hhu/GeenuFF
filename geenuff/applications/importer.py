@@ -984,20 +984,21 @@ class FastaImporter(object):
                                       "are subset of gff IDs")
 
     def add_sequences(self, seq_file):
-        self.add_fasta(seq_file)
-
-    def add_fasta(self, seq_file, id_delim=' '):
-        fp = fastahelper.FastaParser()
-        for fasta_header, seq in fp.read_fasta(seq_file):
-            seq = seq.upper()  # this may perform poorly
-            seqid = fasta_header.split(id_delim)[0]
-            # todo, parallelize sequence & annotation format, then import directly from ~Slice
+        # todo, parallelize sequence & annotation format, then import directly from ~Slice
+        for seqid, seq in self.parse_fasta(seq_file):
             coord = orm.Coordinate(sequence=seq,
                                    length=len(seq),
                                    seqid=seqid,
                                    sha1=helpers.sequence_hash(seq),
                                    genome=self.genome)
             logging.info(f'Added coordinate object for FASTA sequence with seqid {seqid} to the queue')
+
+    def parse_fasta(self, seq_file, id_delim=' '):
+        fp = fastahelper.FastaParser()
+        for fasta_header, seq in fp.read_fasta(seq_file):
+            seq = seq.upper()  # this may perform poorly
+            seqid = fasta_header.split(id_delim)[0]
+            yield seqid, seq
 
 
 class SuperLocusImporter(Insertable):
