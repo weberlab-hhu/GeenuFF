@@ -164,6 +164,13 @@ class GeenuffExportController(object):
         return query.all()
 
     def gen_ranges(self, range_function):
+        # the coordinate centric ranges get special handling
+        if range_function == IG_OVERRIDE:
+            for item in self.intergenic_ranges():
+                yield item
+            return
+
+        # all super locus centric ranges
         super_loci = [r[0] for r in self.genome_query(return_super_loci=True)]
         for super_locus in super_loci:
             sl_ranger = SuperLocusRanger(super_locus, longest=self.longest)
@@ -174,6 +181,56 @@ class GeenuffExportController(object):
                     if group.seqid is None:
                         group.seqid = 'unnamed_{0:08d}'.format(self.id_counter())
                     yield group
+
+    def intergenic_ranges(self):
+        # todo gen
+        coords = self.session.query(Coordinate.id, Coordinate.length)
+        super_loci = self.genome_query(return_super_loci=True)
+        groups = []
+        for coord_id, coord_len in coords:
+            # plus strand
+            seqid = self.get_coord_by_id(coord_id).seqid
+            plus_ranges = [Range(coordinate_id=coord_id,
+                           piece_position=0,
+                           start=0, end=coord_len,
+                           is_plus_strand=True, given_name=seqid)]
+
+            # minus strand
+            minus_ranges = [Range(coordinate_id=coord_id,
+                                  piece_position=0,
+                                  start=coord_len - 1,
+                                  end=-1,
+                                  is_plus_strand=False,
+                                  given_name=seqid)]
+
+            transcripts_as_groups = []
+            for sl, coord_seqid in super_loci:
+                if coord_seqid == seqid:
+                    sl_ranger = SuperLocusRanger(sl, longest=self.longest)
+                    for range_maker in sl_ranger.exp_range_makers:
+                        transcripts_as_groups += RangeMaker.transcribed_ranges(range_maker)
+            plus_transcripts = []
+            minus_transcripts = []
+            for grp in transcripts_as_groups:
+                if grp.ranges[0].is_plus_strand:
+                    plus_transcripts += grp.ranges
+                else:
+                    minus_transcripts += grp.ranges
+
+            # resort every thing for good measure
+            dummy_handler = RangeMaker(data=None)
+
+            plus_transcripts = dummy_handler._resort_subtracted(plus_transcripts)
+            minus_transcripts = dummy_handler._resort_subtracted(minus_transcripts)
+            plus_ranges = dummy_handler._resort_subtracted(plus_ranges)
+            minus_ranges = dummy_handler._resort_subtracted(minus_ranges)
+
+            # subtract transcripts from intergenic
+            plus_subtracted = dummy_handler._subtract_ranges(plus_ranges, plus_transcripts)
+            minus_subtracted = dummy_handler._subtract_ranges(minus_ranges, minus_transcripts)
+            groups += dummy_handler._one_range_one_group(plus_subtracted) + \
+                      dummy_handler._one_range_one_group(minus_subtracted)
+        return groups
 
     def prep_ranges(self, range_function):
         for arange in self.gen_ranges(range_function):
@@ -419,6 +476,13 @@ class RangeMaker(TranscriptHandlerBase):
             i += 1
         return out
 
+    def pre_UTR(self):
+        # subtract
+        transcript = self._ranges_by_type(types.GEENUFF_TRANSCRIPT)
+        coding = self._ranges_by_type(types.GEENUFF_CDS)
+        pre_utrs = self._subtract_ranges(subtract_from=transcript, to_subtract=coding)
+        return self._one_range_one_group(pre_utrs)
+
     def utr3p(self):
         pass  # todo
 
@@ -483,12 +547,16 @@ class RangeMaker(TranscriptHandlerBase):
         return self._sum_range_lengths(ranges)
 
 
+IG_OVERRIDE = "intergenic_override"
+
 MODES = {"mRNA": RangeMaker.mature_RNA,
          "pre-mRNA": RangeMaker.transcribed_ranges,
          "CDS": RangeMaker.mature_CDS,
          "exons": RangeMaker.exonic_ranges,
          "introns": RangeMaker.intronic_ranges,
-         "UTR": RangeMaker.mature_UTR}
+         "UTR": RangeMaker.mature_UTR,
+         "pre-UTR": RangeMaker.pre_UTR,
+         "intergenic": IG_OVERRIDE}
 
 
 class SuperLocusRanger(SuperLocusHandlerBase):
