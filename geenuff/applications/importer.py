@@ -650,7 +650,7 @@ class GFFErrorHandling(object):
                             faulty_introns.append(intron)
                         # the case of a too short intron
                         # todo put the minimum length in a config somewhere
-                        elif abs(intron.end - intron.start) < 20:
+                        elif abs(intron.end - intron.start) < self.controller.config['min_intron_length']:
                             self._add_error(i, transcript, intron.start, intron.end,
                                             self.is_plus_strand, types.TOO_SHORT_INTRON)
                     # do not save faulty introns, the error should be descriptive enough
@@ -814,12 +814,14 @@ class GFFErrorHandling(object):
 
 ##### main flow control #####
 class ImportController(object):
-    def __init__(self, database_path, replace_db=False):
+    def __init__(self, database_path, config, replace_db=False):
         self.database_path = database_path
         self.latest_genome = None
         self._mk_session(replace_db)
         # queues for adding to db
         self.insertion_queues = InsertionQueue(session=self.session, engine=self.engine)
+        self.config = {'min_intron_length': 20}  # the default config
+        self.config.update(config)
 
     def _mk_session(self, replace_db):
         if os.path.exists(self.database_path):

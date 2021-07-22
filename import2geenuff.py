@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
+import yaml
 import logging
 import argparse
 
@@ -74,7 +75,19 @@ def main(args):
     stdout_handler.setFormatter(logging.Formatter(fmt=msg_fmt_str, datefmt=date_fmt_str))
     logging.getLogger().addHandler(stdout_handler)
 
-    controller = ImportController(database_path=paths.db_out, replace_db=args.replace_db)
+    # try to load config
+    if os.path.isfile(args.config_file):
+        with open(args.config_file, 'r') as f:
+            try:
+                config = yaml.safe_load(f)
+            except yaml.YAMLError as e:
+                print(f'An error occured during parsing of the YAML config file: {e}')
+                exit()
+    else:
+        config = {}
+        print(f'No config file found, using default values')
+
+    controller = ImportController(database_path=paths.db_out, config=config, replace_db=args.replace_db)
     genome_args = {}
     for key in ['species', 'accession', 'version', 'acquired_from']:
         genome_args[key] = vars(args)[key]
@@ -85,6 +98,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--basedir', help='organized output (& input) directory. If this is not set, all four custom'
                         'input parameters must be set.')
+    parser.add_argument('--config-file', type=str, default='config/import.yml')
 
     custominput = parser.add_argument_group('Override default with custom input/output location:')
     custominput.add_argument('--gff3', help='gff3 formatted file to parse / standardize')
