@@ -1,4 +1,5 @@
 import os
+import math
 import logging
 import intervaltree
 from pprint import pprint  # for debugging
@@ -729,8 +730,8 @@ class GFFErrorHandling(object):
                     j -= 1
             # perform marking
             if j > 0:
-                anchor_5p = self._halfway_mark(self.groups[j - 1]['super_locus'],
-                                               self.groups[j]['super_locus'])
+                anchor_5p = self._error_border_mark(self.groups[j - 1]['super_locus'],
+                                                    self.groups[j]['super_locus'])
             else:
                 if self.is_plus_strand:
                     anchor_5p = 0
@@ -744,8 +745,8 @@ class GFFErrorHandling(object):
                           and self._sl_neighbor_status(self.groups[j], self.groups[j + 1]) != 'normal'):
                     j += 1
             if j < len(self.groups) - 1:
-                anchor_3p = self._halfway_mark(self.groups[j]['super_locus'],
-                                               self.groups[j + 1]['super_locus'])
+                anchor_3p = self._error_border_mark(self.groups[j]['super_locus'],
+                                                    self.groups[j + 1]['super_locus'])
             else:
                 if self.is_plus_strand:
                     anchor_3p = coord.length
@@ -792,16 +793,22 @@ class GFFErrorHandling(object):
                     out = True
         return out
 
-    def _halfway_mark(self, sl, sl_next):
-        """Calculates the half way point between two super loci, which is then used for
-        error masks.
+    def _error_border_mark(self, sl, sl_next):
+        """Calculates the error border point between two super loci according to the formula
+        min(ig_length / 2, sqrt(ig_length) * 10), which is then used for error masks.
         """
+        def offset(dist):
+            if dist <= 0:
+                # could happend with nested genes
+                return 0
+            return min(dist // 2, int(math.sqrt(dist)) * 10)
+
         if self.is_plus_strand:
             dist = sl_next.start - sl.end
-            mark = sl.end + dist // 2
+            mark = sl.end + offset(dist)
         else:
             dist = sl.end - sl_next.start
-            mark = sl.end - dist // 2
+            mark = sl.end - offset(dist)
         return mark
 
 
