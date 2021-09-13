@@ -814,7 +814,7 @@ class GFFErrorHandling(object):
 
 ##### main flow control #####
 class ImportController(object):
-    def __init__(self, database_path, config, replace_db=False):
+    def __init__(self, database_path, config={}, replace_db=False):
         self.database_path = database_path
         self.latest_genome = None
         self._mk_session(replace_db)
