@@ -24,9 +24,9 @@ do
   mv ${sp}.* $spdir/
 done
 
-# import into db (using --basedir for import, but writing all into one db with --db-path)
+# import into databases (output will land in $sp/output/$sp.sqlite3
 for sp in $species
 do
-  import2geenuff.py --basedir $sp --species $sp --db-path three_agale.sqlite3
+  import2geenuff.py --basedir $sp --species $sp
 done
 cd ..
