@@ -193,11 +193,16 @@ class OrganizedGeenuffImporterGroup(object):
                     # also check for and mark overlapping exons (for now with a backward 'intron' # todo refactor)
                     overlapping = etree[inv_e_start:inv_e_end]
                     if overlapping:
+                        overlapper_begin = min([o.begin for o in overlapping])
+                        overlapper_end = max([o.end for o in overlapping])
                         if len(overlapping) != 1:
-                            raise NotImplementedError('currently only designed to handle overlaps w/ 1 other exon')
-                        overlap = list(overlapping)[0]
-                        ovlp_end = max(overlap.begin, inv_e_start)
-                        ovlp_start = min(overlap.end, inv_e_end)
+                            logging.warning('handling overlaps of >1 exon... (masking as if unioned), but this is a '
+                                            'weird enough sort of error that you should really check what is going on '
+                                            'if you read this (around {} {}-{})'.format(self.coord, overlapper_begin,
+                                                                                        overlapper_end))
+
+                        ovlp_end = max(overlapper_begin, inv_e_start)
+                        ovlp_start = min(overlapper_end, inv_e_end)
                         print('found an overlap {}-{}'.format(ovlp_end, ovlp_start))
                         if not e_is_plus_strand:
                             ovlp_start, ovlp_end = ovlp_end, ovlp_start
