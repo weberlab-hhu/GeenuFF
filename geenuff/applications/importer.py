@@ -1,4 +1,5 @@
 import os
+import math
 import logging
 import intervaltree
 from pprint import pprint  # for debugging
@@ -339,10 +340,15 @@ class OrganizedGFFEntryGroup(object):
             elif in_enum_values(entry.type, types.TranscriptLevel):
                 self.entries['transcripts'][entry] = {'exons': [], 'cds': []}
                 latest_transcript = entry
-            elif entry.type == types.EXON:
-                self.entries['transcripts'][latest_transcript]['exons'].append(entry)
-            elif entry.type == types.CDS:
-                self.entries['transcripts'][latest_transcript]['cds'].append(entry)
+            elif latest_transcript is not None:
+                if entry.type == types.EXON:
+                    self.entries['transcripts'][latest_transcript]['exons'].append(entry)
+                elif entry.type == types.CDS:
+                    self.entries['transcripts'][latest_transcript]['cds'].append(entry)
+                else:
+                    logging.warning(f'Found unexpected entry type: {entry.type}')
+            else:
+                logging.warning(f'Ignoring {entry.type} without transcript found in {entry.seqid}: {entries[0].attribute}')
 
         # set the coordinate
         self.coord = self.fasta_importer.gffid_to_coords[self.entries['super_locus'].seqid]
@@ -385,20 +391,22 @@ class OrganizedGFFEntries(object):
         gene_level = [x.value for x in types.SuperLocusAll]
 
         reader = self._useful_gff_entries()
-        first = next(reader)
-        seqid = first.seqid
-        gene_group = [first]
-        self.organized_entries[seqid] = []
-        for entry in reader:
-            if entry.type in gene_level:
-                self.organized_entries[seqid].append(gene_group)
-                gene_group = [entry]
-                if entry.seqid != seqid:
-                    self.organized_entries[entry.seqid] = []
-                    seqid = entry.seqid
-            else:
-                gene_group.append(entry)
-        self.organized_entries[seqid].append(gene_group)
+        first = next(reader, None)
+
+        if first is not None:
+            seqid = first.seqid
+            gene_group = [first]
+            self.organized_entries[seqid] = []
+            for entry in reader:
+                if entry.type in gene_level:
+                    self.organized_entries[seqid].append(gene_group)
+                    gene_group = [entry]
+                    if entry.seqid != seqid:
+                        self.organized_entries[entry.seqid] = []
+                        seqid = entry.seqid
+                else:
+                    gene_group.append(entry)
+            self.organized_entries[seqid].append(gene_group)
 
     def _useful_gff_entries(self):
         skipable = [x.value for x in types.IgnorableGFFFeatures]
@@ -642,7 +650,7 @@ class GFFErrorHandling(object):
                             faulty_introns.append(intron)
                         # the case of a too short intron
                         # todo put the minimum length in a config somewhere
-                        elif abs(intron.end - intron.start) < 20:
+                        elif abs(intron.end - intron.start) < self.controller.config['min_intron_length']:
                             self._add_error(i, transcript, intron.start, intron.end,
                                             self.is_plus_strand, types.TOO_SHORT_INTRON)
                     # do not save faulty introns, the error should be descriptive enough
@@ -722,8 +730,8 @@ class GFFErrorHandling(object):
                     j -= 1
             # perform marking
             if j > 0:
-                anchor_5p = self._halfway_mark(self.groups[j - 1]['super_locus'],
-                                               self.groups[j]['super_locus'])
+                anchor_5p = self._error_border_mark(self.groups[j - 1]['super_locus'],
+                                                    self.groups[j]['super_locus'])
             else:
                 if self.is_plus_strand:
                     anchor_5p = 0
@@ -737,8 +745,8 @@ class GFFErrorHandling(object):
                           and self._sl_neighbor_status(self.groups[j], self.groups[j + 1]) != 'normal'):
                     j += 1
             if j < len(self.groups) - 1:
-                anchor_3p = self._halfway_mark(self.groups[j]['super_locus'],
-                                               self.groups[j + 1]['super_locus'])
+                anchor_3p = self._error_border_mark(self.groups[j]['super_locus'],
+                                                    self.groups[j + 1]['super_locus'])
             else:
                 if self.is_plus_strand:
                     anchor_3p = coord.length
@@ -785,27 +793,35 @@ class GFFErrorHandling(object):
                     out = True
         return out
 
-    def _halfway_mark(self, sl, sl_next):
-        """Calculates the half way point between two super loci, which is then used for
-        error masks.
+    def _error_border_mark(self, sl, sl_next):
+        """Calculates the error border point between two super loci according to the formula
+        min(ig_length / 2, sqrt(ig_length) * 10), which is then used for error masks.
         """
+        def offset(dist):
+            if dist <= 0:
+                # could happend with nested genes
+                return 0
+            return min(dist // 2, int(math.sqrt(dist)) * 10)
+
         if self.is_plus_strand:
             dist = sl_next.start - sl.end
-            mark = sl.end + dist // 2
+            mark = sl.end + offset(dist)
         else:
             dist = sl.end - sl_next.start
-            mark = sl.end - dist // 2
+            mark = sl.end - offset(dist)
         return mark
 
 
 ##### main flow control #####
 class ImportController(object):
-    def __init__(self, database_path, replace_db=False):
+    def __init__(self, database_path, config={}, replace_db=False):
         self.database_path = database_path
         self.latest_genome = None
         self._mk_session(replace_db)
         # queues for adding to db
         self.insertion_queues = InsertionQueue(session=self.session, engine=self.engine)
+        self.config = {'min_intron_length': 20}  # the default config
+        self.config.update(config)
 
     def _mk_session(self, replace_db):
         if os.path.exists(self.database_path):
@@ -977,20 +993,21 @@ class FastaImporter(object):
                                       "are subset of gff IDs")
 
     def add_sequences(self, seq_file):
-        self.add_fasta(seq_file)
-
-    def add_fasta(self, seq_file, id_delim=' '):
-        fp = fastahelper.FastaParser()
-        for fasta_header, seq in fp.read_fasta(seq_file):
-            seq = seq.upper()  # this may perform poorly
-            seqid = fasta_header.split(id_delim)[0]
-            # todo, parallelize sequence & annotation format, then import directly from ~Slice
+        # todo, parallelize sequence & annotation format, then import directly from ~Slice
+        for seqid, seq in self.parse_fasta(seq_file):
             coord = orm.Coordinate(sequence=seq,
                                    length=len(seq),
                                    seqid=seqid,
                                    sha1=helpers.sequence_hash(seq),
                                    genome=self.genome)
             logging.info(f'Added coordinate object for FASTA sequence with seqid {seqid} to the queue')
+
+    def parse_fasta(self, seq_file, id_delim=' '):
+        fp = fastahelper.FastaParser()
+        for fasta_header, seq in fp.read_fasta(seq_file):
+            seq = seq.upper()  # this may perform poorly
+            seqid = fasta_header.split(id_delim)[0]
+            yield seqid, seq
 
 
 class SuperLocusImporter(Insertable):

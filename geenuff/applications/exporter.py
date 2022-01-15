@@ -62,11 +62,11 @@ class GeenuffExportController(object):
         return self.session.query(Coordinate).filter(Coordinate.id == coord_id).one()
 
     def genome_query(self, all_transcripts=False, return_super_loci=False):
-        """Returns either a tuple of (super_loci, coordinate_seqid) or a dict of coord_ids for the given
-        genome that each link to a list of features. If all_transcripts is False, only the
+        """Returns either a tuple of (super_loci, coordinate_seqid) or a dict of coord_ids for everything in the database
+        that each link to a list of features. If all_transcripts is False, only the
         features of the longest transcript are queried."""
 
-        print(f'Querying {self.db_path_in}', file=sys.stderr)
+        print(f'Querying for {self.session.query(Genome.species).all()[0]}', file=sys.stderr)
         if return_super_loci:
             return self._super_loci_query()
         else:

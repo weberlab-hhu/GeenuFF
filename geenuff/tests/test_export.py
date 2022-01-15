@@ -15,7 +15,6 @@ EXONEXONCDS_PFX = 'testdata/exonexonCDS.'
 
 EXPORTING_DB = EXPORTING_PFX + 'sqlite3'
 EXONEXONCDS_DB = EXONEXONCDS_PFX + 'sqlite3'
-SECOND_EXP_DB = 'testdata/tmp_ex2.sqlite3'
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -29,21 +28,9 @@ def prepare_and_cleanup():
             controller.add_genome(pfx + 'fa', pfx + 'gff3', clean_gff=True,
                                   genome_args={'species': 'dummy'})
 
-    # add three, so we have some to include / exclude for 'test_exporter_genomes_or_exclude'
-    if not os.path.exists(SECOND_EXP_DB):
-        controller = ImportController(database_path='sqlite:///' + SECOND_EXP_DB)
-        controller.add_genome('testdata/exporting.fa', 'testdata/exporting.gff3', clean_gff=True,
-                              genome_args={'species': 'exporting'})
-        controller.add_genome('testdata/dummyloci.fa', 'testdata/dummyloci.gff',
-                              genome_args={'species': 'dummyloci'})
-        controller.add_genome('testdata/exonexonCDS.fa', 'testdata/exonexonCDS.gff3',
-                              genome_args={'species': 'exonexonCDS'})
-
     yield
     for db in [EXPORTING_DB, EXONEXONCDS_DB]:
         os.remove(db)
-
-    os.remove(SECOND_EXP_DB)
 
 
 def seq_len_controllers(mode, longest=False, db=EXPORTING_DB):
@@ -567,6 +554,7 @@ def helper_get_species(pks, session):
 def test_exporter_all_or_1_transcript():
     controller = GeenuffExportController(db_path_in='sqlite:///' + EXPORTING_DB)
     coords = controller.genome_query(all_transcripts=True)
+
     assert len(coords.keys()) == 2
     # first coordinate has 1 super locus with two transcripts. pk=1, len=4000
     features_c1 = coords[(1, 4000)]
@@ -586,8 +574,8 @@ def test_exporter_return_super_loci():
     # in the long run, I almost certainly want to _change_ the behaviour so genome_query does
     # not have two different output types.
     controller = GeenuffExportController(db_path_in='sqlite:///' + EXPORTING_DB)
-    genome_coords = controller.genome_query(all_transcripts=True, return_super_loci=True)
-    sl = genome_coords[0][0]
+    coords = controller.genome_query(all_transcripts=True, return_super_loci=True)
+    sl = coords[0][0]
     assert isinstance(sl, orm.SuperLocus)
-    coord_id = genome_coords[1][1]
+    coord_id = coords[1][1]
     assert coord_id == "27488:1-3000"

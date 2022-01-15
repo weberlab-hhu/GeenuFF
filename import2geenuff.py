@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import sys
+import yaml
 import logging
 import argparse
 
@@ -12,10 +13,11 @@ class PathFinder(object):
     INPUT = 'input'
     OUTPUT = 'output'
 
-    def __init__(self, db_path, basedir, fasta=None, gff=None, logfile=None):
+    def __init__(self, db_path, basedir, species, fasta=None, gff=None, logfile=None):
         # directories
         self.db_out = db_path
         self.basedir = basedir
+        self.species = species
         self.input = '{}/{}/'.format(self.basedir, PathFinder.INPUT)
         self.output = '{}/{}/'.format(self.basedir, PathFinder.OUTPUT)
         if args.basedir is not None:
@@ -26,7 +28,7 @@ class PathFinder(object):
         self.fasta_in = self._get_fa(fasta)
         self.gff_in = self._get_gff(gff)
         if not self.db_out:
-            self.db_out = '{}geenuff.sqlite3'.format(self.output)
+            self.db_out = '{}{}.sqlite3'.format(self.output, species)
         if logfile is not None:
             self.problems_out = logfile
 
@@ -58,7 +60,7 @@ def main(args):
         assert all([x is not None for x in [args.fasta, args.gff3, args.db_path, args.log_file]]), \
             "if basedir is none, all three custom input/output files must be manually specified " \
             "with --gff3, --fasta, --log-file and --db_path parameters"
-    paths = PathFinder(args.db_path, args.basedir, fasta=args.fasta, gff=args.gff3,
+    paths = PathFinder(args.db_path, args.basedir, args.species, fasta=args.fasta, gff=args.gff3,
                        logfile=args.log_file)
 
     msg_fmt_str = '%(asctime)s - %(levelname)s: %(message)s'
@@ -73,7 +75,19 @@ def main(args):
     stdout_handler.setFormatter(logging.Formatter(fmt=msg_fmt_str, datefmt=date_fmt_str))
     logging.getLogger().addHandler(stdout_handler)
 
-    controller = ImportController(database_path=paths.db_out, replace_db=args.replace_db)
+    # try to load config
+    if os.path.isfile(args.config_file):
+        with open(args.config_file, 'r') as f:
+            try:
+                config = yaml.safe_load(f)
+            except yaml.YAMLError as e:
+                print(f'An error occured during parsing of the YAML config file: {e}')
+                exit()
+    else:
+        config = {}
+        print(f'No config file found, using default values')
+
+    controller = ImportController(database_path=paths.db_out, config=config, replace_db=args.replace_db)
     genome_args = {}
     for key in ['species', 'accession', 'version', 'acquired_from']:
         genome_args[key] = vars(args)[key]
@@ -84,6 +98,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--basedir', help='organized output (& input) directory. If this is not set, all four custom'
                         'input parameters must be set.')
+    parser.add_argument('--config-file', type=str, default='config/import.yml')
 
     custominput = parser.add_argument_group('Override default with custom input/output location:')
     custominput.add_argument('--gff3', help='gff3 formatted file to parse / standardize')
