@@ -6,7 +6,6 @@ import logging
 import argparse
 
 from geenuff.applications.importer import ImportController
-from geenuff.base import orm
 
 
 class PathFinder(object):
@@ -37,7 +36,7 @@ class PathFinder(object):
             return provided
         maybe = os.listdir(self.input)
         # todo, actual file type detection
-        maybe = [x for x in maybe if (x.endswith('.fa') or x.endswith('.fasta'))]
+        maybe = [x for x in maybe if any([x.endswith(ok) for ok in ['.fa', '.fasta', '.fa.gz', '.fasta.gz']])]
         self._confirm_exactly_one(maybe, 'fasta')
         return self.input + maybe[0]
 
@@ -45,7 +44,7 @@ class PathFinder(object):
         if provided is not None:
             return provided
         maybe = os.listdir(self.input)
-        maybe = [x for x in maybe if (x.endswith('.gff') or x.endswith('.gff3'))]
+        maybe = [x for x in maybe if any([x.endswith(ok) for ok in ['.gff', '.gff3', '.gff.gz', '.gff3.gz']])]
         self._confirm_exactly_one(maybe, 'gff')
         return self.input + maybe[0]
 

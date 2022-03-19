@@ -4,6 +4,8 @@ import logging
 
 
 ##### General #####
+import dustdas.fastahelper
+
 
 def sequence_hash(sequence):
     sha1 = hashlib.sha1(sequence.encode())
@@ -147,7 +149,7 @@ def two_way_key_match(known_keys, other_keys):
 
 def get_seqids_from_gff(gfffile):
     seqids = set()
-    with open(gfffile) as f:
+    with dustdas.fastahelper.text_or_gzip_open(gfffile) as f:
         for line in f:
             if not line.startswith('#'):
                 seqids.add(line.split('\t')[0])
