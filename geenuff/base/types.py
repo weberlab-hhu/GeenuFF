@@ -53,6 +53,7 @@ Y_RNA = 'Y_RNA'
 TRANSCRIPT = 'transcript'
 PRIMARY_TRANSCRIPT = 'primary_transcript'
 PSEUDOGENIC_TRANSCRIPT = 'pseudogenic_transcript'
+PSEUDOGENIC_TRNA = 'pseudogenic_tRNA'
 UNCONFIRMED_TRANSCRIPT = 'unconfirmed_transcript'
 VAULTRNA_PRIMARY_TRANSCRIPT = 'vaultRNA_primary_transcript'
 THREE_PRIME_OVERLAPPING_NCRNA = 'three_prime_overlapping_ncrna'
@@ -66,6 +67,7 @@ TRANSPOSABLE_ELEMENT = 'transposable_element'
 TranscriptLevel = make_enum('TranscriptLevel', LNC_RNA, MRNA, MIRNA, NCRNA, PIRNA, PRE_MIRNA,
                             RNASE_MRP_RNA, RRNA, SCRNA, SNORNA, SNRNA, SRP_RNA, TRNA, Y_RNA,
                             TRANSCRIPT, PRIMARY_TRANSCRIPT, PSEUDOGENIC_TRANSCRIPT,
+                            PSEUDOGENIC_TRNA,
                             UNCONFIRMED_TRANSCRIPT, VAULTRNA_PRIMARY_TRANSCRIPT,
                             THREE_PRIME_OVERLAPPING_NCRNA, C_GENE_SEGMENT, V_GENE_SEGMENT,
                             D_GENE_SEGMENT, J_GENE_SEGMENT, GENE_SEGMENT, TRANSPOSABLE_ELEMENT)
@@ -97,11 +99,13 @@ DNASEI_HYPERSENSITIVE_SITE2 = 'DNAseI_hypersensitive_site'
 ENHANCER = 'enhancer'
 ENHANCER_BLOCKING_ELEMENT = 'enhancer_blocking_element'
 EPIGENETICALLY_MODIFIED_REGION = 'epigenetically_modified_region'
+GAP = 'gap'
 GC_RICH_PROMOTER_REGION = 'GC_rich_promoter_region'
 GUIDE_RNA = 'guide_RNA'
 IMPRINTING_CONTROL_REGION = 'imprinting_control_region'
 INSULATOR = 'insulator'
 LOCUS_CONTROL_REGION = 'locus_control_region'
+LONG_TERMINA_REPEAT = 'long_terminal_repeat'
 MATRIX_ATTACHMENT_SITE = 'matrix_attachment_site'
 MEIOTIC_RECOMBINATION_REGION = 'meiotic_recombination_region'
 MICROSATELLITE = 'microsatellite'
@@ -114,6 +118,8 @@ NUCLEOTIDE_MOTIF = 'nucleotide_motif'
 ORIGIN_OF_REPLICATION = 'origin_of_replication'
 PROMOTER = 'promoter'
 PROTEIN_BINDING_SITE = 'protein_binding_site'
+POLY_A_SIGNAL_SEQUENCE = 'polyA_signal_sequence'
+POLY_A_SITE = 'polyA_site'
 RECOMBINATION_FEATURE = 'recombination_feature'
 REGULATORY_REGION = 'regulatory_region'
 REPEAT_INSTABILITY_REGION = 'repeat_instability_region'
@@ -123,6 +129,7 @@ REPLICATION_START_SITE = 'replication_start_site'
 RESPONSE_ELEMENT = 'response_element'
 RNASE_P_RNA = 'RNase_P_RNA'
 SEQUENCE_ALTERATION = 'sequence_alteration'
+SEQUENCE_DIFFERENCE = 'sequence_difference'
 SEQUENCE_COMPARISON = 'sequence_comparison'
 SEQUENCE_FEATURE = 'sequence_feature'
 SEQUENCE_SECONDARY_STRUCTURE = 'sequence_secondary_structure'
@@ -158,12 +165,13 @@ IgnorableGFFFeatures = make_enum('IgnorableGFFFeatures', SUPERCONTIG, CONTIG, CH
                                  ORIGIN_OF_REPLICATION, PROMOTER, PROTEIN_BINDING_SITE, RECOMBINATION_FEATURE,
                                  REGULATORY_REGION, REPEAT_INSTABILITY_REGION, REPEAT_REGION, REPLICATION_REGULATORY_REGION,
                                  REPLICATION_START_SITE, RESPONSE_ELEMENT, RNASE_P_RNA, SEQUENCE_ALTERATION,
-                                 SEQUENCE_COMPARISON, SEQUENCE_FEATURE, SEQUENCE_SECONDARY_STRUCTURE, SILENCER,
+                                 SEQUENCE_COMPARISON, SEQUENCE_DIFFERENCE,
+                                 SEQUENCE_FEATURE, SEQUENCE_SECONDARY_STRUCTURE, SILENCER,
                                  TANDEM_REPEAT, TATA_box, TELOMERASE_RNA, TRANSCRIPTIONAL_CIS_REGULATORY_REGION,
                                  TSS, VAULT_RNA, START_CODON, STOP_CODON, INTRON, TRANSCRIPTION_START_SITE,
                                  TRANSCRIPTION_TERMINATION_SITE, TRANSCRIPTION_START_SITE2,
                                  TRANSCRIPTION_TERMINATION_SITE2, FIVE_PRIME_UTR_LOWER,
-                                 THREE_PRIME_UTR_LOWER)
+                                 THREE_PRIME_UTR_LOWER, GAP, LONG_TERMINA_REPEAT, POLY_A_SITE, POLY_A_SIGNAL_SEQUENCE)
 
 # other useful features
 EXON = 'exon'

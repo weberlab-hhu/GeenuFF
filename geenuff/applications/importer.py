@@ -1,6 +1,9 @@
 import os
 import math
 import logging
+import shutil
+import sys
+
 import intervaltree
 from pprint import pprint  # for debugging
 from abc import ABC, abstractmethod
@@ -936,7 +939,16 @@ class ImportController(object):
         logging.info('Starting to parse the GFF file')
         self.latest_fasta_importer.mk_mapper(gff_file)
         gff_organizer = OrganizedGFFEntries(gff_file)
-        gff_organizer.load_organized_entries()
+        try:
+            gff_organizer.load_organized_entries()
+        except ValueError as e:
+            self.session.close()
+            part_path = f'{self.database_path}.partial'
+            shutil.move(self.database_path, part_path)
+            print(f'Aborting due to error, attempt so far saved at {part_path} '
+                  f'for debugging purposes', file=sys.stderr)
+            raise e
+
 
         organized_gff_entries = gff_organizer.organized_entries
         n_organized_gff_entries = len(organized_gff_entries)
