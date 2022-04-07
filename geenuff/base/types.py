@@ -4,65 +4,51 @@ from .helpers import (join_to_enum,
                       subtract_enum)
 
 
-
-from .so import SOSequenceFeatures
+from .so import (SOSequenceFeatures,
+                 SOSuperLocusFeatures,
+                 SOTranscriptFeatures,
+                 SOCDSFeatures,
+                 SOExonFeatures)
 ########
 # GFF
 ########
 
 # SuperLocus
-CODING_GENE = 'coding_gene'
-GENE = 'gene'
-
-SuperLocus = make_enum('SuperLocus', CODING_GENE, GENE)
-SuperLocusAll = join_to_enum('SuperLocusAll', SuperLocus)
+SuperLocusAll = join_to_enum('SuperLocusAll', SOSuperLocusFeatures)
 
 # Transcript
-MRNA = 'mRNA'
-TRANSCRIPT = 'transcript'
-PRIMARY_TRANSCRIPT = 'primary_transcript'
+TranscriptLevel = join_to_enum('TranscriptLevel', SOTranscriptFeatures)
 
-TranscriptLevel = make_enum('TranscriptLevel', MRNA,
-                            TRANSCRIPT, PRIMARY_TRANSCRIPT)
-
-# ignorable from Augustus
-START_CODON = 'start_codon'
-STOP_CODON = 'stop_codon'
-INTRON = 'intron'
+# ignorable (and non-SO sequence features) from Augustus
 TRANSCRIPTION_START_SITE = 'transcription_start_site'  # transcription_start_site
-TRANSCRIPTION_TERMINATION_SITE = 'transcription_end_site'  # transcription_termination_site
 TRANSCRIPTION_START_SITE2 = 'tss'  # transcription_start_site (older Augustus version)
 TRANSCRIPTION_TERMINATION_SITE2 = 'tts'  # transcription_termination_site
 FIVE_PRIME_UTR_LOWER = 'five_prime_utr'
 THREE_PRIME_UTR_LOWER = 'three_prime_utr'
 
-IgnorableGFFFeatures = make_enum('IgnorableGFFFeatures', START_CODON, STOP_CODON, INTRON, TRANSCRIPTION_START_SITE,
-                                 TRANSCRIPTION_TERMINATION_SITE, TRANSCRIPTION_START_SITE2,
+IgnorableGFFFeatures = make_enum('IgnorableGFFFeatures', TRANSCRIPTION_START_SITE,
+                                 TRANSCRIPTION_START_SITE2,
                                  TRANSCRIPTION_TERMINATION_SITE2, FIVE_PRIME_UTR_LOWER,
                                  THREE_PRIME_UTR_LOWER)
 
 # other useful features
-EXON = 'exon'
-CDS = 'CDS'
+ExonLevel = join_to_enum('ExonLevel', SOExonFeatures)
+CDSLevel = join_to_enum('CDSLevel', SOCDSFeatures)
 
-UsefulGFFSequenceFeatures = make_enum('UsefulGFFSequenceFeatures', EXON, CDS)
 UsefulGFFFeatures = join_to_enum('UsefulGFFFeatures', SuperLocusAll, TranscriptLevel,
-                                 UsefulGFFSequenceFeatures)
+                                 ExonLevel, CDSLevel)
 
 
 # we will need a list that can be ignored, so w/o things like exon and CDS, but that we can nevertheless
 # use to check for typos/blatantly invalid gff3
 OnlySoFeatures = subtract_enum('OnlySoFeatures', subtract_from=SOSequenceFeatures, subtract_this=UsefulGFFFeatures)
-# the redundancy strip is necessary bc SOS is just all features,
-# including those mentioned above for more careful handling
-# todo, double check if there are any custom ignorables not covered by SO
-IgnorableGFFFeatures = join_to_enum_strip_redundancy('IgnorableGffFeatures', IgnorableGFFFeatures, OnlySoFeatures)
+IgnorableGFFFeatures = join_to_enum('IgnorableGffFeatures', IgnorableGFFFeatures, OnlySoFeatures)
 
-AllKnownGFFFeatures = join_to_enum_strip_redundancy('AllKnownGFFFeatures', IgnorableGFFFeatures, UsefulGFFFeatures)
+AllKnownGFFFeatures = join_to_enum('AllKnownGFFFeatures', IgnorableGFFFeatures, UsefulGFFFeatures)
 
-########
-# Geenuff
-########
+###########
+# GeenuFF #
+###########
 
 GEENUFF_TRANSCRIPT = 'geenuff_transcript'
 GEENUFF_CDS = 'geenuff_cds'

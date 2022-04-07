@@ -349,9 +349,9 @@ class OrganizedGFFEntryGroup(object):
                 self.entries['transcripts'][entry] = {'exons': [], 'cds': []}
                 latest_transcript = entry
             elif latest_transcript is not None:
-                if entry.type == types.EXON:
+                if in_enum_values(entry.type, types.ExonLevel):
                     self.entries['transcripts'][latest_transcript]['exons'].append(entry)
-                elif entry.type == types.CDS:
+                elif in_enum_values(entry.type, types.CDSLevel):
                     self.entries['transcripts'][latest_transcript]['cds'].append(entry)
                 else:
                     logging.warning(f'Found unexpected entry type: {entry.type}')
@@ -359,7 +359,11 @@ class OrganizedGFFEntryGroup(object):
                 logging.warning(f'Ignoring {entry.type} without transcript found in {entry.seqid}: {entries[0].attribute}')
 
         # set the coordinate
-        self.coord = self.fasta_importer.gffid_to_coords[self.entries['super_locus'].seqid]
+        try:
+            self.coord = self.fasta_importer.gffid_to_coords[self.entries['super_locus'].seqid]
+        except KeyError as e:
+            print(self.entries)
+            raise e
 
         # order exon and cds lists by start value (disregard strand for now)
         for _, value_dict in self.entries['transcripts'].items():
@@ -1126,8 +1130,8 @@ class FeatureImporter(Insertable):
         sortable_start = self.start
         sortable_end = self.end
         if not self.is_plus_strand:
-            sortable_start = sortable_start * -1
-            sortable_end = sortable_end * -1
+            sortable_start *= -1
+            sortable_end *= -1
         return self.coord.seqid, self.is_plus_strand, sortable_start, sortable_end, self.feature_type
 
     def __repr__(self):
