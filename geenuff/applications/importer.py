@@ -18,6 +18,10 @@ from ..base.helpers import (get_strand_direction, get_geenuff_start_end, has_sta
                             has_stop_codon, in_enum_values)
 
 
+class GFFValidityError(Exception):
+    pass
+
+
 # core queue prep
 class InsertionQueue(helpers.QueueController):
     def __init__(self, session, engine):
@@ -99,6 +103,8 @@ class OrganizedGeenuffImporterGroup(object):
         for t, t_entries in entries['transcripts'].items():
             t_importers = {'errors': []}
             # check for multi inheritance and throw NotImplementedError if found
+            if t.get_Parent() is None:
+                raise GFFValidityError(f"transcript level feature without Parent found {t}, attributes: {t.attributes}")
             if len(t.get_Parent()) > 1:
                 raise NotImplementedError
             t_id = t.get_ID()
@@ -359,11 +365,7 @@ class OrganizedGFFEntryGroup(object):
                 logging.warning(f'Ignoring {entry.type} without transcript found in {entry.seqid}: {entries[0].attribute}')
 
         # set the coordinate
-        try:
-            self.coord = self.fasta_importer.gffid_to_coords[self.entries['super_locus'].seqid]
-        except KeyError as e:
-            print(self.entries)
-            raise e
+        self.coord = self.fasta_importer.gffid_to_coords[self.entries['super_locus'].seqid]
 
         # order exon and cds lists by start value (disregard strand for now)
         for _, value_dict in self.entries['transcripts'].items():
@@ -873,8 +875,16 @@ class ImportController(object):
 
         self.clean_tmp_data()
         self.add_sequences(fasta_path, genome_args)
-        self.add_gff(gff_path, clean=clean_gff)
-        self.run_analyze()
+        try:
+            self.add_gff(gff_path, clean=clean_gff)
+            self.run_analyze()
+        except Exception as e:
+            self.session.close()
+            part_path = f'{self.database_path}.partial'
+            shutil.move(self.database_path, part_path)
+            print(f'Aborting due to error, attempt so far saved at {part_path} '
+                  f'for debugging purposes', file=sys.stderr)
+            raise e
 
     def add_sequences(self, seq_path, genome_args=None):
         if genome_args is None:
@@ -943,16 +953,7 @@ class ImportController(object):
         logging.info('Starting to parse the GFF file')
         self.latest_fasta_importer.mk_mapper(gff_file)
         gff_organizer = OrganizedGFFEntries(gff_file)
-        try:
-            gff_organizer.load_organized_entries()
-        except ValueError as e:
-            self.session.close()
-            part_path = f'{self.database_path}.partial'
-            shutil.move(self.database_path, part_path)
-            print(f'Aborting due to error, attempt so far saved at {part_path} '
-                  f'for debugging purposes', file=sys.stderr)
-            raise e
-
+        gff_organizer.load_organized_entries()
 
         organized_gff_entries = gff_organizer.organized_entries
         n_organized_gff_entries = len(organized_gff_entries)

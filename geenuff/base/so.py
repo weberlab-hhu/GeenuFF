@@ -3370,6 +3370,7 @@ SOSuperLocusFeatures = make_enum("SOSuperLocusFeatures",
                                  CYANELLE_GENE,
                                  TMRNA_GENE,
                                  MAXICIRCLE_GENE,
+                                 PSEUDOGENE
 )
 
 SRP_RNA = "SRP_RNA"
