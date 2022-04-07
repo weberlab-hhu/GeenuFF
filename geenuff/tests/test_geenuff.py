@@ -813,7 +813,10 @@ def test_gff_gen():
 def test_gff_useful_gen():
     gff_organizer = OrganizedGFFEntries('testdata/testerSl.gff3')
     x = list(gff_organizer._useful_gff_entries())
-    assert len(x) == 100  # should drop the region entry
+    assert len(x) == 99  # started at 103, should drop the 3 region entries, and the lnc_RNA entry
+    # note that in the long run, if types are handled elegantly, the lnc_entry should fall under transcript and
+    # not ignorable, and this test will probably need to be changed. But for now, only coding-gene related entries
+    # are supported.
     assert x[0].type == 'gene'
     assert x[-1].type == 'CDS'
 
