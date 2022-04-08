@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 from geenuff.base.orm import (Coordinate, Genome, Feature, Transcript, TranscriptPiece,
                               association_transcript_piece_to_feature as asso_tp_2_f, SuperLocus)
 from geenuff.base.handlers import TranscriptHandlerBase, SuperLocusHandlerBase
-from geenuff.base.helpers import full_db_path, Counter
+from geenuff.base.helpers import full_db_path, Counter, in_enum_values
 from geenuff.base import types
 
 
@@ -61,7 +61,7 @@ class GeenuffExportController(object):
     def get_coord_by_id(self, coord_id):
         return self.session.query(Coordinate).filter(Coordinate.id == coord_id).one()
 
-    def genome_query(self, longest_only=True, return_super_loci=False):
+    def genome_query(self, longest_only=True, return_super_loci=False, include_non_coding=False):
         """Returns either a tuple of (super_loci, coordinate_seqid) or a dict of coord_ids for everything in the database
         that each link to a list of features. If all_transcripts is False, only the
         features of the longest transcript are queried."""
@@ -70,9 +70,40 @@ class GeenuffExportController(object):
         if return_super_loci:
             return self._super_loci_query()
         else:
-            return self._genome_query(longest_only)
+            return self._genome_query(longest_only, include_non_coding)
 
-    def _genome_query(self, longest_only):
+    def _filter_to_coding(self, rows):
+        """aggregates rows by matching transcript ID, and filters any resulting aggregate without at least one CDS"""
+        seen = set()
+        out = []
+        for grp, t_id, has_cds in self._aggregate_by_transcript(rows):
+            assert t_id not in seen, f"This should be sorted by transcript id, but {t_id} found in > 1 sort location?!?"
+            seen.add(t_id)
+            # keep only transcripts that have >= 1 CDS feature
+            if has_cds:
+                out += grp
+        return out
+
+    @staticmethod
+    def _aggregate_by_transcript(rows):
+        prev_transcript_id = None
+        prev_rows = []
+        has_cds = False
+        for row in rows:
+            transcript_id = row[14]
+            if prev_transcript_id is None:  # nothing to yield for very first transcript
+                pass
+            elif prev_transcript_id != transcript_id:
+                yield prev_rows, prev_transcript_id, has_cds
+                has_cds = False
+                prev_rows = []
+            prev_transcript_id = transcript_id
+            prev_rows.append(row)
+            if row[2] == types.GEENUFF_CDS:
+                has_cds = True
+        yield prev_rows, prev_transcript_id, has_cds
+
+    def _genome_query(self, longest_only, include_non_coding):
         # returns dictionary
         # {(coordinate pk, coordinate length):
         #     [Feature 0, Feature 1, ...]
@@ -95,7 +126,8 @@ class GeenuffExportController(object):
                           feature.phase AS feature_phase,
                           feature.coordinate_id AS feature_coordinate_id,
                           coordinate.id AS coordinate_id,
-                          coordinate.length AS coordinate_length
+                          coordinate.length AS coordinate_length,
+                          transcript.id as transcript_id
                    FROM coordinate
                    CROSS JOIN feature ON feature.coordinate_id = coordinate.id
                    CROSS JOIN association_transcript_piece_to_feature
@@ -106,11 +138,17 @@ class GeenuffExportController(object):
                    CROSS JOIN transcript ON transcript_piece.transcript_id = transcript.id
                    CROSS JOIN super_locus ON transcript.super_locus_id = super_locus.id
                    ''' + longest_transcript_filter + '''
-                       AND super_locus.type = 'gene' AND transcript.type IN ("mRNA","transcript")
-                   ORDER BY coordinate.length DESC;'''
+                   ORDER BY coordinate.length DESC, transcript.id;'''
         start = time.time()
         rows = self.engine.execute(query).fetchall()
-        print(f'Query took {time.time() - start:.2f}s')
+
+        end_q_time = time.time()
+        print(f'Query took {end_q_time - start:.2f}s')
+
+        # for many purposes we
+        if not include_non_coding:
+            rows = self._filter_to_coding(rows)
+            print(f'filter to coding only took {time.time() - end_q_time:.2f}s')
 
         coord_features = defaultdict(list)
         for row in rows:
