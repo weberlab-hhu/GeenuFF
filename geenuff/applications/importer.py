@@ -84,7 +84,12 @@ class OrganizedGeenuffImporterGroup(object):
         self.coord = coord
         self.controller = controller
         self.importers = {'transcripts': []}
-        self._parse_gff_entries(organized_gff_entries)
+        try:
+            self._parse_gff_entries(organized_gff_entries)
+        except Exception as e:
+            print('Error originally raised while parsing the following entries\n', organized_gff_entries,
+                  file=sys.stderr)
+            raise e
 
     def _parse_gff_entries(self, entries):
         """Changes the GFF format into the GeenuFF format. Does all the parsing."""

@@ -553,7 +553,7 @@ def helper_get_species(pks, session):
 
 def test_exporter_all_or_1_transcript():
     controller = GeenuffExportController(db_path_in='sqlite:///' + EXPORTING_DB)
-    coords = controller.genome_query(all_transcripts=True)
+    coords = controller.genome_query(longest_only=False)
 
     assert len(coords.keys()) == 2
     # first coordinate has 1 super locus with two transcripts. pk=1, len=4000
@@ -563,7 +563,7 @@ def test_exporter_all_or_1_transcript():
     features_c2 = coords[(2, 3000)]
     assert len([x for x in features_c2 if x.type.value == types.GEENUFF_TRANSCRIPT]) == 1
     # queried with longest both should have only one transcript remaining
-    coords = controller.genome_query(all_transcripts=False)
+    coords = controller.genome_query(longest_only=True)
     assert len(coords.keys()) == 2
     for coord, features in coords.items():
         assert len([x for x in features if x.type.value == types.GEENUFF_TRANSCRIPT]) == 1
@@ -574,7 +574,7 @@ def test_exporter_return_super_loci():
     # in the long run, I almost certainly want to _change_ the behaviour so genome_query does
     # not have two different output types.
     controller = GeenuffExportController(db_path_in='sqlite:///' + EXPORTING_DB)
-    coords = controller.genome_query(all_transcripts=True, return_super_loci=True)
+    coords = controller.genome_query(longest_only=False, return_super_loci=True)
     sl = coords[0][0]
     assert isinstance(sl, orm.SuperLocus)
     coord_id = coords[1][1]

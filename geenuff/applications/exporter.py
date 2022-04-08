@@ -61,7 +61,7 @@ class GeenuffExportController(object):
     def get_coord_by_id(self, coord_id):
         return self.session.query(Coordinate).filter(Coordinate.id == coord_id).one()
 
-    def genome_query(self, all_transcripts=False, return_super_loci=False):
+    def genome_query(self, longest_only=True, return_super_loci=False):
         """Returns either a tuple of (super_loci, coordinate_seqid) or a dict of coord_ids for everything in the database
         that each link to a list of features. If all_transcripts is False, only the
         features of the longest transcript are queried."""
@@ -70,14 +70,14 @@ class GeenuffExportController(object):
         if return_super_loci:
             return self._super_loci_query()
         else:
-            return self._genome_query(all_transcripts)
+            return self._genome_query(longest_only)
 
-    def _genome_query(self, all_transcripts):
+    def _genome_query(self, longest_only):
         # returns dictionary
         # {(coordinate pk, coordinate length):
         #     [Feature 0, Feature 1, ...]
         # }
-        if not all_transcripts:
+        if longest_only:
             longest_transcript_filter = 'WHERE transcript.longest = 1'
         else:
             longest_transcript_filter = ''
@@ -112,7 +112,6 @@ class GeenuffExportController(object):
         rows = self.engine.execute(query).fetchall()
         print(f'Query took {time.time() - start:.2f}s')
 
-        start = time.time()
         coord_features = defaultdict(list)
         for row in rows:
             feature = Feature(id=row[0],
