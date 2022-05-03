@@ -4,15 +4,15 @@ __Warning! little about this is stable or tested yet__
 
 ## import a species into the database
 
-You can import a Eukaryotic species genome + annotation into geenuff db (`<YOUR_NAME>.sqlite3`)
-and log the import to `<YOUR_NAME>.import.log` as follows:
+You can import a Eukaryotic species genome + annotation into geenuff db (`<YOUR_DATA_NAME>.sqlite3`)
+and log the import to `<YOUR_DATA_NAME>.import.log` as follows:
 
 Capital letters and `<>` indicate what must be user specified.
 
 ```
 
 import2geenuff.py --fasta <PATH_TO_GENOME_FASTA_FILE> --gff3 <PATH_TO_GFF3_FILE> \
-    --db-path <YOUR_NAME>.sqlite3 --log-file <YOUR_NAME>.import.log --species <SPECIES_NAME>
+    --db-path <YOUR_DATA_NAME>.sqlite3 --log-file <YOUR_DATA_NAME>.import.log --species <SPECIES_NAME>
 ```
 
 Or with some of the testdata filled in:
