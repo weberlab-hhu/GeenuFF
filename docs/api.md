@@ -4,16 +4,15 @@ __Warning! little about this is stable or tested yet__
 
 ## import a species into the database
 
-You can import a Eukaryotic species genome + annotation into geenuff db (`geenuff.sqlite3`)
-and log the import to `geenuff.import.log` as follows:
+You can import a Eukaryotic species genome + annotation into geenuff db (`<YOUR_NAME>.sqlite3`)
+and log the import to `<YOUR_NAME>.import.log` as follows:
 
 Capital letters and `<>` indicate what must be user specified.
 
 ```
-geenuff_path=<PATH/TO/GeenuFF/>
 
 import2geenuff.py --fasta <PATH_TO_GENOME_FASTA_FILE> --gff3 <PATH_TO_GFF3_FILE> \
-    --db-path geenuff.sqlite3 --log-file geenuff.import.log --species <SPECIES_NAME>
+    --db-path <YOUR_NAME>.sqlite3 --log-file <YOUR_NAME>.import.log --species <SPECIES_NAME>
 ```
 
 Or with some of the testdata filled in:
@@ -22,7 +21,7 @@ geenuff_path=<PATH/TO/GeenuFF/>
 
 import2geenuff.py --fasta $geenuff_path/geenuff/testdata/exporter.fa \
     --gff3 $geenuff_path/geenuff/testdata/exporter.gff3 \
-    --db-path geenuff.sqlite3 --log-file geenuff.import.log --species dummy
+    --db-path dummy.sqlite3 --log-file dummy.import.log --species dummy
 ```
 
 
@@ -35,20 +34,17 @@ the `--basedir` option can be used to simplify/structure input and output.
 <BASEDIR>/input/<YOUR_FILE>.gff3
 
 # simplified import
-$geenuff_path/import_genome.py --basedir <BASEDIR> --species <SPECIES_NAME>
+import2geenuff.py --basedir <BASEDIR> --species <SPECIES_NAME>
 
-# the output files "geenuff.sqlite3" and "import.log" will be written in
+# the output files "<SPECIES_NAME>.sqlite3" and "import.log" will be written in
 # the directory <BASEDIR>/output/
 ```
 
 Any custom input parameters will overwrite those from `--basedir` if both are
 specified.
 
-Annotations for multiple species can be stored in one database by using the
-same value for `--db-path`.
-
-Two genomes cannot be imported with the same "species" name, and this
-will throw an integrity error. You can either delete the database
+You should import one species, into one database, one time. If the output database
+already exists, you can either delete the database
 or set the `--replace-db` parameter.
 
 ## extract fasta sequences from a database
@@ -74,7 +70,7 @@ python $geenuff_path/scripts/dump_to_fasta.py --db-path-in GENUFF_DB --mode pre-
 
 See above, but use `$geenuff_path/scripts/dump_lengthinfo.py`
 
-Summary statistics still need to be implemented
+Or directly obtain summary statistics by specifying `--stats-only`
 
 # GeenuFF API
 
@@ -117,7 +113,7 @@ e.g.
 from geenuff.applications.exporters.sequence import FastaExportController
 
 controller = FastaExportController(PATH_TO_GEENUFF_DB)
-controller.prep_ranges(genomes=None, exclude_genomes=None, mode='pre-mRNA')
+controller.prep_ranges(mode='pre-mRNA')
 for export_group in controller.export_ranges:
     pre_mrna_seq = controller.get_seq(export_group)
     # your code here
@@ -138,7 +134,7 @@ json output.
 
 e.g. were PATH_TO_GEENUFF_DB was imported from the test files:
 "geenuff/testdata/exporting.*" as in the second example for 
-the `import_genome.py` section above.
+the `import2geenuff.py` section above.
 
 ```
 from geenuff.applications.exporters.json import JsonExportController
