@@ -17,9 +17,9 @@ robust to partial information and biological complexity.
 A more extensive description can be found [here](https://weberlab-hhu.github.io/GeenuFF/).
 
 ## Install
-GeenuFF has been tested exclusively (so far) in python3.6
+GeenuFF has been tested in python3.8
 
-I would recommend installation in a virtual envinronment.
+I would recommend installation in a virtual environment.
 https://docs.python-guide.org/dev/virtualenvs/
 
 From a directory of your choice (and preferably in a virtualenv):
@@ -49,8 +49,8 @@ pip install git+https://github.com/weberlab-hhu/GeenuFF.git
 ## usage
 You can run `bash example.sh` for a quick start with public data.
  This will setup the folder 'three_algae', download public data in
- the expected format, and import it into a geenuff db 
- (three_algae/three_algae.sqlite3). For more information please see 
+ the expected format, and import it into a geenuff spec db for each
+species. For more information please see 
 [the api docs](https://weberlab-hhu.github.io/GeenuFF/api.html).
 
 ## Major plans

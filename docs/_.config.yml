@@ -6,6 +6,7 @@ relative_links:
 include:
   - full_description.md
   - spec_vs_gff.md
+  - api.md
   - CONTRIBUTING.md
   - README.md
   - LICENSE.md

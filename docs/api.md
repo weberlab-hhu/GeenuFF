@@ -4,15 +4,15 @@ __Warning! little about this is stable or tested yet__
 
 ## import a species into the database
 
-You can import a Eukaryotic species genome + annotation into geenuff db (`<YOUR_NAME>.sqlite3`)
-and log the import to `<YOUR_NAME>.import.log` as follows:
+You can import a Eukaryotic species genome + annotation into geenuff db (`<YOUR_DATA_NAME>.sqlite3`)
+and log the import to `<YOUR_DATA_NAME>.import.log` as follows:
 
 Capital letters and `<>` indicate what must be user specified.
 
 ```
 
 import2geenuff.py --fasta <PATH_TO_GENOME_FASTA_FILE> --gff3 <PATH_TO_GFF3_FILE> \
-    --db-path <YOUR_NAME>.sqlite3 --log-file <YOUR_NAME>.import.log --species <SPECIES_NAME>
+    --db-path <YOUR_DATA_NAME>.sqlite3 --log-file <YOUR_DATA_NAME>.import.log --species <SPECIES_NAME>
 ```
 
 Or with some of the testdata filled in:
@@ -57,13 +57,13 @@ For instance:
 
 ```
 # to obtain the CDS (ignoring phase) you can run
-python $geenuff_path/scripts/dump_to_fasta.py --db-path-in GENUFF_DB --mode CDS
+python $geenuff_path/scripts/dump_to_fasta.py --db-path-in <GENUFF_DB> --mode CDS
 
 # to obtain the final mRNA sequence you can run
-python $geenuff_path/scripts/dump_to_fasta.py --db-path-in GENUFF_DB --mode mRNA
+python $geenuff_path/scripts/dump_to_fasta.py --db-path-in <GENUFF_DB> --mode mRNA
 
 # to obtain the unspliced transcript you can run
-python $geenuff_path/scripts/dump_to_fasta.py --db-path-in GENUFF_DB --mode pre-mRNA
+python $geenuff_path/scripts/dump_to_fasta.py --db-path-in <GENUFF_DB> --mode pre-mRNA
 ```
 
 ## extract sequence lengths from a database
@@ -133,7 +133,7 @@ but geenuff can now query an region and return a somewhat flattened
 json output.
 
 e.g. were PATH_TO_GEENUFF_DB was imported from the test files:
-"geenuff/testdata/exporting.*" as in the second example for 
+"geenuff/testdata/exporting.\*" as in the second example for 
 the `import2geenuff.py` section above.
 
 ```
@@ -186,10 +186,10 @@ similar to, I'm sure there's mistakes) the following format:
 All structure (e.g. many to many relationships) in the database that cannot 
 be captured in the above format will be handled by including the lower in the
 hierarchy elements redundantly. So if you query a super locus which is split
-across two scaffolds, two of the above "coordinate_pieces" will come back
-and each will have the full set of super_locus, transcript and feature elements
-except that "is_fully_contained" and "overlaps" will be updated for the particular
-coordinate_piece. Similarly, any transcripts sharing features will simply have
+across two scaffolds, two of the above "coordinate\_pieces" will come back
+and each will have the full set of super\_locus, transcript and feature elements
+except that "is\_fully\_contained" and "overlaps" will be updated for the particular
+coordinate\_piece. Similarly, any transcripts sharing features will simply have
 the features repeated redundantly for each transcript. 
 
 Features in a transcript will always be reported in 5'-3' order.
