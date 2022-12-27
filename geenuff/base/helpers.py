@@ -106,6 +106,9 @@ def get_repr(class_name, params, addition=''):
 class NonMatchableIDs(Exception):
     pass
 
+class LikelyReveresedIDs(Exception):
+    pass
+
 
 class Mapper(object):
     def __call__(self, key, *args, **kwargs):
@@ -140,7 +143,7 @@ def make_key_mapper(known_keys, other_keys):
     if to_match_keys == other_keys or to_match_keys.issuperset(other_keys):
         return CheckMapper(to_match_keys)
     elif to_match_keys.issubset(other_keys):
-        raise NonMatchableIDs('known is a subset of other keys')
+        raise LikelyReveresedIDs('known is a subset of other keys')
 
     logging.info("attempting to match up, non-identical IDs")
     oth2known = {}
@@ -173,12 +176,9 @@ def two_way_key_match(known_keys, other_keys):
     forward = True
     try:
         mapper = make_key_mapper(known_keys, other_keys)
-    except NonMatchableIDs as e:
-        try:
-            mapper = make_key_mapper(other_keys, known_keys)
-            forward = False
-        except NonMatchableIDs:
-            raise e
+    except LikelyReveresedIDs:
+        mapper = make_key_mapper(other_keys, known_keys)
+        forward = False
     return mapper, forward
 
 
