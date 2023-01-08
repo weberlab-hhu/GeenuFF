@@ -138,7 +138,7 @@ class GeenuffExportController(object):
                    CROSS JOIN transcript ON transcript_piece.transcript_id = transcript.id
                    CROSS JOIN super_locus ON transcript.super_locus_id = super_locus.id
                    ''' + longest_transcript_filter + '''
-                   ORDER BY coordinate.length DESC, transcript.id;'''
+                   ORDER BY coordinate.length, transcript.id;'''
         start = time.time()
         rows = self.engine.execute(query).fetchall()
 
