@@ -177,7 +177,7 @@ class GeenuffExportController(object):
         # hackish, resort so adding empty coordinates back in doesn't invalidate sorting assumptions
         resorted = {}
         # sort by descending coordinate length
-        for coord, features in sorted(coord_features.items(), key=lambda x: x[0][1], reverse=True):
+        for coord, features in sorted(coord_features.items(), key=lambda x: x[0][1]):
             resorted[coord] = features
         coord_features = resorted
 
