@@ -295,15 +295,19 @@ class OrganizedGeenuffImporterGroup(object):
         # hopefully take single hit
         if len(protein_id) == 1:
             protein_id = protein_id[0]
-            if isinstance(protein_id, gffhelper.GFFAttribute):
-                protein_id = protein_id.value
-                assert len(protein_id) == 1
-                protein_id = protein_id[0]
         # or handle other cases
         elif len(protein_id) == 0:
             protein_id = None
         else:
-            raise ValueError('indeterminate single protein id {}'.format(protein_id))
+            logging.warning(f'multi-ID CDS found, taking first ID for protein from ({protein_id})')
+            protein_id = sorted(protein_id)[0]
+
+        # final check
+        if isinstance(protein_id, gffhelper.GFFAttribute):
+            protein_id = protein_id.value
+            assert len(protein_id) == 1
+            protein_id = protein_id[0]
+
         return protein_id
 
     @staticmethod
