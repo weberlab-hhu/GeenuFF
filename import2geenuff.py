@@ -36,7 +36,8 @@ class PathFinder(object):
             return provided
         maybe = os.listdir(self.input)
         # todo, actual file type detection
-        maybe = [x for x in maybe if any([x.endswith(ok) for ok in ['.fa', '.fasta', '.fa.gz', '.fasta.gz']])]
+        maybe = [x for x in maybe if any([x.endswith(ok) for ok in ['.fa', '.fasta', '.fa.gz', '.fasta.gz',
+                                                                    '.fa.zip', '.fasta.zip']])]
         self._confirm_exactly_one(maybe, 'fasta')
         return self.input + maybe[0]
 
@@ -44,7 +45,8 @@ class PathFinder(object):
         if provided is not None:
             return provided
         maybe = os.listdir(self.input)
-        maybe = [x for x in maybe if any([x.endswith(ok) for ok in ['.gff', '.gff3', '.gff.gz', '.gff3.gz']])]
+        maybe = [x for x in maybe if any([x.endswith(ok) for ok in ['.gff', '.gff3', '.gff.gz', '.gff3.gz',
+                                                                    '.gff.zip', '.gff3.zip']])]
         self._confirm_exactly_one(maybe, 'gff')
         return self.input + maybe[0]
 
