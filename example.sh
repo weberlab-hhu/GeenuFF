@@ -13,8 +13,15 @@ do
   sleep 0.4s
 done
 
+# uncompress the data
 gunzip *.gz
 
+# put the data in the format compatible with the --basedir parameter
+# basically --basedir needs a folder <your_species>
+# with a subfolder <your_species>/input containing a (compressed) gff3 annotation and fasta genome file.
+# The results will then be located in <your_species>/output
+# If desired, you can alternatively specify all file parameters individually
+# --gff3 <your.gff3> --fasta <your.fa> --db-path <your_output_genuff.sqlite3> --log-file <your_output.log>
 species="Chlamydomonas_reinhardtii Ostreococcus_lucimarinus Cyanidioschyzon_merolae"
 
 for sp in $species
@@ -24,7 +31,7 @@ do
   mv ${sp}.* $spdir/
 done
 
-# import into databases (output will land in $sp/output/$sp.sqlite3
+# import into databases (the main output will land in <basedir>/output/<species>.sqlite3
 for sp in $species
 do
   import2geenuff.py --basedir $sp --species $sp
