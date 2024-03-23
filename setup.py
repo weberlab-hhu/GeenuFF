@@ -5,7 +5,7 @@ except ImportError:
 
 setup(
    name='geenuff',
-   version='0.3.1',
+   version='0.3.2',
    description='Schema and API for a relational db that encodes gene models in an explicit, structured, and robust fashion.',
    author='Alisandra Denton, Felix Holst',
    packages=['geenuff', 'geenuff.base', 'geenuff.applications', 'geenuff.applications.exporters', 'geenuff.tests'],  #same as name
