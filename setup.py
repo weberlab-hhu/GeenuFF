@@ -10,7 +10,7 @@ setup(
    author='Alisandra Denton, Felix Holst',
    packages=['geenuff', 'geenuff.base', 'geenuff.applications', 'geenuff.applications.exporters', 'geenuff.tests'],  #same as name
    package_data={'geenuff': ['testdata/*.fa', 'testdata/*.gff3', 'testdata/*.gff']},
-   install_requires=["intervaltree>=3.0.2", "SQLAlchemy>=1.3.12", "numpy>=1.18.1", "dustdas @ git+https://github.com/gglyptodon/dustdas@v0.2", "pytest>=5.3.4"],
+   install_requires=["intervaltree>=3.0.2", "SQLAlchemy<2,>=1.3.12", "numpy>=1.18.1", "pandas", "biopython", "pytest>=5.3.4"],
    scripts=['import2geenuff.py'],
    zip_safe=False,
 )

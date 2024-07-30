@@ -68,7 +68,7 @@
 # the first transcript starts with the wrong phase
 # the second transcript has the short intron
 2	manual	gene	550	750	.	+	.	ID=gene_phase_0_short_intron
-2	manual	mRNA	550	750	.	+	.	ID=x6;Parent=gene_phase_0_short_intron	
+2	manual	mRNA	550	750	.	+	.	ID=x6;Parent=gene_phase_0_short_intron
 2	manual	exon	550	600	.	+	.	ID=e0;Parent=x6
 2	manual	CDS	525	600	.	+	1	ID=c0_problem;Parent=x6
 2	manual	exon	700	750	.	+	.	ID=e1;Parent=x6
@@ -97,14 +97,14 @@
 # the first transcript has overlapping exons (the first two) and a missing start codon
 # the second transcript is without errors and has a non-coding exon
 2	manual	gene	1550	1750	.	-	.	ID=gene_overlapping_exons_missing_start
-2	manual	mRNA	1550	1750	.	-	.	ID=x8;Parent=gene_overlapping_exons_missing_start	
+2	manual	mRNA	1550	1750	.	-	.	ID=x8;Parent=gene_overlapping_exons_missing_start
 2	manual	exon	1550	1600	.	-	.	ID=e0;Parent=x8
 2	manual	CDS	1575	1600	.	-	2	ID=c0_problem;Parent=x;protein_id=x8.p
 2	manual	exon	1599	1650	.	-	.	ID=e1;Parent=x8
 2	manual	CDS	1599	1650	.	-	2	ID=c1_problem;Parent=x;protein_id=x8.p
 2	manual	exon	1720	1750	.	-	.	ID=e2;Parent=x8
 2	manual	CDS	1720	1725	.	-	0	ID=c2;Parent=x;protein_id=x8.p
-2	manual	mRNA	1550	1750	.	-	.	ID=y8;Parent=gene_overlapping_exons_missing_start	
+2	manual	mRNA	1550	1750	.	-	.	ID=y8;Parent=gene_overlapping_exons_missing_start
 2	manual	exon	1550	1600	.	-	.	ID=e3;Parent=y8
 2	manual	exon	1680	1750	.	-	.	ID=e4;Parent=y8
 2	manual	CDS	1701	1730	.	-	0	ID=c4;Parent=y;protein_id=y8.p

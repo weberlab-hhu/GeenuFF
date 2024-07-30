@@ -2,6 +2,7 @@ import copy
 import hashlib
 import logging
 import enum
+import pandas as pd
 
 ##### types related #######
 
@@ -39,7 +40,6 @@ def make_enum(name, *args):
 
 
 ##### General #####
-import dustdas.fastahelper
 
 
 def sequence_hash(sequence):
@@ -183,11 +183,15 @@ def two_way_key_match(known_keys, other_keys):
 
 
 def get_seqids_from_gff(gfffile):
-    seqids = set()
-    with dustdas.fastahelper.text_or_gzip_open(gfffile) as f:
-        for line in f:
-            if not line.startswith('#'):
-                seqids.add(line.split('\t')[0])
+    seqids = set(
+        pd.read_table(
+            gfffile,
+            dtype=str,
+            sep='\t',
+            header=None,
+            comment='#'
+        ).iloc[:,0]
+    )
     return seqids
 
 
